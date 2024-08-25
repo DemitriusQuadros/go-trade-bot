@@ -1,0 +1,8 @@
+# GO BINANCE TRADE BOT
+
+This project aims to provide a golang application with all the structure needed to communicate with Binace APIs and handle strategies to create tradingbots with golang
+
+# Used packages
+- FX to handle dependecy injection (https://uber-go.github.io/fx)
+- go-binance to communicate with Binance API (https://github.com/adshao/go-binance)
+- viper to handle configuration properties (https://github.com/spf13/viper)
