@@ -8,8 +8,18 @@ import (
 )
 
 type Configuration struct {
-	BinanceApiKey    string
-	BinanceAPISecret string
+	Broker Broker
+	DB     DB
+}
+
+type Broker struct {
+	ApiKey    string
+	ApiSecret string
+}
+
+type DB struct {
+	URI      string
+	PoolSize int64
 }
 
 func NewConfiguration() *Configuration {
@@ -18,19 +28,35 @@ func NewConfiguration() *Configuration {
 		panic("Error reading config file")
 	}
 
-	key, ok := viper.Get("BINANCE.KEY").(string)
+	key, ok := viper.Get("BROKER.KEY").(string)
 	if !ok {
-		log.Fatalf("Invalid binance key")
+		log.Fatalf("Invalid broker key")
 	}
 
-	secret, ok := viper.Get("BINANCE.SECRET").(string)
+	secret, ok := viper.Get("BROKER.SECRET").(string)
 	if !ok {
-		log.Fatalf("Invalid binance secret")
+		log.Fatalf("Invalid broker secret")
+	}
+
+	uri, ok := viper.Get("DB.URI").(string)
+	if !ok {
+		log.Fatalf("Invalid db uri")
+	}
+
+	poolSize, ok := viper.Get("DB.POOLSIZE").(int)
+	if !ok {
+		log.Fatalf("Invalid pool size config")
 	}
 
 	return &Configuration{
-		BinanceApiKey:    key,
-		BinanceAPISecret: secret,
+		Broker: Broker{
+			ApiKey:    key,
+			ApiSecret: secret,
+		},
+		DB: DB{
+			URI:      uri,
+			PoolSize: int64(poolSize),
+		},
 	}
 }
 

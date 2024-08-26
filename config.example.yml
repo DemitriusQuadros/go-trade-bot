@@ -1,0 +1,7 @@
+BROKER:
+  KEY: dummy
+  SECRET: dummy
+
+DB:
+  URI: mongodb://localhost:2701
+  POOL_SIZE: 50

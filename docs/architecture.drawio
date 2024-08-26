@@ -1,11 +1,11 @@
 <mxfile host="65bd71144e">
     <diagram id="YkvriPw3IoX1bgJJ_rWK" name="Entities">
-        <mxGraphModel dx="666" dy="415" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="425" dy="415" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="2" value="Symbol" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Comic Sans MS;fontSize=17;sketch=1;curveFitting=1;jiggle=2;" vertex="1" parent="1">
-                    <mxGeometry x="90" y="110" width="180" height="100" as="geometry"/>
+                <mxCell id="2" value="MonitoredSymbol" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Comic Sans MS;fontSize=17;sketch=1;curveFitting=1;jiggle=2;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="90" width="180" height="100" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>

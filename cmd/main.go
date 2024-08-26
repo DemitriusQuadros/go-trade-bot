@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	symbol "go-trade-bot/app/symbol/handler"
 	todo "go-trade-bot/app/todo"
-	"go-trade-bot/internal/broker"
+	"go-trade-bot/cmd/modules"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/middleware"
 	"net"
@@ -20,14 +21,17 @@ type Route interface {
 
 func main() {
 	fx.New(
+		modules.ConfigurationModule,
+		modules.DbModule,
+		modules.BrokerModule,
+		modules.SymbolModule,
 		fx.Provide(
-			config.NewConfiguration,
-			broker.NewBroker,
 			NewHTTPServer,
-			NewServeMux,
+			AsRoute(todo.NewTodoHandler),
+			AsRoute(symbol.NewSymbolHandler),
 			fx.Annotate(
-				todo.NewTodoHandler,
-				fx.As(new(Route)),
+				NewServeMux,
+				fx.ParamTags(`group:"routes"`),
 			),
 		),
 		fx.Invoke(func(*http.Server) {}),
@@ -54,9 +58,11 @@ func NewHTTPServer(lc fx.Lifecycle, mux *http.ServeMux, cfg *config.Configuratio
 	return srv
 }
 
-func NewServeMux(cfg *config.Configuration, route Route) *http.ServeMux {
+func NewServeMux(routes []Route) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle(route.Pattern(), route)
+	for _, route := range routes {
+		mux.Handle(route.Pattern(), route)
+	}
 	return mux
 }
 

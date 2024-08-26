@@ -21,7 +21,7 @@ func (*ToDoHandler) Pattern() string {
 }
 
 func (t *ToDoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	prices, err := t.broker.ListTickerPrices(r.Context())
+	prices, err := t.broker.ListTickerPrices(r.Context(), "BTCUSDT")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

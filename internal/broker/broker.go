@@ -13,14 +13,14 @@ type Broker struct {
 }
 
 func NewBroker(cfg *configuration.Configuration) *Broker {
-	client := binance.NewClient(cfg.BinanceApiKey, cfg.BinanceAPISecret)
+	client := binance.NewClient(cfg.Broker.ApiKey, cfg.Broker.ApiSecret)
 	return &Broker{
 		client: client,
 	}
 }
 
-func (b Broker) ListTickerPrices(ctx context.Context) ([]*binance.SymbolPrice, error) {
-	prices, err := b.client.NewListPricesService().Do(ctx)
+func (b Broker) ListTickerPrices(ctx context.Context, symbol string) ([]*binance.SymbolPrice, error) {
+	prices, err := b.client.NewListPricesService().Symbol(symbol).Do(ctx)
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
