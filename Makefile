@@ -1,31 +1,34 @@
-# Define variáveis
 DOCKER_COMPOSE_FILE = docker-compose.yml
 
 .PHONY: build up down stop restart logs clean
 
-# Builda as imagens Docker para a aplicação
+# Build docker images
 build:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) build
 
-# Sobe os containers da aplicação
+# Up containers
 up: build
 	docker-compose -f $(DOCKER_COMPOSE_FILE) up -d
 
-# Para e remove os containers, mas mantém os volumes
+# Stop containers but keep volumes
 down:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down
 
-# Para os containers sem removê-los
+# Stop containers without remove them
 stop:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) stop
 
-# Reinicia os containers
+# Restart containers
 restart: down up
 
-# Mostra os logs de todos os containers
+# Show container logs
 logs:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f
 
-# Remove containers, redes, imagens e volumes
+# Remove all containers and networks
 clean:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all --remove-orphans
+
+# run the project locally
+run-local:
+	go run cmd/main.go

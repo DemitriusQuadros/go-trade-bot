@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	symbol "go-trade-bot/app/symbol/handler"
-	todo "go-trade-bot/app/todo"
 	"go-trade-bot/cmd/modules"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/middleware"
 	"net"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	"go.uber.org/fx"
 )
 
@@ -27,7 +27,6 @@ func main() {
 		modules.SymbolModule,
 		fx.Provide(
 			NewHTTPServer,
-			AsRoute(todo.NewTodoHandler),
 			AsRoute(symbol.NewSymbolHandler),
 			fx.Annotate(
 				NewServeMux,
@@ -38,8 +37,8 @@ func main() {
 	).Run()
 }
 
-func NewHTTPServer(lc fx.Lifecycle, mux *http.ServeMux, cfg *config.Configuration) *http.Server {
-	wrappedMux := middleware.ConfigMiddleware(cfg)(mux)
+func NewHTTPServer(lc fx.Lifecycle, router *mux.Router, cfg *config.Configuration) *http.Server {
+	wrappedMux := middleware.ConfigMiddleware(cfg)(router)
 	srv := &http.Server{Addr: ":8080", Handler: wrappedMux}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -58,12 +57,12 @@ func NewHTTPServer(lc fx.Lifecycle, mux *http.ServeMux, cfg *config.Configuratio
 	return srv
 }
 
-func NewServeMux(routes []Route) *http.ServeMux {
-	mux := http.NewServeMux()
+func NewServeMux(routes []Route) *mux.Router {
+	router := mux.NewRouter()
 	for _, route := range routes {
-		mux.Handle(route.Pattern(), route)
+		router.Handle(route.Pattern(), route)
 	}
-	return mux
+	return router
 }
 
 func AsRoute(f any) any {
