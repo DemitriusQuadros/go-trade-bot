@@ -3,6 +3,7 @@ module go-trade-bot
 go 1.22.4
 
 require (
+	github.com/google/uuid v1.4.0
 	github.com/spf13/viper v1.19.0
 	go.mongodb.org/mongo-driver v1.16.1
 	go.uber.org/fx v1.22.2

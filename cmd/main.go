@@ -27,6 +27,7 @@ func main() {
 		modules.SymbolModule,
 		fx.Provide(
 			NewHTTPServer,
+			AsRoute(todo.NewTodoHandler),
 			AsRoute(symbol.NewSymbolHandler),
 			fx.Annotate(
 				NewServeMux,
