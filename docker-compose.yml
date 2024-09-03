@@ -1,13 +1,13 @@
-version: '3.8' # Versão do Docker Compose
+version: '3.8' 
 
 services:
   app:
     build:
-      context: .  # Diretório atual contendo o Dockerfile
-      dockerfile: Dockerfile # Nome do Dockerfile
+      context: . 
+      dockerfile: Dockerfile 
     container_name: go-trade-bot
     ports:
-      - "8080:8080" # Mapeia a porta 8080 do host para a porta 8080 do contêiner
+      - "8080:8080"
     environment:
       - REDIS_HOST=redis
       - MONGO_HOST=mongodb
@@ -19,17 +19,17 @@ services:
     image: redis:latest
     container_name: redis
     ports:
-      - "6379:6379" # Mapeia a porta 6379 do host para a porta 6379 do contêiner
+      - "6379:6379" 
     volumes:
-      - redis_data:/data # Volumes para persistência de dados
+      - redis_data:/data
 
   mongodb:
     image: mongo:latest
     container_name: mongodb
     ports:
-      - "27017:27017" # Mapeia a porta 27017 do host para a porta 27017 do contêiner
+      - "27017:27017"
     volumes:
-      - mongo_data:/data/db # Volumes para persistência de dados
+      - mongo_data:/data/db
 
 volumes:
   redis_data:
