@@ -10,6 +10,7 @@ import (
 type Configuration struct {
 	Broker Broker
 	DB     DB
+	Redis  Redis
 }
 
 type Broker struct {
@@ -20,6 +21,9 @@ type Broker struct {
 type DB struct {
 	URI      string
 	PoolSize int64
+}
+type Redis struct {
+	Addr string
 }
 
 func NewConfiguration() *Configuration {
@@ -48,6 +52,11 @@ func NewConfiguration() *Configuration {
 		log.Fatalf("Invalid pool size config")
 	}
 
+	redisAddr, ok := viper.Get("REDIS.ADDR").(string)
+	if !ok {
+		log.Fatalf("Invalid redis configuration")
+	}
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:    key,
@@ -56,6 +65,9 @@ func NewConfiguration() *Configuration {
 		DB: DB{
 			URI:      uri,
 			PoolSize: int64(poolSize),
+		},
+		Redis: Redis{
+			Addr: redisAddr,
 		},
 	}
 }

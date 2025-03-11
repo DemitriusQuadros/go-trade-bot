@@ -5,3 +5,6 @@ BROKER:
 DB:
   URI: mongodb://localhost:2701
   POOL_SIZE: 50
+
+REDIS:
+  ADDR: localhost:6379

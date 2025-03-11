@@ -29,6 +29,10 @@ logs:
 clean:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all --remove-orphans
 
-# run the project locally
-run-local:
-	go run cmd/main.go
+# run the api project locally
+run-api-local:
+	go run cmd/api/main.go
+
+# run the worker project locally
+run-worker-local:
+	go run cmd/worker/main.go

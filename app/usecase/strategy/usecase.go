@@ -13,13 +13,20 @@ import (
 type StrategyRepository interface {
 	Save(ctx context.Context, symbol entities.Strategy) error
 }
-type StrategyUseCase struct {
-	Repository StrategyRepository
+
+type StrategyWorker interface {
+	EnqueueStrategyTask(strategy entities.Strategy) error
 }
 
-func NewStrategyUseCase(repository StrategyRepository) StrategyUseCase {
+type StrategyUseCase struct {
+	Repository StrategyRepository
+	Worker     StrategyWorker
+}
+
+func NewStrategyUseCase(repository StrategyRepository, worker StrategyWorker) StrategyUseCase {
 	return StrategyUseCase{
 		Repository: repository,
+		Worker:     worker,
 	}
 }
 
@@ -31,6 +38,10 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	strategy.CreatedAt = time.Now()
 	strategy.UpdatedAt = time.Now()
 	u.Repository.Save(ctx, strategy)
+
+	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
+		return err
+	}
 	return nil
 }
 

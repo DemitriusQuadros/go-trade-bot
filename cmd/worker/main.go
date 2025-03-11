@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
+	handler "go-trade-bot/app/handler/tasks/strategy"
+	tasks "go-trade-bot/app/workers/strategy"
 
 	"github.com/hibiken/asynq"
 	"go.uber.org/fx"
@@ -31,7 +32,8 @@ func RegisterHandlers(lc fx.Lifecycle, server *asynq.Server) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			mux := asynq.NewServeMux()
-			mux.HandleFunc("email:send", HandleSendEmailTask)
+			processor := &handler.StrategyProcessor{}
+			mux.HandleFunc(tasks.StrategyTask+"*", processor.HandleStrategyTask)
 			go server.Run(mux)
 			return nil
 		},
@@ -51,8 +53,5 @@ func main() {
 		fx.Invoke(RegisterHandlers),
 	)
 
-	if err := app.Start(context.Background()); err != nil {
-		log.Fatal(err)
-	}
-	defer app.Stop(context.Background())
+	app.Run()
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	strategy "go-trade-bot/app/handler/web/strategy"
-	"go-trade-bot/cmd/modules"
+	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/handler"
 	"go-trade-bot/internal/middleware"
