@@ -10,6 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+// TODO: Implement integration test with redis
 type StrategyWorker struct {
 	client *asynq.Client
 }

@@ -37,7 +37,10 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	strategy.ID = uuid.New()
 	strategy.CreatedAt = time.Now()
 	strategy.UpdatedAt = time.Now()
-	u.Repository.Save(ctx, strategy)
+
+	if err := u.Repository.Save(ctx, strategy); err != nil {
+		return err
+	}
 
 	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
 		return err

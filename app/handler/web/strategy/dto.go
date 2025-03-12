@@ -10,7 +10,7 @@ type StrategyDto struct {
 	Cycle            int      `json:"cycle"`
 }
 
-func (s StrategyDto) toModel() entities.Strategy {
+func (s StrategyDto) ToModel() entities.Strategy {
 	return entities.Strategy{
 		Name:             s.Name,
 		Description:      s.Description,

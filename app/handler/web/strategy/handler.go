@@ -33,7 +33,6 @@ func (h *StrategyHandler) Handlers() []handler.Configuration {
 }
 
 func (h *StrategyHandler) Post(w http.ResponseWriter, r *http.Request) {
-
 	body, err := io.ReadAll(io.Reader(r.Body))
 	if err != nil {
 		http.Error(w, "Invalid Body", http.StatusInternalServerError)
@@ -49,7 +48,7 @@ func (h *StrategyHandler) Post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.UseCase.Save(r.Context(), dto.toModel())
+	err = h.UseCase.Save(r.Context(), dto.ToModel())
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
