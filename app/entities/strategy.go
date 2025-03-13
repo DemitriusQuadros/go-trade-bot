@@ -37,6 +37,7 @@ type StrategyExecution struct {
 type Cycle int
 
 const (
+	OneMinute      Cycle = 1
 	FiveMinutes    Cycle = 5
 	TenMinutes     Cycle = 10
 	FifteenMinutes Cycle = 15
@@ -55,7 +56,7 @@ func IsValidAlgorithm(algo string) bool {
 
 func IsValidCycle(cycle int) bool {
 	switch Cycle(cycle) {
-	case FiveMinutes, TenMinutes, FifteenMinutes, ThirtyMinutes, OneHour:
+	case OneMinute, FiveMinutes, TenMinutes, FifteenMinutes, ThirtyMinutes, OneHour:
 		return true
 	default:
 		return false
