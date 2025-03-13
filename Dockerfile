@@ -1,17 +1,20 @@
-# Builder
-FROM golang:1.22-alpine3.20 as builder
+FROM golang:1.22 as builder
 
 WORKDIR /app
 
-COPY go.mod ./
-COPY go.sum ./
-
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-RUN go build -o main .
+ARG TARGET
 
-EXPOSE 8080
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/app ./cmd/$TARGET
 
-CMD ["./main"]
+FROM alpine:latest
+
+WORKDIR /root/
+
+COPY --from=builder /bin/app .
+
+CMD ["./app"]
