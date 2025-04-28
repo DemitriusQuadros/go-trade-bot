@@ -12,6 +12,8 @@ import (
 
 type StrategyRepository interface {
 	Save(ctx context.Context, symbol entities.Strategy) error
+	GetAll(ctx context.Context) ([]entities.Strategy, error)
+	GetByID(ctx context.Context, id string) (entities.Strategy, error)
 }
 
 type StrategyWorker interface {
@@ -46,6 +48,23 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 		return err
 	}
 	return nil
+}
+
+// TODO - implement
+func (u StrategyUseCase) Enqueue(ctx context.Context) error {
+	return nil
+}
+
+func (u StrategyUseCase) GetByID(ctx context.Context, id string) (entities.Strategy, error) {
+	if id == "" {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+
+	return u.Repository.GetByID(ctx, id)
+}
+
+func (u StrategyUseCase) GetAll(ctx context.Context) ([]entities.Strategy, error) {
+	return u.Repository.GetAll(ctx)
 }
 
 func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {

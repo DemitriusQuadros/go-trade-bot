@@ -11,6 +11,8 @@ import (
 
 type UseCase interface {
 	Save(ctx context.Context, strategy entities.Strategy) error
+	Enqueue(ctx context.Context) error
+	GetAll(ctx context.Context) ([]entities.Strategy, error)
 }
 type StrategyHandler struct {
 	UseCase UseCase
@@ -28,6 +30,16 @@ func (h *StrategyHandler) Handlers() []handler.Configuration {
 			Pattern: "/strategy",
 			Action:  h.Post,
 			Method:  http.MethodPost,
+		},
+		{
+			Pattern: "/strategy/enqueue",
+			Action:  h.Enqueue,
+			Method:  http.MethodPost,
+		},
+		{
+			Pattern: "/strategy",
+			Action:  h.GetAll,
+			Method:  http.MethodGet,
 		},
 	}
 }
@@ -55,4 +67,21 @@ func (h *StrategyHandler) Post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *StrategyHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
+	/*err := UseCase.Enqueue(r.Context(),)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+	}*/
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *StrategyHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	strategies, err := h.UseCase.GetAll(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(strategies)
 }
