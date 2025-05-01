@@ -50,8 +50,17 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	return nil
 }
 
-// TODO - implement
 func (u StrategyUseCase) Enqueue(ctx context.Context) error {
+	strategies, err := u.Repository.GetAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, strategy := range strategies {
+		if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

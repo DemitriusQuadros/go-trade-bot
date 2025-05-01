@@ -3,6 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"go-trade-bot/app/entities"
 	handler "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/app/handler/web/strategy/mocks"
 	"net/http"
@@ -48,4 +49,90 @@ func TestStrategyHandler_Post_InvalidJSON(t *testing.T) {
 	handler.Post(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestStrategyHandler_Enqueue(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	req, err := http.NewRequest(http.MethodPost, "/strategy/enqueue", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	mockUseCase.On("Enqueue", mock.Anything).Return(nil)
+
+	h.Enqueue(rec, req)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	mockUseCase.AssertExpectations(t)
+}
+func TestStrategyHandler_Enqueue_Error(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	req, err := http.NewRequest(http.MethodPost, "/strategy/enqueue", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	mockUseCase.On("Enqueue", mock.Anything).Return(nil)
+
+	h.Enqueue(rec, req)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	mockUseCase.AssertExpectations(t)
+}
+func TestStrategyHandler_GetAll(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	strategies := []entities.Strategy{
+		{Name: "Test Strategy 1"},
+		{Name: "Test Strategy 2"},
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/strategy", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	mockUseCase.On("GetAll", mock.Anything).Return(strategies, nil)
+
+	h.GetAll(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response []entities.Strategy
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, strategies, response)
+	mockUseCase.AssertExpectations(t)
+}
+func TestStrategyHandler_GetAll_Error(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	req, err := http.NewRequest(http.MethodGet, "/strategy", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	mockUseCase.On("GetAll", mock.Anything).Return(nil, assert.AnError)
+
+	h.GetAll(rec, req)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	mockUseCase.AssertExpectations(t)
+}
+func TestStrategyHandler_GetAll_EmptyResponse(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	req, err := http.NewRequest(http.MethodGet, "/strategy", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	mockUseCase.On("GetAll", mock.Anything).Return([]entities.Strategy{}, nil)
+
+	h.GetAll(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var response []entities.Strategy
+	err = json.Unmarshal(rec.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Empty(t, response)
+	mockUseCase.AssertExpectations(t)
 }

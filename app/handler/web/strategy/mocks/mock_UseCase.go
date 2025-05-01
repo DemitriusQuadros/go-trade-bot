@@ -14,6 +14,54 @@ type UseCase struct {
 	mock.Mock
 }
 
+// Enqueue provides a mock function with given fields: ctx
+func (_m *UseCase) Enqueue(ctx context.Context) error {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Enqueue")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = rf(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// GetAll provides a mock function with given fields: ctx
+func (_m *UseCase) GetAll(ctx context.Context) ([]entities.Strategy, error) {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAll")
+	}
+
+	var r0 []entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context) ([]entities.Strategy, error)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) []entities.Strategy); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Strategy)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // Save provides a mock function with given fields: ctx, strategy
 func (_m *UseCase) Save(ctx context.Context, strategy entities.Strategy) error {
 	ret := _m.Called(ctx, strategy)

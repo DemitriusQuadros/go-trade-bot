@@ -70,10 +70,10 @@ func (h *StrategyHandler) Post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *StrategyHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
-	/*err := UseCase.Enqueue(r.Context(),)
+	err := h.UseCase.Enqueue(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-	}*/
+	}
 	w.WriteHeader(http.StatusAccepted)
 }
 

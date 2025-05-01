@@ -15,6 +15,87 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+func TestStrategyUseCase_GetAll(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+
+	ctx := context.Background()
+	strategies := []entities.Strategy{
+		{
+			ID:               uuid.New(),
+			Name:             "Test Strategy",
+			Description:      "A test strategy",
+			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+			Algorithm:        entities.Heikenashi,
+			StrategyConfiguration: entities.StrategyConfiguration{
+				Cycle: 10,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
+	}
+
+	t.Run("should return all strategies", func(t *testing.T) {
+		mockRepo.On("GetAll", ctx).Return(strategies, nil).Once()
+
+		result, err := strategyUC.GetAll(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, strategies, result)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("should return error when repository fails", func(t *testing.T) {
+		mockRepo.On("GetAll", ctx).Return(nil, errors.New("database error")).Once()
+
+		result, err := strategyUC.GetAll(ctx)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "database error")
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func TestStrategyUseCase_Enqueue(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	mockWorker := new(mocks.StrategyWorker)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, mockWorker)
+
+	ctx := context.Background()
+	strategy := entities.Strategy{
+		ID:               uuid.New(),
+		Name:             "Test Strategy",
+		Description:      "A test strategy",
+		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+		Algorithm:        entities.Heikenashi,
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: 10,
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	t.Run("should enqueue strategy task successfully", func(t *testing.T) {
+		mockWorker.On("EnqueueStrategyTask", strategy).Return(nil).Once()
+		mockRepo.On("GetAll", ctx).Return([]entities.Strategy{strategy}, nil).Once()
+
+		err := strategyUC.Enqueue(ctx)
+		assert.NoError(t, err)
+
+		mockWorker.AssertExpectations(t)
+	})
+
+	t.Run("should return error when worker fails", func(t *testing.T) {
+		mockWorker.On("EnqueueStrategyTask", strategy).Return(errors.New("worker error")).Once()
+		mockRepo.On("GetAll", ctx).Return([]entities.Strategy{strategy}, nil).Once()
+		err := strategyUC.Enqueue(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "worker error")
+
+		mockWorker.AssertExpectations(t)
+	})
+}
 func TestStrategyUseCase_Save(t *testing.T) {
 	mockRepo := new(mocks.StrategyRepository)
 	mockWorker := new(mocks.StrategyWorker)

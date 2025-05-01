@@ -10,9 +10,11 @@ import (
 	"go-trade-bot/internal/middleware"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	"github.com/hibiken/asynq"
+	"github.com/hibiken/asynqmon"
+
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 )
 
@@ -43,15 +45,18 @@ func RegisterHandlers(
 	cfg *config.Configuration,
 	collector *metrics.MetricsCollector,
 ) {
+	StartMetricsServer(cfg)
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			mux := asynq.NewServeMux()
-			processor := &handler.StrategyProcessor{}
+			processor := handler.NewStrategyProcessor(collector)
+
 			mux.Handle(tasks.StrategyTask, middleware.AsynqConfigMiddleware(
 				asynq.HandlerFunc(processor.HandleStrategyTask),
 				cfg,
 				collector,
 			))
+
 			go server.Run(mux)
 			return nil
 		},
@@ -62,16 +67,26 @@ func RegisterHandlers(
 	})
 }
 
-func StartMetricsServer(port string) {
-	http.Handle("/metrics", promhttp.HandlerFor(Registry, promhttp.HandlerOpts{}))
+func StartMetricsServer(cfg *config.Configuration) {
+	h := asynqmon.New(asynqmon.Options{
+		RootPath:     "/tasks/monitoring",
+		RedisConnOpt: asynq.RedisClientOpt{Addr: cfg.Redis.Addr},
+	})
 
+	r := mux.NewRouter()
+	r.PathPrefix(h.RootPath()).Handler(h)
+
+	srv := &http.Server{
+		Handler: r,
+		Addr:    ":9191",
+	}
 	go func() {
-		http.ListenAndServe(":"+port, nil)
+		srv.ListenAndServe()
 	}()
+
 }
 
 func main() {
-	StartMetricsServer("9191")
 	app := fx.New(
 		modules.ConfigurationModule,
 		modules.MetricsModule,

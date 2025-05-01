@@ -22,6 +22,12 @@ var MetricsModule = fx.Module("metrics",
 				LabelNames: []string{"path"},
 				Buckets:    []float64{0.1, 0.3, 1.2, 5.0},
 			},
+			{
+				Name:       "total_strategy_task",
+				Help:       "Total of strategy tasks executed",
+				Type:       metrics.Counter,
+				LabelNames: []string{"strategy"},
+			},
 		})
 	}),
 )
