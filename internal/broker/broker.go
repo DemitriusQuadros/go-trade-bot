@@ -27,3 +27,12 @@ func (b Broker) ListTickerPrices(ctx context.Context, symbol string) ([]*binance
 	}
 	return prices, nil
 }
+
+func (b Broker) ListKline(ctx context.Context, symbol string, interval string, limit int) ([]*binance.Kline, error) {
+	klines, err := b.client.NewKlinesService().Symbol(symbol).Interval(interval).Limit(limit).Do(ctx)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	return klines, nil
+}

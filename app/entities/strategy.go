@@ -11,6 +11,7 @@ type Algorithm string
 const (
 	Grid       = "grid"
 	Heikenashi = "heikenashi"
+	Volume     = "volume"
 )
 
 type Strategy struct {
@@ -25,7 +26,8 @@ type Strategy struct {
 }
 
 type StrategyConfiguration struct {
-	Cycle Cycle
+	Cycle         Cycle
+	Configuration datatypes.JSON `gorm:"type:jsonb"`
 }
 
 type StrategyExecution struct {
@@ -48,7 +50,7 @@ const (
 
 func IsValidAlgorithm(algo string) bool {
 	switch Algorithm(algo) {
-	case Grid, Heikenashi:
+	case Grid, Heikenashi, Volume:
 		return true
 	default:
 		return false
