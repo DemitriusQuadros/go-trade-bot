@@ -19,8 +19,12 @@ type Broker struct {
 }
 
 type DB struct {
-	URI      string
-	PoolSize int64
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
 }
 type Redis struct {
 	Addr string
@@ -42,14 +46,34 @@ func NewConfiguration() *Configuration {
 		log.Fatalf("Invalid broker secret")
 	}
 
-	uri, ok := viper.Get("DB.URI").(string)
+	host, ok := viper.Get("DB.HOST").(string)
 	if !ok {
-		log.Fatalf("Invalid db uri")
+		log.Fatalf("Invalid db host")
 	}
 
-	poolSize, ok := viper.Get("DB.POOLSIZE").(int)
+	port, ok := viper.Get("DB.PORT").(int)
 	if !ok {
-		log.Fatalf("Invalid pool size config")
+		log.Fatalf("Invalid db port")
+	}
+
+	user, ok := viper.Get("DB.USER").(string)
+	if !ok {
+		log.Fatalf("Invalid db user")
+	}
+
+	password, ok := viper.Get("DB.PASSWORD").(string)
+	if !ok {
+		log.Fatalf("Invalid db password")
+	}
+
+	dbName, ok := viper.Get("DB.DBNAME").(string)
+	if !ok {
+		log.Fatalf("Invalid db name")
+	}
+
+	sslMode, ok := viper.Get("DB.SSLMODE").(string)
+	if !ok {
+		log.Fatalf("Invalid db sslmode")
 	}
 
 	redisAddr, ok := viper.Get("REDIS.ADDR").(string)
@@ -63,8 +87,12 @@ func NewConfiguration() *Configuration {
 			ApiSecret: secret,
 		},
 		DB: DB{
-			URI:      uri,
-			PoolSize: int64(poolSize),
+			Host:     host,
+			Port:     port,
+			User:     user,
+			Password: password,
+			DBName:   dbName,
+			SSLMode:  sslMode,
 		},
 		Redis: Redis{
 			Addr: redisAddr,

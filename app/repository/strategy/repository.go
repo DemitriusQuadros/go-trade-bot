@@ -4,74 +4,31 @@ import (
 	"context"
 	"go-trade-bot/app/entities"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-)
-
-const (
-	database   = "TradeBot"
-	collection = "Strategies"
+	"gorm.io/gorm"
 )
 
 type StrategyRepository struct {
-	client *mongo.Client
+	db *gorm.DB
 }
 
-func NewStrategyRepository(client *mongo.Client) StrategyRepository {
+func NewStrategyRepository(db *gorm.DB) StrategyRepository {
 	return StrategyRepository{
-		client: client,
+		db: db,
 	}
 }
 
 func (r StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) error {
-	collection := r.client.Database(database).Collection(collection)
-	_, err := collection.InsertOne(ctx, strategy)
-	return err
+	return r.db.WithContext(ctx).Create(&strategy).Error
 }
 
-func (r StrategyRepository) GetByID(ctx context.Context, id string) (entities.Strategy, error) {
-	collection := r.client.Database(database).Collection(collection)
-	filter := bson.M{"id": id}
-
-	cursor, err := collection.Find(ctx, filter)
-
-	if err != nil {
-		return entities.Strategy{}, err
-	}
-
-	defer cursor.Close(ctx)
-
+func (r StrategyRepository) GetByID(ctx context.Context, id uint) (entities.Strategy, error) {
 	var strategy entities.Strategy
-	for cursor.Next(ctx) {
-		err := cursor.Decode(&strategy)
-		if err != nil {
-			return entities.Strategy{}, err
-		}
-	}
-
-	return strategy, nil
+	err := r.db.WithContext(ctx).First(&strategy, id).Error
+	return strategy, err
 }
 
 func (r StrategyRepository) GetAll(ctx context.Context) ([]entities.Strategy, error) {
-	collection := r.client.Database(database).Collection(collection)
-
 	var strategies []entities.Strategy
-	cursor, err := collection.Find(ctx, bson.M{})
-
-	if err != nil {
-		return nil, err
-	}
-
-	defer cursor.Close(ctx)
-
-	for cursor.Next(ctx) {
-		var strategy entities.Strategy
-		err := cursor.Decode(&strategy)
-		if err != nil {
-			return nil, err
-		}
-		strategies = append(strategies, strategy)
-	}
-
-	return strategies, nil
+	err := r.db.WithContext(ctx).Find(&strategies).Error
+	return strategies, err
 }

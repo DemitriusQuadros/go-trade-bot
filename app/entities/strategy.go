@@ -3,7 +3,7 @@ package entities
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
 
 type Algorithm string
@@ -14,12 +14,12 @@ const (
 )
 
 type Strategy struct {
-	ID                    uuid.UUID
+	ID                    uint `gorm:"primaryKey"`
 	Name                  string
 	Description           string
 	Algorithm             Algorithm
-	MonitoredSymbols      []string
-	StrategyConfiguration StrategyConfiguration
+	MonitoredSymbols      datatypes.JSONSlice[string] `gorm:"type:jsonb"`
+	StrategyConfiguration StrategyConfiguration       `gorm:"embedded"`
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
@@ -29,8 +29,9 @@ type StrategyConfiguration struct {
 }
 
 type StrategyExecution struct {
-	ID         uuid.UUID
-	Strategy   Strategy
+	ID         uint `gorm:"primaryKey"`
+	StrategyID uint
+	Strategy   Strategy `gorm:"foreignKey:StrategyID"`
 	ExecutedAt time.Time
 }
 

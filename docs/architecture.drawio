@@ -1,17 +1,17 @@
 <mxfile host="65bd71144e">
     <diagram id="saYnvgAqHrLi8dTfEj1m" name="Architecture">
-        <mxGraphModel dx="1946" dy="415" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="2339" dy="678" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 <mxCell id="B3TmTwDRUPDQR5a83a3j-9" value="" style="group;shadow=1;" parent="1" vertex="1" connectable="0">
-                    <mxGeometry x="585" y="355" width="92" height="105" as="geometry"/>
+                    <mxGeometry x="585" y="355" width="103.57999999999997" height="119.88000000000005" as="geometry"/>
                 </mxCell>
                 <mxCell id="B3TmTwDRUPDQR5a83a3j-8" value="Mongo&lt;br&gt;&lt;br&gt;" style="shape=datastore;whiteSpace=wrap;html=1;sketch=0;fontFamily=Comic Sans MS;fontColor=#FFFFFF;" parent="B3TmTwDRUPDQR5a83a3j-9" vertex="1">
                     <mxGeometry width="92" height="92" as="geometry"/>
                 </mxCell>
-                <mxCell id="B3TmTwDRUPDQR5a83a3j-5" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.webicons.mongodb;gradientColor=#DFDEDE;sketch=0;fontFamily=Comic Sans MS;fontColor=#FFFFFF;" parent="B3TmTwDRUPDQR5a83a3j-9" vertex="1">
-                    <mxGeometry x="43.60000000000002" y="62" width="44" height="43" as="geometry"/>
+                <mxCell id="38" value="" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Postgresql_elephant.svg/1200px-Postgresql_elephant.svg.png;" vertex="1" parent="B3TmTwDRUPDQR5a83a3j-9">
+                    <mxGeometry x="48.40999999999997" y="63.00000000000006" width="55.17" height="56.88" as="geometry"/>
                 </mxCell>
                 <mxCell id="B3TmTwDRUPDQR5a83a3j-10" value="" style="group;verticalAlign=top;horizontal=1;shadow=1;" parent="1" vertex="1" connectable="0">
                     <mxGeometry x="615" y="22" width="100.80999999999995" height="97" as="geometry"/>

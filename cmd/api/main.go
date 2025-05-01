@@ -3,18 +3,21 @@ package main
 import (
 	"context"
 	"fmt"
+	"go-trade-bot/app/entities"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/handler"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/middleware"
+	"log"
 	"net"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
+	"gorm.io/gorm"
 )
 
 type Route interface {
@@ -36,6 +39,11 @@ func main() {
 				fx.ParamTags(`group:"routes"`),
 			),
 		),
+		fx.Invoke(func(db *gorm.DB) {
+			if err := Migrate(db); err != nil {
+				log.Fatalf("failed to migrate database: %w", err)
+			}
+		}),
 		fx.Invoke(func(*http.Server) {}),
 	).Run()
 }
@@ -83,5 +91,12 @@ func AsRoute(f any) any {
 		f,
 		fx.As(new(Route)),
 		fx.ResultTags(`group:"routes"`),
+	)
+}
+
+func Migrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&entities.Strategy{},
+		&entities.StrategyExecution{},
 	)
 }

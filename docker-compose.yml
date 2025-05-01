@@ -15,7 +15,7 @@ services:
       - MONGO_HOST=mongodb
     depends_on:
       - redis
-      - mongodb
+      - postgres
 
   worker:
     build:
@@ -31,7 +31,7 @@ services:
       - MONGO_HOST=mongodb
     depends_on:
       - redis
-      - mongodb
+      - postgres
 
   redis:
     image: redis:latest
@@ -41,13 +41,14 @@ services:
     volumes:
       - redis_data:/data
 
-  mongodb:
-    image: mongo:latest
-    container_name: mongodb
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: TradeBot
     ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
+      - "5432:5432"
 
   prometheus:
     image: prom/prometheus:latest

@@ -6,14 +6,12 @@ import (
 	"go-trade-bot/internal/customerror"
 	"net/http"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type StrategyRepository interface {
 	Save(ctx context.Context, symbol entities.Strategy) error
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
-	GetByID(ctx context.Context, id string) (entities.Strategy, error)
+	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 }
 
 type StrategyWorker interface {
@@ -36,7 +34,6 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	if err := u.validateStrategy(strategy); err != nil {
 		return err
 	}
-	strategy.ID = uuid.New()
 	strategy.CreatedAt = time.Now()
 	strategy.UpdatedAt = time.Now()
 
@@ -64,8 +61,8 @@ func (u StrategyUseCase) Enqueue(ctx context.Context) error {
 	return nil
 }
 
-func (u StrategyUseCase) GetByID(ctx context.Context, id string) (entities.Strategy, error) {
-	if id == "" {
+func (u StrategyUseCase) GetByID(ctx context.Context, id uint) (entities.Strategy, error) {
+	if id == 0 {
 		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
 	}
 

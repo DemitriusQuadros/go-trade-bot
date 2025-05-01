@@ -90,6 +90,7 @@ func main() {
 	app := fx.New(
 		modules.ConfigurationModule,
 		modules.MetricsModule,
+		modules.DbModule,
 		fx.Provide(
 			NewRedisClient,
 			NewAsynqServer,
