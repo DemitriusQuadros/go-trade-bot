@@ -14,6 +14,13 @@ const (
 	Volume     = "volume"
 )
 
+type ExecutionStatus string
+
+const (
+	OK    = "ok"
+	Error = "error"
+)
+
 type Strategy struct {
 	ID                    uint `gorm:"primaryKey"`
 	Name                  string
@@ -32,6 +39,8 @@ type StrategyConfiguration struct {
 
 type StrategyExecution struct {
 	ID         uint `gorm:"primaryKey"`
+	Status     ExecutionStatus
+	Message    string
 	StrategyID uint
 	Strategy   Strategy `gorm:"foreignKey:StrategyID"`
 	ExecutedAt time.Time

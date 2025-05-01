@@ -40,6 +40,6 @@ func (w StrategyWorker) EnqueueStrategyTask(strategy entities.Strategy) error {
 	if err != nil {
 		return err
 	}
-	log.Printf(" [*] Successfully enqueued task: %+v", info)
+	log.Printf(" [*] Successfully enqueued task: %+v", info.ID)
 	return nil
 }

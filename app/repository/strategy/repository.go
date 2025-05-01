@@ -32,3 +32,15 @@ func (r StrategyRepository) GetAll(ctx context.Context) ([]entities.Strategy, er
 	err := r.db.WithContext(ctx).Find(&strategies).Error
 	return strategies, err
 }
+
+func (r StrategyRepository) Update(ctx context.Context, strategy entities.Strategy) error {
+	return r.db.WithContext(ctx).Save(&strategy).Error
+}
+
+func (r StrategyRepository) Delete(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&entities.Strategy{}, id).Error
+}
+
+func (r StrategyRepository) SaveExecution(ctx context.Context, execution entities.StrategyExecution) error {
+	return r.db.WithContext(ctx).Create(&execution).Error
+}

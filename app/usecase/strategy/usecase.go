@@ -9,9 +9,10 @@ import (
 )
 
 type StrategyRepository interface {
-	Save(ctx context.Context, symbol entities.Strategy) error
+	Save(ctx context.Context, strategy entities.Strategy) error
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
+	Update(ctx context.Context, strategy entities.Strategy) error
 }
 
 type StrategyWorker interface {
@@ -44,6 +45,19 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy) error {
+	if err := u.validateStrategy(strategy); err != nil {
+		return err
+	}
+	strategy.UpdatedAt = time.Now()
+
+	if err := u.Repository.Update(ctx, strategy); err != nil {
+		return err
+	}
+
 	return nil
 }
 

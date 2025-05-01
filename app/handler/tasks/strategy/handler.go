@@ -9,6 +9,7 @@ import (
 	"go-trade-bot/app/services/algorithm/volume"
 	"go-trade-bot/internal/metrics"
 	"log"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -23,18 +24,24 @@ type IStrategyProcessor interface {
 }
 
 type StrategyProcessor struct {
-	collector *metrics.MetricsCollector
-	worker    StrategyWorker
+	collector  *metrics.MetricsCollector
+	worker     StrategyWorker
+	repository StrategyRepository
 }
 
 type StrategyWorker interface {
 	EnqueueStrategyTask(strategy entities.Strategy) error
 }
 
-func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker) *StrategyProcessor {
+type StrategyRepository interface {
+	SaveExecution(ctx context.Context, execution entities.StrategyExecution) error
+}
+
+func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository) *StrategyProcessor {
 	return &StrategyProcessor{
-		collector: collector,
-		worker:    w,
+		collector:  collector,
+		worker:     w,
+		repository: r,
 	}
 }
 
@@ -45,7 +52,7 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 		return err
 	}
 
-	processStrategy(strategy)
+	err := processStrategy(strategy)
 
 	p.collector.IncrementCounter(total_strategy_task, map[string]string{
 		"strategy": strategy.Name,
@@ -54,10 +61,25 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 	log.Printf("Strategy: %s Executed", strategy.Name)
 
 	p.worker.EnqueueStrategyTask(strategy)
+
+	message := "Strategy executed successfully"
+	status := entities.ExecutionStatus(entities.OK)
+	if err != nil {
+		message = "Error executing strategy: " + err.Error()
+		status = entities.ExecutionStatus(entities.Error)
+	}
+
+	p.repository.SaveExecution(ctx, entities.StrategyExecution{
+		StrategyID: strategy.ID,
+		Status:     status,
+		Message:    message,
+		ExecutedAt: time.Now(),
+		Strategy:   strategy,
+	})
 	return nil
 }
 
-func processStrategy(strategy entities.Strategy) {
+func processStrategy(strategy entities.Strategy) error {
 	var executor IStrategyProcessor
 
 	switch strategy.Algorithm {
@@ -75,4 +97,6 @@ func processStrategy(strategy entities.Strategy) {
 	if err != nil {
 		log.Printf("Error executing strategy %s: %v", strategy.Name, err)
 	}
+
+	return err
 }
