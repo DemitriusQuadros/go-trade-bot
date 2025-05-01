@@ -10,6 +10,8 @@ DB:
   DBNAME: TradeBot
   SSLMODE: disable
 
-
 REDIS:
   ADDR: localhost:6379
+
+PROMETHEUS:
+  ADDRESS: localhost:9090

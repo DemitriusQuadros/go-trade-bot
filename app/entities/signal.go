@@ -2,8 +2,6 @@ package entities
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type StrategyStatus string
@@ -21,16 +19,18 @@ const (
 )
 
 type Signal struct {
-	ID                uuid.UUID
-	Symbol            string
-	StrategyExecution StrategyExecution
-	CreatedAt         time.Time
-	Status            StrategyStatus
-	Orders            []Order
+	ID                  uint `gorm:"primaryKey"`
+	Symbol              string
+	StrategyExecution   StrategyExecution `gorm:"foreignKey:StrategyExecutionID"`
+	StrategyExecutionID uint
+	CreatedAt           time.Time
+	Status              StrategyStatus
+	Orders              []Order `gorm:"foreignKey:SignalID"`
 }
 
 type Order struct {
-	ID             uuid.UUID
+	ID             uint `gorm:"primaryKey"`
+	SignalID       uint
 	Price          float32
 	OrderOperation OrderOperation
 	CreatedAt      time.Time

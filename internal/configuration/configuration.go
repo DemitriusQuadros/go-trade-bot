@@ -8,14 +8,19 @@ import (
 )
 
 type Configuration struct {
-	Broker Broker
-	DB     DB
-	Redis  Redis
+	Broker     Broker
+	DB         DB
+	Redis      Redis
+	Prometheus Prometheus
 }
 
 type Broker struct {
 	ApiKey    string
 	ApiSecret string
+}
+
+type Prometheus struct {
+	Address string
 }
 
 type DB struct {
@@ -81,6 +86,11 @@ func NewConfiguration() *Configuration {
 		log.Fatalf("Invalid redis configuration")
 	}
 
+	prometheus, ok := viper.Get("PROMETHEUS.ADDRESS").(string)
+	if !ok {
+		log.Fatalf("Invalid prometheus address")
+	}
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:    key,
@@ -96,6 +106,9 @@ func NewConfiguration() *Configuration {
 		},
 		Redis: Redis{
 			Addr: redisAddr,
+		},
+		Prometheus: Prometheus{
+			Address: prometheus,
 		},
 	}
 }

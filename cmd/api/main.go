@@ -98,5 +98,7 @@ func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&entities.Strategy{},
 		&entities.StrategyExecution{},
+		&entities.Signal{},
+		&entities.Order{},
 	)
 }

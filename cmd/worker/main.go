@@ -69,8 +69,9 @@ func RegisterHandlers(
 
 func StartMetricsServer(cfg *config.Configuration) {
 	h := asynqmon.New(asynqmon.Options{
-		RootPath:     "/tasks/monitoring",
-		RedisConnOpt: asynq.RedisClientOpt{Addr: cfg.Redis.Addr},
+		RootPath:          "/tasks/monitoring",
+		RedisConnOpt:      asynq.RedisClientOpt{Addr: cfg.Redis.Addr},
+		PrometheusAddress: cfg.Prometheus.Address,
 	})
 
 	r := mux.NewRouter()
