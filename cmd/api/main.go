@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go-trade-bot/app/entities"
+	broker "go-trade-bot/app/handler/web/broker"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
@@ -34,6 +35,7 @@ func main() {
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
+			AsRoute(broker.NewBrokerHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`),

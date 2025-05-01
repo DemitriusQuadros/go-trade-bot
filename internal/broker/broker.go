@@ -12,9 +12,9 @@ type Broker struct {
 	client *binance.Client
 }
 
-func NewBroker(cfg *configuration.Configuration) *Broker {
+func NewBroker(cfg *configuration.Configuration) Broker {
 	client := binance.NewClient(cfg.Broker.ApiKey, cfg.Broker.ApiSecret)
-	return &Broker{
+	return Broker{
 		client: client,
 	}
 }
