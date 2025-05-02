@@ -4,8 +4,10 @@ import (
 	"context"
 	handler "go-trade-bot/app/handler/tasks/strategy"
 	repository "go-trade-bot/app/repository/strategy"
+	usecase "go-trade-bot/app/usecase/signal"
 	tasks "go-trade-bot/app/workers/strategy"
 	"go-trade-bot/cmd/worker/modules"
+	"go-trade-bot/internal/broker"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/middleware"
@@ -47,12 +49,14 @@ func RegisterHandlers(
 	collector *metrics.MetricsCollector,
 	worker tasks.StrategyWorker,
 	repository repository.StrategyRepository,
+	broker broker.Broker,
+	signalUC usecase.SignalUseCase,
 ) {
 	StartMetricsServer(cfg)
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			mux := asynq.NewServeMux()
-			processor := handler.NewStrategyProcessor(collector, worker, repository)
+			processor := handler.NewStrategyProcessor(collector, worker, repository, broker, signalUC)
 
 			mux.Handle(tasks.StrategyTask, middleware.AsynqConfigMiddleware(
 				asynq.HandlerFunc(processor.HandleStrategyTask),
@@ -96,6 +100,8 @@ func main() {
 		modules.DbModule,
 		modules.MetricsModule,
 		modules.StrategyModule,
+		modules.SignalModule,
+		modules.BrokerModule,
 		fx.Provide(
 			NewRedisClient,
 			NewAsynqServer,

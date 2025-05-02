@@ -7,6 +7,7 @@ import (
 	"go-trade-bot/app/services/algorithm/grid"
 	"go-trade-bot/app/services/algorithm/heikenashi"
 	"go-trade-bot/app/services/algorithm/volume"
+	"go-trade-bot/internal/broker"
 	"go-trade-bot/internal/metrics"
 	"log"
 	"time"
@@ -24,9 +25,11 @@ type IStrategyProcessor interface {
 }
 
 type StrategyProcessor struct {
-	collector  *metrics.MetricsCollector
-	worker     StrategyWorker
-	repository StrategyRepository
+	collector     *metrics.MetricsCollector
+	worker        StrategyWorker
+	repository    StrategyRepository
+	broker        broker.Broker
+	signalUseCase SignalUseCase
 }
 
 type StrategyWorker interface {
@@ -37,11 +40,18 @@ type StrategyRepository interface {
 	SaveExecution(ctx context.Context, execution entities.StrategyExecution) error
 }
 
-func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository) *StrategyProcessor {
+type SignalUseCase interface {
+	GenerateBuySignal(symbol string, strategyExecutionID uint, price float32, quantity float32) error
+	GenerateSellSignal(symbol string, strategyExecutionID uint, price float32) error
+}
+
+func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository, b broker.Broker, uc SignalUseCase) *StrategyProcessor {
 	return &StrategyProcessor{
-		collector:  collector,
-		worker:     w,
-		repository: r,
+		collector:     collector,
+		worker:        w,
+		repository:    r,
+		broker:        b,
+		signalUseCase: uc,
 	}
 }
 
@@ -52,7 +62,7 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 		return err
 	}
 
-	err := processStrategy(strategy)
+	err := p.processStrategy(strategy)
 
 	p.collector.IncrementCounter(total_strategy_task, map[string]string{
 		"strategy": strategy.Name,
@@ -79,12 +89,12 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 	return nil
 }
 
-func processStrategy(strategy entities.Strategy) error {
+func (p *StrategyProcessor) processStrategy(strategy entities.Strategy) error {
 	var executor IStrategyProcessor
 
 	switch strategy.Algorithm {
 	case entities.Grid:
-		executor = grid.NewGridProcessor(strategy)
+		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase)
 	case entities.Heikenashi:
 		executor = heikenashi.NewHeikenashiProcessor(strategy)
 	case entities.Volume:

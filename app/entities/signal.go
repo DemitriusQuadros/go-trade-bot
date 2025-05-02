@@ -32,6 +32,7 @@ type Order struct {
 	ID             uint `gorm:"primaryKey"`
 	SignalID       uint
 	Price          float32
+	Quantity       float32
 	OrderOperation OrderOperation
 	CreatedAt      time.Time
 }

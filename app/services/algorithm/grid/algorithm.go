@@ -1,25 +1,102 @@
 package grid
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/broker"
 	"log"
+	"strconv"
 )
 
 type GridProcessor struct {
 	strategy entities.Strategy
+	broker   broker.Broker
+	usecase  SignalUseCase
 }
 
-func NewGridProcessor(s entities.Strategy) GridProcessor {
+type SignalUseCase interface {
+	GenerateBuySignal(symbol string, strategyExecutionID uint, price float32, quantity float32) error
+	GenerateSellSignal(symbol string, strategyExecutionID uint, price float32) error
+}
+
+func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase) GridProcessor {
 	return GridProcessor{
 		strategy: s,
+		broker:   b,
+		usecase:  ss,
 	}
 }
 
 func (p GridProcessor) Execute() error {
-	// Implement the logic to execute the grid strategy
-	// This is a placeholder for the actual implementation
+	for _, symbol := range p.strategy.MonitoredSymbols {
+		if err := p.RunGridAlgorithm(context.Background(), symbol); err != nil {
+			log.Printf("Error executing grid algorithm for symbol %s: %v", symbol, err)
+			continue
+		}
+	}
 	log.Printf("Executing Grid Strategy: %s", p.strategy.Name)
 	return nil
 }
 
-// You can add your grid strategy logic here
+func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) error {
+	klines, err := p.broker.ListKline(ctx, symbol, p.strategy.GetBrokerInterval(), 100)
+	if err != nil {
+		return err
+	}
+
+	if len(klines) == 0 {
+		return nil
+	}
+
+	var config map[string]interface{}
+	err = json.Unmarshal(p.strategy.StrategyConfiguration.Configuration, &config)
+	if err != nil {
+		return err
+	}
+
+	gridLevelsFloat, ok := config["grid_levels"].(float64)
+	if !ok {
+		return fmt.Errorf("configuração inválida: grid_levels")
+	}
+	gridLevels := int(gridLevelsFloat)
+
+	gridSpacingPct, ok := config["grid_spacing_pct"].(float64)
+	if !ok {
+		return fmt.Errorf("configuração inválida: grid_spacing_pct")
+	}
+
+	capitalPerOrder, _ := config["capital_per_order"].(float64)
+	volumeFilter, _ := config["volume_filter"].(float64)
+
+	latestClose, err := strconv.ParseFloat(klines[len(klines)-1].Close, 64)
+	if err != nil {
+		return err
+	}
+	gridSpacing := latestClose * gridSpacingPct / 100
+
+	if volumeFilter > 0 {
+		vol, err := p.broker.Get24hVolume(ctx, symbol)
+		if err == nil && vol < volumeFilter {
+			log.Printf("Volume under minimun (%.2f < %.2f), ignoring symbol %s", vol, volumeFilter, symbol)
+			return nil
+		}
+	}
+
+	gridPrices := make([]float64, gridLevels)
+	for i := 0; i < gridLevels; i++ {
+		gridPrices[i] = latestClose + (float64(i)-float64(gridLevels/2))*gridSpacing
+	}
+
+	for _, price := range gridPrices {
+		if price < latestClose {
+			quantity := (capitalPerOrder / price) * 0.1
+			p.usecase.GenerateBuySignal(symbol, p.strategy.ID, float32(price), float32(quantity))
+		} else {
+			p.usecase.GenerateSellSignal(symbol, p.strategy.ID, float32(price))
+		}
+	}
+
+	return nil
+}

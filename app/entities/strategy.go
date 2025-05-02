@@ -74,3 +74,22 @@ func IsValidCycle(cycle int) bool {
 		return false
 	}
 }
+
+func (s Strategy) GetBrokerInterval() string {
+	switch s.StrategyConfiguration.Cycle {
+	case OneMinute:
+		return "1m"
+	case FiveMinutes:
+		return "5m"
+	case TenMinutes:
+		return "10m"
+	case FifteenMinutes:
+		return "15m"
+	case ThirtyMinutes:
+		return "30m"
+	case OneHour:
+		return "1h"
+	default:
+		return ""
+	}
+}
