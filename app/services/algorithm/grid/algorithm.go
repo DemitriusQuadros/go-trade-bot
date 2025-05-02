@@ -17,8 +17,8 @@ type GridProcessor struct {
 }
 
 type SignalUseCase interface {
-	GenerateBuySignal(symbol string, strategyExecutionID uint, price float32, quantity float32) error
-	GenerateSellSignal(symbol string, strategyExecutionID uint, price float32) error
+	GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error
+	GenerateSellSignal(symbol string, strategyId uint, price float32) error
 }
 
 func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase) GridProcessor {

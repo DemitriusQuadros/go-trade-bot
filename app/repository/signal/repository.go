@@ -20,9 +20,16 @@ func (r SignalRepository) Create(signal entities.Signal) error {
 	return r.db.Create(&signal).Error
 }
 
-func (r SignalRepository) GetOpenSignals(symbol string) (entities.Signal, error) {
+func (r SignalRepository) GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error) {
 	var signals []entities.Signal
-	err := r.db.Where("symbol = ? AND status = ?", symbol, entities.Open).Find(&signals).Error
+	err := r.db.
+		Preload("Orders").
+		Where("symbol = ? AND status = ? AND strategy_id = ?", symbol, entities.Open, strategyId).
+		Find(&signals).Error
+
+	if len(signals) == 0 {
+		return entities.Signal{}, nil
+	}
 	return signals[0], err
 }
 

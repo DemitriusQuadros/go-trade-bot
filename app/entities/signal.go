@@ -19,13 +19,13 @@ const (
 )
 
 type Signal struct {
-	ID                  uint `gorm:"primaryKey"`
-	Symbol              string
-	StrategyExecution   StrategyExecution `gorm:"foreignKey:StrategyExecutionID"`
-	StrategyExecutionID uint
-	CreatedAt           time.Time
-	Status              StrategyStatus
-	Orders              []Order `gorm:"foreignKey:SignalID"`
+	ID         uint `gorm:"primaryKey"`
+	Symbol     string
+	Strategy   Strategy `gorm:"foreignKey:StrategyID"`
+	StrategyID uint
+	CreatedAt  time.Time
+	Status     StrategyStatus
+	Orders     []Order `gorm:"foreignKey:SignalID"`
 }
 
 type Order struct {

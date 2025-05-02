@@ -6,6 +6,7 @@ import (
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/services/algorithm/grid"
 	"go-trade-bot/app/services/algorithm/heikenashi"
+	"go-trade-bot/app/services/algorithm/scalping"
 	"go-trade-bot/app/services/algorithm/volume"
 	"go-trade-bot/internal/broker"
 	"go-trade-bot/internal/metrics"
@@ -41,8 +42,9 @@ type StrategyRepository interface {
 }
 
 type SignalUseCase interface {
-	GenerateBuySignal(symbol string, strategyExecutionID uint, price float32, quantity float32) error
-	GenerateSellSignal(symbol string, strategyExecutionID uint, price float32) error
+	GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error
+	GenerateSellSignal(symbol string, strategyId uint, price float32) error
+	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
 func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository, b broker.Broker, uc SignalUseCase) *StrategyProcessor {
@@ -95,6 +97,8 @@ func (p *StrategyProcessor) processStrategy(strategy entities.Strategy) error {
 	switch strategy.Algorithm {
 	case entities.Grid:
 		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase)
+	case entities.Scalping:
+		executor = scalping.NewScalpingProcessor(strategy, p.broker, p.signalUseCase)
 	case entities.Heikenashi:
 		executor = heikenashi.NewHeikenashiProcessor(strategy)
 	case entities.Volume:

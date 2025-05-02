@@ -12,6 +12,7 @@ const (
 	Grid       = "grid"
 	Heikenashi = "heikenashi"
 	Volume     = "volume"
+	Scalping   = "scalping"
 )
 
 type ExecutionStatus string
@@ -59,7 +60,7 @@ const (
 
 func IsValidAlgorithm(algo string) bool {
 	switch Algorithm(algo) {
-	case Grid, Heikenashi, Volume:
+	case Grid, Heikenashi, Volume, Scalping:
 		return true
 	default:
 		return false

@@ -8,7 +8,7 @@ import (
 
 type SignalRepository interface {
 	Create(signal entities.Signal) error
-	GetOpenSignals(symbol string) (entities.Signal, error)
+	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 	Update(signal entities.Signal) error
 }
 
@@ -22,8 +22,8 @@ func NewSignalUseCase(repository SignalRepository) SignalUseCase {
 	}
 }
 
-func (s SignalUseCase) GenerateBuySignal(symbol string, strategyExecutionID uint, price float32, quantity float32) error {
-	openSignal, err := s.Repository.GetOpenSignals(symbol)
+func (s SignalUseCase) GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error {
+	openSignal, err := s.Repository.GetOpenSignals(symbol, strategyId)
 	if err != nil {
 		return err
 	}
@@ -33,9 +33,9 @@ func (s SignalUseCase) GenerateBuySignal(symbol string, strategyExecutionID uint
 	}
 
 	signal := entities.Signal{
-		Symbol:              symbol,
-		StrategyExecutionID: strategyExecutionID,
-		Status:              entities.Open,
+		Symbol:     symbol,
+		Status:     entities.Open,
+		StrategyID: strategyId,
 		Orders: []entities.Order{
 			{
 				Price:          price,
@@ -53,8 +53,8 @@ func (s SignalUseCase) GenerateBuySignal(symbol string, strategyExecutionID uint
 	return nil
 }
 
-func (s SignalUseCase) GenerateSellSignal(symbol string, strategyExecutionID uint, price float32) error {
-	openSignal, err := s.Repository.GetOpenSignals(symbol)
+func (s SignalUseCase) GenerateSellSignal(symbol string, strategyId uint, price float32) error {
+	openSignal, err := s.Repository.GetOpenSignals(symbol, strategyId)
 	if err != nil {
 		return err
 	}
@@ -78,4 +78,15 @@ func (s SignalUseCase) GenerateSellSignal(symbol string, strategyExecutionID uin
 	}
 
 	return nil
+}
+
+func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error) {
+	openSignal, err := s.Repository.GetOpenSignals(symbol, strategyId)
+	if err != nil {
+		return entities.Signal{}, err
+	}
+	if openSignal.ID == 0 {
+		return entities.Signal{}, nil
+	}
+	return openSignal, nil
 }
