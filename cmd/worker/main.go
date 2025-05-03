@@ -102,6 +102,7 @@ func main() {
 		modules.StrategyModule,
 		modules.SignalModule,
 		modules.BrokerModule,
+		modules.AccountModule,
 		fx.Provide(
 			NewRedisClient,
 			NewAsynqServer,

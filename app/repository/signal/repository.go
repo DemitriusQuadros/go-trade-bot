@@ -34,5 +34,11 @@ func (r SignalRepository) GetOpenSignals(symbol string, strategyId uint) (entiti
 }
 
 func (r SignalRepository) Update(signal entities.Signal) error {
-	return r.db.Save(&signal).Error
+	err := r.db.Save(&signal).Error
+
+	if err != nil {
+		return err
+	}
+	order := signal.Orders[0]
+	return r.db.Save(&order).Error
 }

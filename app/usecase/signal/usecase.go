@@ -116,14 +116,15 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 		openSignal.Orders[0].ExitFee = calculateExitFee(openSignal.Orders[0], e.ExitPrice)
 		openSignal.Orders[0].UpdatedAt = time.Now()
 		openSignal.Orders[0].IsClosing = true
+		profit := (e.ExitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
+		profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
+		openSignal.Orders[0].Profit = profit
+
 		err = s.Repository.Update(openSignal)
 		if err != nil {
 			return err
 		}
-		profit := (e.ExitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
-		profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
-		openSignal.Orders[0].Profit = profit
-		s.AccountUseCase.AddOrder(profit)
+		s.AccountUseCase.AddOrder(openSignal.Orders[0].InvestedAmount + profit)
 	} else {
 		return fmt.Errorf("signal not found for symbol %s and strategy ID %d", e.Symbol, e.StrategyID)
 	}

@@ -47,8 +47,16 @@
                 "color": "red"
               },
               {
-                "color": "yellow",
+                "color": "red",
                 "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "yellow",
+                "value": 50
               },
               {
                 "color": "green",
@@ -56,7 +64,7 @@
               },
               {
                 "color": "blue",
-                "value": 1000
+                "value": 200
               }
             ]
           }
@@ -64,8 +72,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
+        "h": 10,
+        "w": 5,
         "x": 0,
         "y": 0
       },
@@ -96,7 +104,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) -\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'",
+          "rawSql": "select coalesce(sum(o.profit),0)\nfrom orders o ",
           "refId": "A",
           "sql": {
             "columns": [
@@ -130,20 +138,26 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
-          "displayName": "SELL",
           "mappings": [],
-          "max": 3000,
+          "max": -1,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red"
+                "color": "green"
               },
               {
-                "color": "green",
-                "value": 80
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "#EAB839",
+                "value": 50
+              },
+              {
+                "color": "#6ED0E0",
+                "value": 100
               }
             ]
           }
@@ -151,12 +165,293 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
+        "h": 5,
+        "w": 5,
+        "x": 5,
         "y": 0
       },
-      "id": 7,
+      "id": 8,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {
+          "titleSize": 4
+        }
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fekljkp301fcwf"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select amount\nfrom accounts ",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Available Amount",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fekljkp301fcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "id": 9,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fekljkp301fcwf"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select sum (entry_fee + exit_fee)\nfrom orders",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Total Fee",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fekljkp301fcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "#6ED0E0",
+                "value": 0
+              },
+              {
+                "color": "#EAB839",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 75
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 4,
+        "x": 15,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fekljkp301fcwf"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "\nselect coalesce(sum(invested_amount), 0)\nfrom orders o \nwhere o.is_closing = false",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Invested Amount",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fekljkp301fcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "mappings": [],
+          "max": 1000,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 250
+              },
+              {
+                "color": "#EAB839",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 750
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "id": 11,
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
@@ -183,7 +478,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END)  total_sell\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\n",
+          "rawSql": "select coalesce(sum(entry_price * quantity), 0)\nfrom orders o \nwhere o.is_closing = false",
           "refId": "A",
           "sql": {
             "columns": [
@@ -204,7 +499,7 @@
           }
         }
       ],
-      "title": "Total Sell",
+      "title": "Invested With Leverage",
       "type": "gauge"
     },
     {
@@ -217,20 +512,25 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
-          "displayName": "BUY",
+          "fieldMinMax": false,
           "mappings": [],
-          "max": 3000,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red"
+                "color": "green"
               },
               {
-                "color": "green",
-                "value": 80
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "#EAB839",
+                "value": 2
+              },
+              {
+                "color": "#6ED0E0",
+                "value": 3
               }
             ]
           }
@@ -238,15 +538,24 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 0
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 5
       },
-      "id": 8,
+      "id": 7,
       "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
+        "displayMode": "lcd",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 4,
+        "namePlacement": "auto",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -255,9 +564,13 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
+        "showUnfilled": true,
+        "sizing": "manual",
+        "text": {
+          "titleSize": 1,
+          "valueSize": 100
+        },
+        "valueMode": "color"
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -269,7 +582,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\n\n  \n ",
+          "rawSql": "\nselect available_orders\nfrom accounts a ",
           "refId": "A",
           "sql": {
             "columns": [
@@ -290,8 +603,8 @@
           }
         }
       ],
-      "title": "Total Buy",
-      "type": "gauge"
+      "title": "Available Orders (Account)",
+      "type": "bargauge"
     },
     {
       "datasource": {
@@ -310,6 +623,8 @@
             },
             "inspect": false
           },
+          "decimals": 3,
+          "fieldMinMax": false,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -331,10 +646,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 10
       },
       "id": 4,
       "options": {
@@ -345,7 +660,7 @@
           "reducer": [
             "sum"
           ],
-          "show": false
+          "show": true
         },
         "showHeader": true
       },
@@ -359,7 +674,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  st.name,\n  s.created_at,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) -\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  o.entry_price,\n  (o.entry_price * o.quantity) total_entry,\n  o.quantity,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -392,7 +707,6 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "fixedColor": "green",
             "mode": "thresholds"
           },
           "custom": {
@@ -402,15 +716,25 @@
             },
             "inspect": false
           },
-          "decimals": 2,
+          "decimals": 3,
           "mappings": [],
-          "max": 1000,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue"
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": -10
+              },
+              {
+                "color": "#EAB839",
+                "value": 0.5
+              },
+              {
+                "color": "#6ED0E0",
+                "value": 1
               }
             ]
           }
@@ -418,21 +742,21 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 7,
         "w": 24,
         "x": 0,
         "y": 16
       },
-      "id": 5,
+      "id": 12,
       "options": {
         "cellHeight": "sm",
         "footer": {
           "countRows": false,
-          "fields": "",
+          "fields": [],
           "reducer": [
             "sum"
           ],
-          "show": false
+          "show": true
         },
         "showHeader": true
       },
@@ -446,7 +770,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  s.created_at,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  o.entry_price,\n  o.exit_price, \n  o.quantity,\n  (o.entry_price * o.quantity) total_entry,\n  (o.exit_price * o.quantity) total_exit,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage,\n  o.profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -467,7 +791,7 @@
           }
         }
       ],
-      "title": "Open signals",
+      "title": "Closed Signals",
       "type": "table"
     },
     {
@@ -521,7 +845,7 @@
         "h": 9,
         "w": 9,
         "x": 0,
-        "y": 22
+        "y": 23
       },
       "id": 2,
       "options": {
@@ -556,7 +880,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(se.id), s.name strategy\nFROM strategy_executions se \njoin strategies s on s.id = se.strategy_id\nWHERE   $__timeFilter(se.executed_at)\nGROUP BY s.name\nLIMIT 50 ",
+          "rawSql": "SELECT COUNT(se.id), s.name strategy\nFROM strategy_executions se \njoin strategies s on s.id = se.strategy_id\nWHERE   $__timeFilter(se.executed_at)\nGROUP BY s.name\n",
           "refId": "A",
           "sql": {
             "columns": [
@@ -625,7 +949,7 @@
         "h": 9,
         "w": 15,
         "x": 9,
-        "y": 22
+        "y": 23
       },
       "id": 3,
       "options": {
@@ -726,7 +1050,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 32
       },
       "id": 1,
       "options": {
@@ -789,5 +1113,5 @@
   "timezone": "browser",
   "title": "TradeBot Status Page",
   "uid": "aekljuch862v4d",
-  "version": 31
+  "version": 54
 }

@@ -39,14 +39,14 @@ func (a *AccountUseCase) DeductOrder(entryPrice float32) error {
 	return a.Repository.UpdateAccount(account)
 }
 
-func (a *AccountUseCase) AddOrder(exitPrice float32) error {
+func (a *AccountUseCase) AddOrder(profit float32) error {
 	account, err := a.Repository.GetAccountByID(1)
 	if err != nil {
 		return err
 	}
 
 	account.AvailableOrders++
-	account.Amount += exitPrice
+	account.Amount += profit
 	account.UpdatedAt = time.Now()
 	return a.Repository.UpdateAccount(account)
 }
