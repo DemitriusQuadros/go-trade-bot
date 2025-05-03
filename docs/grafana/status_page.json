@@ -41,14 +41,22 @@
           "max": 1000,
           "min": 0,
           "thresholds": {
-            "mode": "percentage",
+            "mode": "absolute",
             "steps": [
               {
                 "color": "red"
               },
               {
+                "color": "yellow",
+                "value": 0
+              },
+              {
                 "color": "green",
-                "value": 80
+                "value": 100
+              },
+              {
+                "color": "blue",
+                "value": 1000
               }
             ]
           }
@@ -351,7 +359,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  st.name,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) -\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  st.name,\n  s.created_at,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) -\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -438,7 +446,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  s.created_at,\n  SUM(CASE WHEN o.order_operation = 'sell' THEN o.price * o.quantity ELSE 0 END) AS total_sell,\n  SUM(CASE WHEN o.order_operation = 'buy' THEN o.price * o.quantity ELSE 0 END) AS total_buy\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\nGROUP BY\n  s.id, s.symbol, s.status, st.name\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -774,12 +782,12 @@
     "list": []
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "TradeBot Status Page",
   "uid": "aekljuch862v4d",
-  "version": 28
+  "version": 31
 }

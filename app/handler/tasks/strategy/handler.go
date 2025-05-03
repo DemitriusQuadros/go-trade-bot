@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/services/algorithm/grid"
-	"go-trade-bot/app/services/algorithm/heikenashi"
 	"go-trade-bot/app/services/algorithm/scalping"
 	"go-trade-bot/app/services/algorithm/volume"
 	"go-trade-bot/internal/broker"
@@ -99,8 +98,6 @@ func (p *StrategyProcessor) processStrategy(strategy entities.Strategy) error {
 		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase)
 	case entities.Scalping:
 		executor = scalping.NewScalpingProcessor(strategy, p.broker, p.signalUseCase)
-	case entities.Heikenashi:
-		executor = heikenashi.NewHeikenashiProcessor(strategy)
 	case entities.Volume:
 		executor = volume.NewVolumeProcessor(strategy)
 	default:

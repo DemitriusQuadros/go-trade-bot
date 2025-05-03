@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -22,11 +21,11 @@ func TestStrategyUseCase_GetAll(t *testing.T) {
 	ctx := context.Background()
 	strategies := []entities.Strategy{
 		{
-			ID:               uuid.New(),
+			ID:               1,
 			Name:             "Test Strategy",
 			Description:      "A test strategy",
 			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-			Algorithm:        entities.Heikenashi,
+			Algorithm:        entities.Grid,
 			StrategyConfiguration: entities.StrategyConfiguration{
 				Cycle: 10,
 			},
@@ -64,11 +63,11 @@ func TestStrategyUseCase_Enqueue(t *testing.T) {
 
 	ctx := context.Background()
 	strategy := entities.Strategy{
-		ID:               uuid.New(),
+		ID:               1,
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Heikenashi,
+		Algorithm:        entities.Grid,
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
@@ -103,11 +102,11 @@ func TestStrategyUseCase_Save(t *testing.T) {
 
 	ctx := context.Background()
 	strategy := entities.Strategy{
-		ID:               uuid.New(),
+		ID:               1,
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Heikenashi,
+		Algorithm:        entities.Grid,
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
