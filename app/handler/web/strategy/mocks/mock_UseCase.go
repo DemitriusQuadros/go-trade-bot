@@ -62,12 +62,58 @@ func (_m *UseCase) GetAll(ctx context.Context) ([]entities.Strategy, error) {
 	return r0, r1
 }
 
+// GetByID provides a mock function with given fields: ctx, id
+func (_m *UseCase) GetByID(ctx context.Context, id uint) (entities.Strategy, error) {
+	ret := _m.Called(ctx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetByID")
+	}
+
+	var r0 entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (entities.Strategy, error)); ok {
+		return rf(ctx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) entities.Strategy); ok {
+		r0 = rf(ctx, id)
+	} else {
+		r0 = ret.Get(0).(entities.Strategy)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // Save provides a mock function with given fields: ctx, strategy
 func (_m *UseCase) Save(ctx context.Context, strategy entities.Strategy) error {
 	ret := _m.Called(ctx, strategy)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Save")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) error); ok {
+		r0 = rf(ctx, strategy)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// Update provides a mock function with given fields: ctx, strategy
+func (_m *UseCase) Update(ctx context.Context, strategy entities.Strategy) error {
+	ret := _m.Called(ctx, strategy)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Update")
 	}
 
 	var r0 error

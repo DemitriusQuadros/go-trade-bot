@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go-trade-bot/app/entities"
+	account "go-trade-bot/app/handler/web/account"
 	broker "go-trade-bot/app/handler/web/broker"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/cmd/api/modules"
@@ -32,10 +33,12 @@ func main() {
 		modules.BrokerModule,
 		modules.StrategyModule,
 		modules.MetricsModule,
+		modules.AccountModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
 			AsRoute(broker.NewBrokerHandler),
+			AsRoute(account.NewAccountHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`),
@@ -102,5 +105,6 @@ func Migrate(db *gorm.DB) error {
 		&entities.StrategyExecution{},
 		&entities.Signal{},
 		&entities.Order{},
+		&entities.Account{},
 	)
 }

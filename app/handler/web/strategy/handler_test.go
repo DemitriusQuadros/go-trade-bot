@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"gorm.io/datatypes"
 )
 
 func TestStrategyHandler_Post(t *testing.T) {
@@ -19,7 +20,12 @@ func TestStrategyHandler_Post(t *testing.T) {
 	h := handler.NewStrategyHandler(mockUseCase)
 
 	dto := handler.StrategyDto{
-		Name: "Test Strategy",
+		Name:             "Test Strategy",
+		Description:      "Test Description",
+		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+		Algorithm:        "grid",
+		Cycle:            5,
+		Configuration:    json.RawMessage(`{"param1":"value1","param2":"value2"}`),
 	}
 
 	body, err := json.Marshal(dto)
@@ -84,8 +90,16 @@ func TestStrategyHandler_GetAll(t *testing.T) {
 	h := handler.NewStrategyHandler(mockUseCase)
 
 	strategies := []entities.Strategy{
-		{Name: "Test Strategy 1"},
-		{Name: "Test Strategy 2"},
+		{
+			Name:             "Test Strategy 1",
+			Description:      "Test Description 1",
+			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+			Algorithm:        "grid",
+			StrategyConfiguration: entities.StrategyConfiguration{
+				Cycle:         entities.Cycle(5),
+				Configuration: datatypes.JSON([]byte(`{"param1":"value1","param2":"value2"}`)),
+			},
+		},
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "/strategy", nil)

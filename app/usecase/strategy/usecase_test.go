@@ -156,3 +156,89 @@ func TestStrategyUseCase_Save(t *testing.T) {
 		mockWorker.AssertExpectations(t)
 	})
 }
+func TestStrategyUseCase_GetByID(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+
+	ctx := context.Background()
+	strategy := entities.Strategy{
+		ID:               1,
+		Name:             "Test Strategy",
+		Description:      "A test strategy",
+		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+		Algorithm:        entities.Grid,
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: 10,
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	t.Run("should return strategy by ID", func(t *testing.T) {
+		mockRepo.On("GetByID", ctx, uint(1)).Return(strategy, nil).Once()
+
+		result, err := strategyUC.GetByID(ctx, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, strategy, result)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("should return error when repository fails", func(t *testing.T) {
+		mockRepo.On("GetByID", ctx, uint(1)).Return(entities.Strategy{}, errors.New("database error")).Once()
+
+		result, err := strategyUC.GetByID(ctx, 1)
+		assert.Error(t, err)
+		assert.Equal(t, entities.Strategy{}, result)
+		assert.Contains(t, err.Error(), "database error")
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func TestStrategyUseCase_Update(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+
+	ctx := context.Background()
+	strategy := entities.Strategy{
+		ID:               1,
+		Name:             "Test Strategy",
+		Description:      "A test strategy",
+		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
+		Algorithm:        entities.Grid,
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: 10,
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	t.Run("should update strategy successfully", func(t *testing.T) {
+		mockRepo.On("Update", ctx, mock.AnythingOfType("entities.Strategy")).Return(nil).Once()
+
+		err := strategyUC.Update(ctx, strategy)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("should return error when strategy name is empty", func(t *testing.T) {
+		invalidStrategy := strategy
+		invalidStrategy.Name = ""
+
+		err := strategyUC.Update(ctx, invalidStrategy)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Strategy has to have a name")
+	})
+
+	t.Run("should return error when repository fails", func(t *testing.T) {
+		mockRepo.On("Update", ctx, mock.AnythingOfType("entities.Strategy")).Return(errors.New("database error")).Once()
+
+		err := strategyUC.Update(ctx, strategy)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "database error")
+
+		mockRepo.AssertExpectations(t)
+	})
+}

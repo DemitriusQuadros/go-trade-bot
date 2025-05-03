@@ -11,11 +11,11 @@ const (
 	Closed StrategyStatus = "closed"
 )
 
-type OrderOperation string
+type MarginType string
 
 const (
-	Buy  OrderOperation = "buy"
-	Sell OrderOperation = "sell"
+	Isolated MarginType = "isolated"
+	Cross    MarginType = "cross"
 )
 
 type Signal struct {
@@ -24,15 +24,25 @@ type Signal struct {
 	Strategy   Strategy `gorm:"foreignKey:StrategyID"`
 	StrategyID uint
 	CreatedAt  time.Time
-	Status     StrategyStatus
-	Orders     []Order `gorm:"foreignKey:SignalID"`
+	UpdatedAt  time.Time
+	Status     StrategyStatus `gorm:"type:varchar(10);not null"`
+	Orders     []Order        `gorm:"foreignKey:SignalID"`
 }
 
 type Order struct {
-	ID             uint `gorm:"primaryKey"`
-	SignalID       uint
-	Price          float32
-	Quantity       float32
-	OrderOperation OrderOperation
+	ID             uint       `gorm:"primaryKey"`
+	SignalID       uint       `gorm:"not null"`
+	BrokerOrderID  string     `gorm:"type:varchar(50);"`
+	EntryPrice     float32    `gorm:"not null"`
+	ExitPrice      float32    `gorm:"not null"`
+	Quantity       float32    `gorm:"not null"`
+	InvestedAmount float32    `gorm:"not null"`
+	MarginType     MarginType `gorm:"type:varchar(10);not null"`
+	EntryFee       float32    `gorm:"not null"`
+	ExitFee        float32    `gorm:"not null"`
+	Leverage       float32    `gorm:"not null"`
+	ExecutedQty    float32    `gorm:"not null"`
+	IsClosing      bool       `gorm:"default:false"`
 	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }

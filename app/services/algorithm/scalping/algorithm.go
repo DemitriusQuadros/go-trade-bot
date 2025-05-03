@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go-trade-bot/app/entities"
+	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
 	"log"
 	"strconv"
@@ -17,8 +18,8 @@ type ScalpingProcessor struct {
 }
 
 type SignalUseCase interface {
-	GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error
-	GenerateSellSignal(symbol string, strategyId uint, price float32) error
+	GenerateBuySignal(e usecase.EntrySignal) error
+	GenerateSellSignal(e usecase.ExitSignal) error
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
@@ -77,12 +78,18 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 		if err != nil {
 			return fmt.Errorf("failed to parse ticker price for symbol %s: %v", symbol, err)
 		}
-		entryPrice := openSignal.Orders[0].Price
+		entryPrice := openSignal.Orders[0].EntryPrice
 
 		pnl := (currentPrice - float64(entryPrice)) / float64(entryPrice) * 100
 
 		if pnl >= takeProfitPct || pnl <= -stopLossPct {
-			err := p.usecase.GenerateSellSignal(symbol, p.strategy.ID, float32(currentPrice))
+			exit := usecase.ExitSignal{
+				Symbol:     symbol,
+				StrategyID: p.strategy.ID,
+				ExitPrice:  float32(currentPrice),
+			}
+
+			err := p.usecase.GenerateSellSignal(exit)
 			if err != nil {
 				return err
 			}
@@ -102,8 +109,16 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 	}
 
 	if latestClose > prevClose {
-		quantity := float32((positionSizeUSDT * leverage) / latestClose)
-		p.usecase.GenerateBuySignal(symbol, p.strategy.ID, float32(latestClose), quantity)
+		entry := usecase.EntrySignal{
+			Symbol:         symbol,
+			StrategyID:     p.strategy.ID,
+			EntryPrice:     float32(latestClose),
+			InvestedAmount: float32(positionSizeUSDT),
+			Leverage:       float32(leverage),
+			MarginType:     entities.MarginType(entities.Isolated),
+		}
+
+		p.usecase.GenerateBuySignal(entry)
 	}
 
 	return nil

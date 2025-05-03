@@ -7,6 +7,7 @@ import (
 	"go-trade-bot/app/services/algorithm/grid"
 	"go-trade-bot/app/services/algorithm/scalping"
 	"go-trade-bot/app/services/algorithm/volume"
+	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
 	"go-trade-bot/internal/metrics"
 	"log"
@@ -41,8 +42,8 @@ type StrategyRepository interface {
 }
 
 type SignalUseCase interface {
-	GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error
-	GenerateSellSignal(symbol string, strategyId uint, price float32) error
+	GenerateBuySignal(e usecase.EntrySignal) error
+	GenerateSellSignal(e usecase.ExitSignal) error
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 

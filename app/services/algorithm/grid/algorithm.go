@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go-trade-bot/app/entities"
+	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
 	"log"
 	"strconv"
@@ -17,8 +18,9 @@ type GridProcessor struct {
 }
 
 type SignalUseCase interface {
-	GenerateBuySignal(symbol string, strategyId uint, price float32, quantity float32) error
-	GenerateSellSignal(symbol string, strategyId uint, price float32) error
+	GenerateBuySignal(e usecase.EntrySignal) error
+	GenerateSellSignal(e usecase.ExitSignal) error
+	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
 func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase) GridProcessor {
@@ -91,10 +93,23 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 
 	for _, price := range gridPrices {
 		if price < latestClose {
-			quantity := (capitalPerOrder / price) * 0.1
-			p.usecase.GenerateBuySignal(symbol, p.strategy.ID, float32(price), float32(quantity))
+			entry := usecase.EntrySignal{
+				Symbol:         symbol,
+				StrategyID:     p.strategy.ID,
+				EntryPrice:     float32(price),
+				Leverage:       0,
+				InvestedAmount: float32(capitalPerOrder),
+				MarginType:     entities.MarginType(entities.Isolated),
+			}
+
+			p.usecase.GenerateBuySignal(entry)
 		} else {
-			p.usecase.GenerateSellSignal(symbol, p.strategy.ID, float32(price))
+			exit := usecase.ExitSignal{
+				Symbol:     symbol,
+				StrategyID: p.strategy.ID,
+				ExitPrice:  float32(price),
+			}
+			p.usecase.GenerateSellSignal(exit)
 		}
 	}
 
