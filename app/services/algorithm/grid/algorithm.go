@@ -69,7 +69,6 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 		return fmt.Errorf("configuração inválida: grid_spacing_pct")
 	}
 
-	capitalPerOrder, _ := config["capital_per_order"].(float64)
 	volumeFilter, _ := config["volume_filter"].(float64)
 
 	latestClose, err := strconv.ParseFloat(klines[len(klines)-1].Close, 64)
@@ -94,12 +93,11 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 	for _, price := range gridPrices {
 		if price < latestClose {
 			entry := usecase.EntrySignal{
-				Symbol:         symbol,
-				StrategyID:     p.strategy.ID,
-				EntryPrice:     float32(price),
-				Leverage:       0,
-				InvestedAmount: float32(capitalPerOrder),
-				MarginType:     entities.MarginType(entities.Isolated),
+				Symbol:     symbol,
+				StrategyID: p.strategy.ID,
+				EntryPrice: float32(price),
+				Leverage:   0,
+				MarginType: entities.MarginType(entities.Isolated),
 			}
 
 			p.usecase.GenerateBuySignal(entry)

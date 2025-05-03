@@ -43,6 +43,7 @@ type Order struct {
 	Leverage       float32    `gorm:"not null"`
 	ExecutedQty    float32    `gorm:"not null"`
 	IsClosing      bool       `gorm:"default:false"`
+	Profit         float32    `gorm:"not null"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

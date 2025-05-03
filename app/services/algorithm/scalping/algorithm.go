@@ -59,7 +59,6 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 
 	takeProfitPct, _ := config["take_profit_pct"].(float64)
 	stopLossPct, _ := config["stop_loss_pct"].(float64)
-	positionSizeUSDT, _ := config["max_position_size_usdt"].(float64)
 	leverage, _ := config["leverage"].(float64)
 
 	openSignal, err := p.usecase.GetOpenSignal(symbol, p.strategy.ID)
@@ -110,12 +109,11 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 
 	if latestClose > prevClose {
 		entry := usecase.EntrySignal{
-			Symbol:         symbol,
-			StrategyID:     p.strategy.ID,
-			EntryPrice:     float32(latestClose),
-			InvestedAmount: float32(positionSizeUSDT),
-			Leverage:       float32(leverage),
-			MarginType:     entities.MarginType(entities.Isolated),
+			Symbol:     symbol,
+			StrategyID: p.strategy.ID,
+			EntryPrice: float32(latestClose),
+			Leverage:   float32(leverage),
+			MarginType: entities.MarginType(entities.Isolated),
 		}
 
 		p.usecase.GenerateBuySignal(entry)

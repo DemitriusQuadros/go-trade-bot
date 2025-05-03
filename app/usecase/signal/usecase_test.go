@@ -15,18 +15,20 @@ import (
 
 func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 	mockRepo := new(mocks.SignalRepository)
-	signalUC := usecase.NewSignalUseCase(mockRepo)
+	mockAccountUseCase := new(mocks.AccountUseCase)
+	signalUC := usecase.NewSignalUseCase(mockRepo, mockAccountUseCase)
 
 	t.Run("should create a buy signal", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			Leverage:       2,
-			InvestedAmount: 1000,
-			MarginType:     entities.Isolated,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
+			Leverage:   2,
+			MarginType: entities.Isolated,
 		}
-
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+		mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
+		mockAccountUseCase.On("DeductOrder", float32(1000)).Return(nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, nil).Once()
 		mockRepo.On("Create", mock.Anything).Return(nil).Once()
 
@@ -38,12 +40,11 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 
 	t.Run("should not create a buy signal if one already exists", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			Leverage:       2,
-			InvestedAmount: 1000,
-			MarginType:     entities.Isolated,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
+			Leverage:   2,
+			MarginType: entities.Isolated,
 		}
 
 		existingSignal := entities.Signal{
@@ -54,7 +55,7 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),
 		}
-
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(existingSignal, nil).Once()
 
 		err := signalUC.GenerateBuySignal(entrySignal)
@@ -65,13 +66,13 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 
 	t.Run("should return error if GetOpenSignals fails", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			Leverage:       2,
-			InvestedAmount: 1000,
-			MarginType:     entities.Isolated,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
+			Leverage:   2,
+			MarginType: entities.Isolated,
 		}
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, errors.New("database error")).Once()
 		err := signalUC.GenerateBuySignal(entrySignal)
 		assert.Error(t, err)
@@ -80,14 +81,14 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 	})
 	t.Run("should return error if Create fails", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			Leverage:       2,
-			InvestedAmount: 1000,
-			MarginType:     entities.Isolated,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
+			Leverage:   2,
+			MarginType: entities.Isolated,
 		}
-
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+		mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, nil).Once()
 		mockRepo.On("Create", mock.Anything).Return(errors.New("database error")).Once()
 
@@ -99,13 +100,14 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 	})
 	t.Run("should create a buy signal with default leverage", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			InvestedAmount: 1000,
-			MarginType:     entities.Isolated,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
+			MarginType: entities.Isolated,
 		}
-
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+		mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
+		mockAccountUseCase.On("DeductOrder", float32(1000)).Return(nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, nil).Once()
 		mockRepo.On("Create", mock.Anything).Return(nil).Once()
 
@@ -116,12 +118,13 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 	})
 	t.Run("should create a buy signal with default leverage and margin type", func(t *testing.T) {
 		entrySignal := usecase.EntrySignal{
-			Symbol:         "BTCUSDT",
-			StrategyID:     1,
-			EntryPrice:     50000,
-			InvestedAmount: 1000,
+			Symbol:     "BTCUSDT",
+			StrategyID: 1,
+			EntryPrice: 50000,
 		}
-
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+		mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
+		mockAccountUseCase.On("DeductOrder", float32(1000)).Return(nil).Once()
 		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, nil).Once()
 		mockRepo.On("Create", mock.Anything).Return(nil).Once()
 
@@ -134,7 +137,8 @@ func TestSignalUseCase_GenerateBuySignal(t *testing.T) {
 
 func TestSignalUseCase_GenerateSellSignal(t *testing.T) {
 	mockRepo := new(mocks.SignalRepository)
-	signalUC := usecase.NewSignalUseCase(mockRepo)
+	mockAccountUseCase := new(mocks.AccountUseCase)
+	signalUC := usecase.NewSignalUseCase(mockRepo, mockAccountUseCase)
 
 	t.Run("should create a sell signal", func(t *testing.T) {
 		exitSignal := usecase.ExitSignal{
@@ -152,22 +156,21 @@ func TestSignalUseCase_GenerateSellSignal(t *testing.T) {
 			UpdatedAt:  time.Now(),
 			Orders: []entities.Order{
 				{
-					EntryPrice:     50000,
-					ExitPrice:      0,
-					Quantity:       0.02,
-					InvestedAmount: 1000,
-					MarginType:     entities.Isolated,
-					EntryFee:       0.1,
-					ExitFee:        0,
-					Leverage:       1,
-					ExecutedQty:    0,
-					IsClosing:      false,
-					CreatedAt:      time.Now(),
-					UpdatedAt:      time.Now(),
+					EntryPrice:  50000,
+					ExitPrice:   50001,
+					Quantity:    0.02,
+					MarginType:  entities.Isolated,
+					EntryFee:    0.1,
+					ExitFee:     0,
+					Leverage:    1,
+					ExecutedQty: 0,
+					IsClosing:   false,
+					CreatedAt:   time.Now(),
+					UpdatedAt:   time.Now(),
 				},
 			},
 		}
-
+		mockAccountUseCase.On("AddOrder", float32(198.7)).Return(nil).Once()
 		mockRepo.On("GetOpenSignals", exitSignal.Symbol, exitSignal.StrategyID).Return(openSignal, nil).Once()
 		mockRepo.On("Update", mock.Anything).Return(nil).Once()
 

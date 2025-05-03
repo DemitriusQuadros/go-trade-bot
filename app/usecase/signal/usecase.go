@@ -7,12 +7,11 @@ import (
 )
 
 type EntrySignal struct {
-	Symbol         string
-	StrategyID     uint
-	EntryPrice     float32
-	Leverage       float32
-	InvestedAmount float32
-	MarginType     entities.MarginType
+	Symbol     string
+	StrategyID uint
+	EntryPrice float32
+	Leverage   float32
+	MarginType entities.MarginType
 }
 
 type ExitSignal struct {
@@ -26,18 +25,35 @@ type SignalRepository interface {
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 	Update(signal entities.Signal) error
 }
-
-type SignalUseCase struct {
-	Repository SignalRepository
+type AccountUseCase interface {
+	DeductOrder(entryPrice float32) error
+	AddOrder(exitPrice float32) error
+	GetDisponibleAmout() (float32, error)
+	CanOpenOrder() (bool, error)
 }
 
-func NewSignalUseCase(repository SignalRepository) SignalUseCase {
+type SignalUseCase struct {
+	Repository     SignalRepository
+	AccountUseCase AccountUseCase
+}
+
+func NewSignalUseCase(repository SignalRepository, ac AccountUseCase) SignalUseCase {
 	return SignalUseCase{
-		Repository: repository,
+		Repository:     repository,
+		AccountUseCase: ac,
 	}
 }
 
 func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
+	canOpen, err := s.AccountUseCase.CanOpenOrder()
+	if err != nil {
+		return fmt.Errorf("failed to check if order can be opened: %w", err)
+	}
+
+	if !canOpen {
+		return nil
+	}
+
 	openSignal, err := s.Repository.GetOpenSignals(e.Symbol, e.StrategyID)
 	if err != nil {
 		return err
@@ -51,7 +67,8 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		e.Leverage = 1
 	}
 
-	investedWithLeverage := e.InvestedAmount * e.Leverage
+	investedAmount, _ := s.AccountUseCase.GetDisponibleAmout()
+	investedWithLeverage := investedAmount * e.Leverage
 
 	signal := entities.Signal{
 		Symbol:     e.Symbol,
@@ -64,7 +81,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 				EntryPrice:     e.EntryPrice,
 				ExitPrice:      0,
 				Quantity:       investedWithLeverage / e.EntryPrice,
-				InvestedAmount: e.InvestedAmount,
+				InvestedAmount: investedAmount,
 				MarginType:     e.MarginType,
 				EntryFee:       calculateEntryFee(investedWithLeverage),
 				ExitFee:        0,
@@ -81,6 +98,9 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 	if err != nil {
 		return err
 	}
+
+	s.AccountUseCase.DeductOrder(investedAmount)
+
 	return nil
 }
 
@@ -95,10 +115,15 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 		openSignal.Orders[0].ExitPrice = e.ExitPrice
 		openSignal.Orders[0].ExitFee = calculateExitFee(openSignal.Orders[0], e.ExitPrice)
 		openSignal.Orders[0].UpdatedAt = time.Now()
+		openSignal.Orders[0].IsClosing = true
 		err = s.Repository.Update(openSignal)
 		if err != nil {
 			return err
 		}
+		profit := (e.ExitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
+		profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
+		openSignal.Orders[0].Profit = profit
+		s.AccountUseCase.AddOrder(profit)
 	} else {
 		return fmt.Errorf("signal not found for symbol %s and strategy ID %d", e.Symbol, e.StrategyID)
 	}
