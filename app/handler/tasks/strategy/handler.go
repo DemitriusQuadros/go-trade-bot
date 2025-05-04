@@ -39,6 +39,7 @@ type StrategyWorker interface {
 
 type StrategyRepository interface {
 	SaveExecution(ctx context.Context, execution entities.StrategyExecution) error
+	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 }
 
 type SignalUseCase interface {
@@ -64,30 +65,38 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 		return err
 	}
 
-	err := p.processStrategy(strategy)
-
-	p.collector.IncrementCounter(total_strategy_task, map[string]string{
-		"strategy": strategy.Name,
-	})
-
-	log.Printf("Strategy: %s Executed", strategy.Name)
-
-	p.worker.EnqueueStrategyTask(strategy)
-
-	message := "Strategy executed successfully"
-	status := entities.ExecutionStatus(entities.OK)
+	nStrategy, err := p.repository.GetByID(ctx, strategy.ID)
 	if err != nil {
-		message = "Error executing strategy: " + err.Error()
-		status = entities.ExecutionStatus(entities.Error)
+		log.Printf("Error getting strategy by ID: %v", err)
+		return nil
 	}
 
-	p.repository.SaveExecution(ctx, entities.StrategyExecution{
-		StrategyID: strategy.ID,
-		Status:     status,
-		Message:    message,
-		ExecutedAt: time.Now(),
-		Strategy:   strategy,
-	})
+	if nStrategy.Status != entities.Disabled {
+		err := p.processStrategy(nStrategy)
+
+		p.collector.IncrementCounter(total_strategy_task, map[string]string{
+			"strategy": strategy.Name,
+		})
+
+		log.Printf("Strategy: %s Executed", strategy.Name)
+
+		p.worker.EnqueueStrategyTask(nStrategy)
+
+		message := "Strategy executed successfully"
+		status := entities.ExecutionStatus(entities.OK)
+		if err != nil {
+			message = "Error executing strategy: " + err.Error()
+			status = entities.ExecutionStatus(entities.Error)
+		}
+		p.repository.SaveExecution(ctx, entities.StrategyExecution{
+			StrategyID: strategy.ID,
+			Status:     status,
+			Message:    message,
+			ExecutedAt: time.Now(),
+			Strategy:   strategy,
+		})
+	}
+
 	return nil
 }
 

@@ -4,11 +4,11 @@ import (
 	"time"
 )
 
-type StrategyStatus string
+type SignalStatus string
 
 const (
-	Open   StrategyStatus = "open"
-	Closed StrategyStatus = "closed"
+	Open   SignalStatus = "open"
+	Closed SignalStatus = "closed"
 )
 
 type MarginType string
@@ -25,8 +25,8 @@ type Signal struct {
 	StrategyID uint
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
-	Status     StrategyStatus `gorm:"type:varchar(10);not null"`
-	Orders     []Order        `gorm:"foreignKey:SignalID"`
+	Status     SignalStatus `gorm:"type:varchar(10);not null"`
+	Orders     []Order      `gorm:"foreignKey:SignalID"`
 }
 
 type Order struct {

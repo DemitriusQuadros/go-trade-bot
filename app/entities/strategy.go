@@ -9,10 +9,9 @@ import (
 type Algorithm string
 
 const (
-	Grid       = "grid"
-	Heikenashi = "heikenashi"
-	Volume     = "volume"
-	Scalping   = "scalping"
+	Grid     = "grid"
+	Volume   = "volume"
+	Scalping = "scalping"
 )
 
 type ExecutionStatus string
@@ -22,11 +21,20 @@ const (
 	Error = "error"
 )
 
+type StrategyStatus string
+
+const (
+	Productive = "productive"
+	Testing    = "testing"
+	Disabled   = "disabled"
+)
+
 type Strategy struct {
 	ID                    uint `gorm:"primaryKey"`
 	Name                  string
 	Description           string
 	Algorithm             Algorithm
+	Status                StrategyStatus
 	MonitoredSymbols      datatypes.JSONSlice[string] `gorm:"type:jsonb"`
 	StrategyConfiguration StrategyConfiguration       `gorm:"embedded"`
 	CreatedAt             time.Time
@@ -60,7 +68,7 @@ const (
 
 func IsValidAlgorithm(algo string) bool {
 	switch Algorithm(algo) {
-	case Grid, Heikenashi, Volume, Scalping:
+	case Grid, Volume, Scalping:
 		return true
 	default:
 		return false
