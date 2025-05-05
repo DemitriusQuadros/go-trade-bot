@@ -1,0 +1,17 @@
+{
+    "name": "Scalping Strategy",
+    "description": "Execute scalping strategy for selected symbols with RSI and volume analysis",
+    "algorithm": "scalping",
+    "status": "testing",
+    "monitored_symbols": [
+        "XRPUSDT",
+        "ADAUSDT",
+        "SOLUSDT"
+    ],
+    "cycle": 1,
+    "configuration": {
+        "leverage": 10,
+        "stop_loss_pct": 0.5,
+        "take_profit_pct": 1.2
+    }
+}

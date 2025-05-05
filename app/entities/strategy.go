@@ -9,9 +9,9 @@ import (
 type Algorithm string
 
 const (
-	Grid     = "grid"
-	Volume   = "volume"
-	Scalping = "scalping"
+	Grid      = "grid"
+	Scalping  = "scalping"
+	Bollinger = "bollinger"
 )
 
 type ExecutionStatus string
@@ -68,7 +68,7 @@ const (
 
 func IsValidAlgorithm(algo string) bool {
 	switch Algorithm(algo) {
-	case Grid, Volume, Scalping:
+	case Grid, Bollinger, Scalping:
 		return true
 	default:
 		return false

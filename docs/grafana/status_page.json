@@ -35,7 +35,7 @@
           "custom": {
             "neutral": -4
           },
-          "decimals": 2,
+          "decimals": 3,
           "displayName": "profit",
           "mappings": [],
           "max": 1000,
@@ -67,7 +67,8 @@
                 "value": 200
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -160,7 +161,8 @@
                 "value": 100
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -254,7 +256,8 @@
                 "value": 100
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -344,7 +347,8 @@
                 "value": 75
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -441,7 +445,8 @@
                 "value": 750
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -619,6 +624,231 @@
           "custom": {
             "align": "auto",
             "cellOptions": {
+              "type": "color-text",
+              "wrapText": false
+            },
+            "filterable": true,
+            "inspect": true
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text"
+              },
+              {
+                "color": "red",
+                "value": -50
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 30
+              },
+              {
+                "color": "blue",
+                "value": 40
+              },
+              {
+                "color": "purple",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": false,
+          "fields": [
+            "profit"
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fekljkp301fcwf"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select st.name, s.symbol, coalesce(sum(profit),0) profit \nfrom orders o\njoin signals s on o.signal_id  = s.id \njoin strategies st  on st.id = s.strategy_id \ngroup by st.name, s.symbol\norder by profit desc",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Strategy performance by symbol",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fekljkp301fcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "mode": "lcd",
+              "type": "gauge",
+              "valueDisplayMode": "text"
+            },
+            "inspect": false
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": -50
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 30
+              },
+              {
+                "color": "blue",
+                "value": 40
+              },
+              {
+                "color": "purple",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 15,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": [
+            "profit"
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fekljkp301fcwf"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select st.name, coalesce(sum(profit),0) profit \nfrom orders o\njoin signals s on o.signal_id  = s.id \njoin strategies st  on st.id = s.strategy_id \ngroup by st.name\norder by profit desc",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Strategy Performance",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fekljkp301fcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
               "type": "color-text"
             },
             "inspect": false
@@ -641,7 +871,8 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -649,7 +880,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 18
       },
       "id": 4,
       "options": {
@@ -674,7 +905,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  o.entry_price,\n  (o.entry_price * o.quantity) total_entry,\n  o.quantity,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  st.name,\n  o.entry_price,\n  (o.entry_price * o.quantity) total_entry,\n  o.quantity,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'open'\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -696,7 +927,7 @@
           "table": "signals"
         }
       ],
-      "title": "Signals Status",
+      "title": "Open Signals",
       "type": "table"
     },
     {
@@ -737,7 +968,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -745,7 +977,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 24
       },
       "id": 12,
       "options": {
@@ -770,7 +1002,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  s.status,\n  st.name,\n  o.entry_price,\n  o.exit_price, \n  o.quantity,\n  (o.entry_price * o.quantity) total_entry,\n  (o.exit_price * o.quantity) total_exit,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage,\n  o.profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\norder by s.id desc",
+          "rawSql": "SELECT\n  s.id,\n  s.symbol,\n  st.name,\n  o.entry_price,\n  o.exit_price, \n  o.quantity,\n  (o.entry_price * o.quantity) total_entry,\n  (o.exit_price * o.quantity) total_exit,\n  o.invested_amount,\n  (entry_fee + exit_fee) total_fee,\n  o.leverage,\n  o.profit\nFROM\n  signals s\nJOIN\n  orders o ON s.id = o.signal_id\nJOIN\n  strategies st ON st.id = s.strategy_id\nwhere s.status = 'closed'\norder by s.id desc",
           "refId": "A",
           "sql": {
             "columns": [
@@ -845,7 +1077,7 @@
         "h": 9,
         "w": 9,
         "x": 0,
-        "y": 23
+        "y": 31
       },
       "id": 2,
       "options": {
@@ -949,7 +1181,7 @@
         "h": 9,
         "w": 15,
         "x": 9,
-        "y": 23
+        "y": 31
       },
       "id": 3,
       "options": {
@@ -998,104 +1230,6 @@
       ],
       "title": "Executions By Strategy",
       "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cek8cz2kdbs3kd"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 1,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 32
-      },
-      "id": 1,
-      "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.54,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        },
-        "xField": "Time",
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
-      },
-      "pluginVersion": "11.6.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "cek8cz2kdbs3kd"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "http_requests_total",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Endpoint status by path",
-      "type": "barchart"
     }
   ],
   "preload": false,
@@ -1113,5 +1247,5 @@
   "timezone": "browser",
   "title": "TradeBot Status Page",
   "uid": "aekljuch862v4d",
-  "version": 54
+  "version": 67
 }

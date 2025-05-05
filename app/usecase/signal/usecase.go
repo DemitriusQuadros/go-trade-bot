@@ -111,7 +111,7 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	}
 
 	if openSignal.ID != 0 {
-		openSignal.Status = entities.StrategyStatus(entities.Closed)
+		openSignal.Status = entities.SignalStatus(entities.Closed)
 		openSignal.Orders[0].ExitPrice = e.ExitPrice
 		openSignal.Orders[0].ExitFee = calculateExitFee(openSignal.Orders[0], e.ExitPrice)
 		openSignal.Orders[0].UpdatedAt = time.Now()

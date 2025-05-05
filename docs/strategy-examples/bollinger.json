@@ -1,0 +1,12 @@
+{
+    "name": "Bollinger Strategy",
+    "description": "Execute trading strategy using Bollinger Bands for selected symbols",
+    "algorithm": "bollinger",
+    "monitored_symbols": ["XRPUSDT", "ADAUSDT", "SOLUSDT"],
+    "Cycle": 1,
+    "Configuration": {
+      "take_profit_pct": 1.2,
+      "stop_loss_pct": 0.5,
+      "leverage": 10
+    }
+  }

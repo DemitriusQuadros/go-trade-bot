@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/services/algorithm/bollinger"
 	"go-trade-bot/app/services/algorithm/grid"
 	"go-trade-bot/app/services/algorithm/scalping"
-	"go-trade-bot/app/services/algorithm/volume"
 	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
 	"go-trade-bot/internal/metrics"
@@ -40,6 +40,7 @@ type StrategyWorker interface {
 type StrategyRepository interface {
 	SaveExecution(ctx context.Context, execution entities.StrategyExecution) error
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
+	CountOpenSignals(ctx context.Context, strategy entities.Strategy) (int64, error)
 }
 
 type SignalUseCase interface {
@@ -72,7 +73,7 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 	}
 
 	if nStrategy.Status != entities.Disabled {
-		err := p.processStrategy(nStrategy)
+		err := p.processStrategy(ctx, nStrategy)
 
 		p.collector.IncrementCounter(total_strategy_task, map[string]string{
 			"strategy": strategy.Name,
@@ -100,7 +101,7 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 	return nil
 }
 
-func (p *StrategyProcessor) processStrategy(strategy entities.Strategy) error {
+func (p *StrategyProcessor) processStrategy(ctx context.Context, strategy entities.Strategy) error {
 	var executor IStrategyProcessor
 
 	switch strategy.Algorithm {
@@ -108,15 +109,23 @@ func (p *StrategyProcessor) processStrategy(strategy entities.Strategy) error {
 		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase)
 	case entities.Scalping:
 		executor = scalping.NewScalpingProcessor(strategy, p.broker, p.signalUseCase)
-	case entities.Volume:
-		executor = volume.NewVolumeProcessor(strategy)
+	case entities.Bollinger:
+		executor = bollinger.NewBollingerProcessor(strategy, p.broker, p.signalUseCase)
 	default:
 		log.Printf("Unknown strategy algorithm: %s", strategy.Algorithm)
 	}
 
-	err := executor.Execute()
+	// validate open signals per strategy
+	count, err := p.repository.CountOpenSignals(ctx, strategy)
 	if err != nil {
-		log.Printf("Error executing strategy %s: %v", strategy.Name, err)
+		return err
+	}
+
+	if count < 4 {
+		err := executor.Execute()
+		if err != nil {
+			log.Printf("Error executing strategy %s: %v", strategy.Name, err)
+		}
 	}
 
 	return err

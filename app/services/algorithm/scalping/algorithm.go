@@ -9,6 +9,9 @@ import (
 	"go-trade-bot/internal/broker"
 	"log"
 	"strconv"
+
+	"github.com/adshao/go-binance/v2"
+	"github.com/markcheno/go-talib"
 )
 
 type ScalpingProcessor struct {
@@ -43,11 +46,11 @@ func (p ScalpingProcessor) Execute() error {
 }
 
 func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol string) error {
-	klines, err := p.broker.ListKline(ctx, symbol, p.strategy.GetBrokerInterval(), 3)
+	klines, err := p.broker.ListKline(ctx, symbol, p.strategy.GetBrokerInterval(), 60)
 	if err != nil {
 		return err
 	}
-	if len(klines) < 2 {
+	if len(klines) < 10 {
 		return fmt.Errorf("not enough candles to analyze")
 	}
 
@@ -65,59 +68,96 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 	if err != nil {
 		return err
 	}
+	// has open signal need to close first
 	if openSignal.ID != 0 {
-		tickerPrices, err := p.broker.ListTickerPrices(ctx, symbol)
-		if err != nil {
-			return fmt.Errorf("failed to list ticker prices for symbol %s: %v", symbol, err)
-		}
-		if len(tickerPrices) == 0 {
-			return fmt.Errorf("no ticker prices found for symbol %s", symbol)
-		}
-		currentPrice, err := strconv.ParseFloat(tickerPrices[0].Price, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse ticker price for symbol %s: %v", symbol, err)
-		}
-		entryPrice := openSignal.Orders[0].EntryPrice
+		return p.generateSell(ctx, symbol, openSignal, takeProfitPct, stopLossPct)
+	}
 
-		pnl := (currentPrice - float64(entryPrice)) / float64(entryPrice) * 100
+	// Generate a buy signal validating volume and RSI
+	if validateVolume(klines) && validateRSI(klines) {
+		latestClose, err := strconv.ParseFloat(klines[len(klines)-1].Close, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse latest close price: %v", err)
+		}
+		prevClose, err := strconv.ParseFloat(klines[len(klines)-2].Close, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse previous close price: %v", err)
+		}
 
-		if pnl >= takeProfitPct || pnl <= -stopLossPct {
-			exit := usecase.ExitSignal{
+		if latestClose > prevClose {
+			entry := usecase.EntrySignal{
 				Symbol:     symbol,
 				StrategyID: p.strategy.ID,
-				ExitPrice:  float32(currentPrice),
+				EntryPrice: float32(latestClose),
+				Leverage:   float32(leverage),
+				MarginType: entities.MarginType(entities.Isolated),
 			}
 
-			err := p.usecase.GenerateSellSignal(exit)
-			if err != nil {
-				return err
-			}
-			return nil
-		} else {
-			return nil
+			p.usecase.GenerateBuySignal(entry)
 		}
 	}
+	return nil
+}
 
-	latestClose, err := strconv.ParseFloat(klines[len(klines)-1].Close, 64)
-	if err != nil {
-		return fmt.Errorf("failed to parse latest close price: %v", err)
+func validateVolume(klines []*binance.Kline) bool {
+	avgVolume := 0.0
+	for _, k := range klines {
+		vol, _ := strconv.ParseFloat(k.Volume, 64)
+		avgVolume += vol
 	}
-	prevClose, err := strconv.ParseFloat(klines[len(klines)-2].Close, 64)
-	if err != nil {
-		return fmt.Errorf("failed to parse previous close price: %v", err)
+	avgVolume /= float64(len(klines))
+
+	latestVolume, _ := strconv.ParseFloat(klines[len(klines)-1].Volume, 64)
+	if latestVolume < avgVolume {
+		return false
+	}
+	return true
+}
+
+func validateRSI(klines []*binance.Kline) bool {
+	closes := make([]float64, len(klines))
+	for i, k := range klines {
+		closes[i], _ = strconv.ParseFloat(k.Close, 64)
 	}
 
-	if latestClose > prevClose {
-		entry := usecase.EntrySignal{
+	rsi := talib.Rsi(closes, 14)
+	latestRSI := rsi[len(rsi)-1]
+	if latestRSI > 70 {
+		return false
+	}
+
+	return true
+}
+
+func (p ScalpingProcessor) generateSell(ctx context.Context, symbol string, openSignal entities.Signal, takeProfitPct float64, stopLossPct float64) error {
+	tickerPrices, err := p.broker.ListTickerPrices(ctx, symbol)
+	if err != nil {
+		return fmt.Errorf("failed to list ticker prices for symbol %s: %v", symbol, err)
+	}
+	if len(tickerPrices) == 0 {
+		return fmt.Errorf("no ticker prices found for symbol %s", symbol)
+	}
+	currentPrice, err := strconv.ParseFloat(tickerPrices[0].Price, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse ticker price for symbol %s: %v", symbol, err)
+	}
+	entryPrice := openSignal.Orders[0].EntryPrice
+
+	pnl := (currentPrice - float64(entryPrice)) / float64(entryPrice) * 100
+
+	if pnl >= takeProfitPct || pnl <= -stopLossPct {
+		exit := usecase.ExitSignal{
 			Symbol:     symbol,
 			StrategyID: p.strategy.ID,
-			EntryPrice: float32(latestClose),
-			Leverage:   float32(leverage),
-			MarginType: entities.MarginType(entities.Isolated),
+			ExitPrice:  float32(currentPrice),
 		}
 
-		p.usecase.GenerateBuySignal(entry)
+		err := p.usecase.GenerateSellSignal(exit)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return nil
 	}
-
-	return nil
 }

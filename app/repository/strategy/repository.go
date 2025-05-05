@@ -44,3 +44,12 @@ func (r StrategyRepository) Delete(ctx context.Context, id uint) error {
 func (r StrategyRepository) SaveExecution(ctx context.Context, execution entities.StrategyExecution) error {
 	return r.db.WithContext(ctx).Create(&execution).Error
 }
+
+func (r StrategyRepository) CountOpenSignals(ctx context.Context, strategy entities.Strategy) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&entities.Signal{}).
+		Where("strategy_id = ? AND status = ?", strategy.ID, entities.Open).
+		Count(&count).Error
+	return count, err
+}

@@ -1,0 +1,19 @@
+{
+    "name": "Enhanced GRID Strategy",
+    "description": "Grid strategy with 1-min cycle, RSI & volume validation",
+    "algorithm": "grid",
+    "status": "testing",
+    "monitored_symbols": ["XRPUSDT", "ADAUSDT", "SOLUSDT"],
+    "cycle": 1,
+    "configuration": {
+        "grid_levels": 8,
+        "grid_spacing_pct": 0.35,
+        "take_profit_pct": 0.4,
+        "stop_loss_pct": 0.25,
+        "volume_filter": 150.0,
+        "rsi_period": 14,
+        "rsi_buy_threshold": 30,
+        "rsi_sell_threshold": 70,
+        "leverage": 10
+  }
+}
