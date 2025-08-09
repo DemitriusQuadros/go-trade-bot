@@ -115,17 +115,9 @@ func (p *StrategyProcessor) processStrategy(ctx context.Context, strategy entiti
 		log.Printf("Unknown strategy algorithm: %s", strategy.Algorithm)
 	}
 
-	// validate open signals per strategy
-	count, err := p.repository.CountOpenSignals(ctx, strategy)
+	err := executor.Execute()
 	if err != nil {
-		return err
-	}
-
-	if count < 4 {
-		err := executor.Execute()
-		if err != nil {
-			log.Printf("Error executing strategy %s: %v", strategy.Name, err)
-		}
+		log.Printf("Error executing strategy %s: %v", strategy.Name, err)
 	}
 
 	return err

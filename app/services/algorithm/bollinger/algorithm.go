@@ -78,7 +78,7 @@ func (p BollingerProcessor) RunBollingerAlgorithm(ctx context.Context, symbol st
 	}
 	// If has a open signal, check if we need to close it
 	if openSignal.ID != 0 {
-		return p.generateSell(openSignal, current, takeProfitPct, stopLossPct, upper)
+		return p.generateSell(ctx, openSignal, takeProfitPct, stopLossPct, upper)
 	}
 
 	// if we don't have an open signal, check if we need to open one
@@ -96,9 +96,15 @@ func (p BollingerProcessor) RunBollingerAlgorithm(ctx context.Context, symbol st
 	return nil
 }
 
-func (p BollingerProcessor) generateSell(openSignal entities.Signal, current float64, takeProfitPct float64, stopLossPct float64, upper []float64) error {
+func (p BollingerProcessor) generateSell(ctx context.Context, openSignal entities.Signal, takeProfitPct float64, stopLossPct float64, upper []float64) error {
+	ticker, err := p.broker.ListTickerPrices(ctx, openSignal.Symbol)
+	if err != nil {
+		return fmt.Errorf("Can't get current price for symbol %s when closing open order", openSignal.Symbol)
+	}
+	current, _ := strconv.ParseFloat(ticker[0].Price, 32)
 	entryPrice := openSignal.Orders[0].EntryPrice
-	pnl := (current - float64(entryPrice)) / float64(entryPrice) * 100
+	leverage := float64(openSignal.Orders[0].Leverage)
+	pnl := ((current - float64(entryPrice)) / float64(entryPrice)) * leverage * 100
 
 	if pnl >= takeProfitPct || pnl <= -stopLossPct || current > upper[len(upper)-1] {
 		exit := usecase.ExitSignal{

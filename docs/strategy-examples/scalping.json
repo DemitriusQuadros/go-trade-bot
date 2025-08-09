@@ -5,13 +5,17 @@
     "status": "testing",
     "monitored_symbols": [
         "XRPUSDT",
-        "ADAUSDT",
-        "SOLUSDT"
+        "SOLUSDT",
+        "BNBUSDT",
+        "LTCUSDT",
+        "QNTUSDT",
+        "AVAXUSDT",
+        "ETHUSDT"
     ],
     "cycle": 1,
     "configuration": {
         "leverage": 10,
         "stop_loss_pct": 0.5,
-        "take_profit_pct": 1.2
+        "take_profit_pct": 0.5
     }
 }

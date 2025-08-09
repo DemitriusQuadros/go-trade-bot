@@ -74,7 +74,7 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 	}
 
 	// Generate a buy signal validating volume and RSI
-	if validateVolume(klines) && validateRSI(klines) {
+	if validateVolume(klines) && validateRSI(klines) && p.isUptrend(ctx, symbol) {
 		latestClose, err := strconv.ParseFloat(klines[len(klines)-1].Close, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse latest close price: %v", err)
@@ -160,4 +160,28 @@ func (p ScalpingProcessor) generateSell(ctx context.Context, symbol string, open
 	} else {
 		return nil
 	}
+}
+
+func (p ScalpingProcessor) isUptrend(ctx context.Context, symbol string) bool {
+	longTermKlines, err := p.broker.ListKline(ctx, symbol, "15m", 50)
+	if err != nil || len(longTermKlines) < 20 {
+		log.Printf("Failed to fetch long-term klines for trend analysis: %v", err)
+		return false
+	}
+
+	longCloses := make([]float64, len(longTermKlines))
+	for i, k := range longTermKlines {
+		longCloses[i], _ = strconv.ParseFloat(k.Close, 64)
+	}
+
+	ema := talib.Ema(longCloses, 20)
+	if len(ema) == 0 {
+		log.Println("EMA calculation failed for trend analysis")
+		return false
+	}
+
+	currentPrice := longCloses[len(longCloses)-1]
+	currentEMA := ema[len(ema)-1]
+
+	return currentPrice > currentEMA
 }
