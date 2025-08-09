@@ -1,4 +1,4 @@
-# GO BINANCE TRADE BOT
+## GO BINANCE TRADE BOT
 
 This project aims to provide a golang application with all the structure needed to communicate with Binace APIs and handle strategies to create tradingbots with golang
 
