@@ -53,3 +53,17 @@ func (r StrategyRepository) CountOpenSignals(ctx context.Context, strategy entit
 		Count(&count).Error
 	return count, err
 }
+
+func (r StrategyRepository) GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance {
+	var performances []entities.StrategyPerformance
+	r.db.WithContext(ctx).Raw(`
+			select st.name Name, s.symbol Symbol, coalesce(sum(profit),0) Profit, count(*) Trades
+			from orders o
+			join signals s on o.signal_id  = s.id 
+			join strategies st  on st.id = s.strategy_id 
+			group by st.name, s.symbol
+			order by profit desc
+		`).Scan(&performances)
+
+	return performances
+}

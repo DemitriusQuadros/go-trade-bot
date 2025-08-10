@@ -17,6 +17,8 @@ services:
       POSTGRES_DB: TradeBot
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   prometheus:
     image: prom/prometheus:latest
@@ -45,3 +47,4 @@ volumes:
   mongo_data:
   prometheus_data:
   grafana_data:
+  postgres_data:
