@@ -33,6 +33,20 @@ func (r SignalRepository) GetOpenSignals(symbol string, strategyId uint) (entiti
 	return signals[0], err
 }
 
+func (r SignalRepository) GetAllOpenSignals() ([]entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.
+		Preload("Orders").
+		Preload("Strategy").
+		Where("status = ?", entities.Open).
+		Find(&signals).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return signals, nil
+}
+
 func (r SignalRepository) Update(signal entities.Signal) error {
 	err := r.db.Save(&signal).Error
 
