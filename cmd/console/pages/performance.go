@@ -43,10 +43,6 @@ func (p *PerformancePage) Render() ui.Drawable {
 	return performance
 }
 
-func (p *PerformancePage) HandleEvent(event interface{}) error {
-	return nil
-}
-
 func (p *PerformancePage) StartSync() {
 	return
 }

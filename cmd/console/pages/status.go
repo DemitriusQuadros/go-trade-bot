@@ -46,10 +46,6 @@ func (p *StatusPage) Render() ui.Drawable {
 	return status
 }
 
-func (p *StatusPage) HandleEvent(event interface{}) error {
-	return nil
-}
-
 func (p *StatusPage) StartSync() {
 	return
 }

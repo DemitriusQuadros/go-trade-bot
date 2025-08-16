@@ -2,6 +2,7 @@ package components
 
 import (
 	"context"
+	"fmt"
 	repository "go-trade-bot/app/repository/strategy"
 	"go-trade-bot/cmd/console/dependencies"
 
@@ -27,9 +28,11 @@ func getStrategies(d *dependencies.Dependencies) []string {
 	if err != nil {
 		panic("Failed to get strategies: " + err.Error())
 	}
+
 	var strategyNames []string
 	for _, strategy := range strategies {
-		strategyNames = append(strategyNames, strategy.Name+" - "+string(strategy.Status))
+		strategyNames = append(strategyNames, fmt.Sprintf("%d - %s - %s", strategy.ID, strategy.Name, string(strategy.Status)))
 	}
+
 	return strategyNames
 }

@@ -10,7 +10,6 @@ import (
 type Page interface {
 	Set(header *widgets.Paragraph, tabPane *widgets.TabPane, dependencies *dependencies.Dependencies) Page
 	Render() ui.Drawable
-	HandleEvent(event interface{}) error
 	StopSync()
 	StartSync()
 }
