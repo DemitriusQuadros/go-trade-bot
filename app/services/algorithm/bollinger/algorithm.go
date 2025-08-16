@@ -36,11 +36,10 @@ func NewBollingerProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCas
 func (p BollingerProcessor) Execute() error {
 	for _, symbol := range p.strategy.MonitoredSymbols {
 		if err := p.RunBollingerAlgorithm(context.Background(), symbol); err != nil {
-			log.Printf("Error executing bollinger algorithm for symbol %s: %v", symbol, err)
+			log.Printf("Error executing  %s for symbol %s: %v", p.strategy.Name, symbol, err)
 			continue
 		}
 	}
-	log.Printf("Executing Bollinger Strategy: %s", p.strategy.Name)
 	return nil
 }
 
@@ -61,7 +60,6 @@ func (p BollingerProcessor) RunBollingerAlgorithm(ctx context.Context, symbol st
 
 	takeProfitPct, _ := config["take_profit_pct"].(float64)
 	stopLossPct, _ := config["stop_loss_pct"].(float64)
-	leverage, _ := config["leverage"].(float64)
 
 	closes := make([]float64, len(klines))
 	for i, k := range klines {
@@ -87,7 +85,6 @@ func (p BollingerProcessor) RunBollingerAlgorithm(ctx context.Context, symbol st
 			Symbol:     symbol,
 			StrategyID: p.strategy.ID,
 			EntryPrice: float32(current),
-			Leverage:   float32(leverage),
 			MarginType: entities.MarginType(entities.Isolated),
 		}
 		return p.usecase.GenerateBuySignal(entry)
@@ -103,8 +100,7 @@ func (p BollingerProcessor) generateSell(ctx context.Context, openSignal entitie
 	}
 	current, _ := strconv.ParseFloat(ticker[0].Price, 32)
 	entryPrice := openSignal.Orders[0].EntryPrice
-	leverage := float64(openSignal.Orders[0].Leverage)
-	pnl := ((current - float64(entryPrice)) / float64(entryPrice)) * leverage * 100
+	pnl := (current - float64(entryPrice)) / float64(entryPrice) * 100
 
 	if pnl >= takeProfitPct || pnl <= -stopLossPct || current > upper[len(upper)-1] {
 		exit := usecase.ExitSignal{

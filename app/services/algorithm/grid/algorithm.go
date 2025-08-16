@@ -37,11 +37,10 @@ func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase) Gr
 func (p GridProcessor) Execute() error {
 	for _, symbol := range p.strategy.MonitoredSymbols {
 		if err := p.RunGridAlgorithm(context.Background(), symbol); err != nil {
-			log.Printf("Error executing grid algorithm for symbol %s: %v", symbol, err)
+			log.Printf("Error executing %s for symbol %s: %v", p.strategy.Name, symbol, err)
 			continue
 		}
 	}
-	log.Printf("Executing Grid Strategy: %s", p.strategy.Name)
 	return nil
 }
 
@@ -69,7 +68,6 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 	rsiPeriodFloat, _ := config["rsi_period"].(float64)
 	rsiBuyThreshold, _ := config["rsi_buy_threshold"].(float64)
 	rsiSellThreshold, _ := config["rsi_sell_threshold"].(float64)
-	leverage, _ := config["leverage"].(float64)
 
 	closes := make([]float64, len(klines))
 	for i, k := range klines {
@@ -114,7 +112,6 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 					Symbol:     symbol,
 					StrategyID: p.strategy.ID,
 					EntryPrice: float32(price),
-					Leverage:   float32(leverage),
 					MarginType: entities.MarginType(entities.Isolated),
 				}
 				p.usecase.GenerateBuySignal(entry)

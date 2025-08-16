@@ -10,7 +10,6 @@ type EntrySignal struct {
 	Symbol     string
 	StrategyID uint
 	EntryPrice float32
-	Leverage   float32
 	MarginType entities.MarginType
 }
 
@@ -63,12 +62,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		return nil
 	}
 
-	if e.Leverage <= 0 {
-		e.Leverage = 1
-	}
-
 	investedAmount, _ := s.AccountUseCase.GetDisponibleAmout()
-	investedWithLeverage := investedAmount * e.Leverage
 
 	signal := entities.Signal{
 		Symbol:     e.Symbol,
@@ -80,12 +74,12 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 			{
 				EntryPrice:     e.EntryPrice,
 				ExitPrice:      0,
-				Quantity:       investedWithLeverage / e.EntryPrice,
+				Quantity:       investedAmount / e.EntryPrice,
 				InvestedAmount: investedAmount,
 				MarginType:     e.MarginType,
-				EntryFee:       calculateEntryFee(investedWithLeverage),
+				EntryFee:       calculateEntryFee(investedAmount),
 				ExitFee:        0,
-				Leverage:       e.Leverage,
+				Leverage:       0,
 				ExecutedQty:    0,
 				IsClosing:      false,
 				CreatedAt:      time.Now(),

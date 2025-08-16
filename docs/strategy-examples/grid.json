@@ -14,6 +14,6 @@
         "rsi_period": 14,
         "rsi_buy_threshold": 30,
         "rsi_sell_threshold": 70,
-        "leverage": 10
+        "leverage": 0
   }
 }

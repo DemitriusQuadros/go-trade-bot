@@ -37,11 +37,10 @@ func NewScalpingProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase
 func (p ScalpingProcessor) Execute() error {
 	for _, symbol := range p.strategy.MonitoredSymbols {
 		if err := p.RunScalpingAlgorithm(context.Background(), symbol); err != nil {
-			log.Printf("Error executing grid algorithm for symbol %s: %v", symbol, err)
+			log.Printf("Error executing %s for symbol %s: %v", p.strategy.Name, symbol, err)
 			continue
 		}
 	}
-	log.Printf("Executing Scalping Strategy: %s", p.strategy.Name)
 	return nil
 }
 
@@ -62,7 +61,6 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 
 	takeProfitPct, _ := config["take_profit_pct"].(float64)
 	stopLossPct, _ := config["stop_loss_pct"].(float64)
-	leverage, _ := config["leverage"].(float64)
 
 	openSignal, err := p.usecase.GetOpenSignal(symbol, p.strategy.ID)
 	if err != nil {
@@ -89,7 +87,6 @@ func (p ScalpingProcessor) RunScalpingAlgorithm(ctx context.Context, symbol stri
 				Symbol:     symbol,
 				StrategyID: p.strategy.ID,
 				EntryPrice: float32(latestClose),
-				Leverage:   float32(leverage),
 				MarginType: entities.MarginType(entities.Isolated),
 			}
 
