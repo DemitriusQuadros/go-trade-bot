@@ -56,3 +56,24 @@ func (r SignalRepository) Update(signal entities.Signal) error {
 	order := signal.Orders[0]
 	return r.db.Save(&order).Error
 }
+
+func (r SignalRepository) GetByID(id uint) (entities.Signal, error) {
+	var signal entities.Signal
+	err := r.db.
+		Preload("Orders").
+		First(&signal, id).Error
+	return signal, err
+}
+
+func (r SignalRepository) GetAll() ([]entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.
+		Preload("Orders").
+		Preload("Strategy").
+		Find(&signals).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return signals, nil
+}

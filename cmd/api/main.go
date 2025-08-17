@@ -6,6 +6,7 @@ import (
 	"go-trade-bot/app/entities"
 	account "go-trade-bot/app/handler/web/account"
 	broker "go-trade-bot/app/handler/web/broker"
+	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
@@ -34,11 +35,13 @@ func main() {
 		modules.StrategyModule,
 		modules.MetricsModule,
 		modules.AccountModule,
+		modules.SignalModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
 			AsRoute(broker.NewBrokerHandler),
 			AsRoute(account.NewAccountHandler),
+			AsRoute(signal.NewSignalHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`),

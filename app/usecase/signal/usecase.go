@@ -1,9 +1,13 @@
 package usecase
 
 import (
+	"context"
 	"fmt"
 	"go-trade-bot/app/entities"
+	"strconv"
 	"time"
+
+	"github.com/adshao/go-binance/v2"
 )
 
 type EntrySignal struct {
@@ -23,6 +27,8 @@ type SignalRepository interface {
 	Create(signal entities.Signal) error
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 	Update(signal entities.Signal) error
+	GetByID(id uint) (entities.Signal, error)
+	GetAll() ([]entities.Signal, error)
 }
 type AccountUseCase interface {
 	DeductOrder(entryPrice float32) error
@@ -31,15 +37,21 @@ type AccountUseCase interface {
 	CanOpenOrder() (bool, error)
 }
 
+type Broker interface {
+	ListTickerPrices(ctx context.Context, symbol string) ([]*binance.SymbolPrice, error)
+}
+
 type SignalUseCase struct {
 	Repository     SignalRepository
 	AccountUseCase AccountUseCase
+	Broker         Broker
 }
 
-func NewSignalUseCase(repository SignalRepository, ac AccountUseCase) SignalUseCase {
+func NewSignalUseCase(repository SignalRepository, ac AccountUseCase, b Broker) SignalUseCase {
 	return SignalUseCase{
 		Repository:     repository,
 		AccountUseCase: ac,
+		Broker:         b,
 	}
 }
 
@@ -118,12 +130,10 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 		if err != nil {
 			return err
 		}
-		s.AccountUseCase.AddOrder(openSignal.Orders[0].InvestedAmount + profit)
+		return s.AccountUseCase.AddOrder(openSignal.Orders[0].InvestedAmount + profit)
 	} else {
 		return fmt.Errorf("signal not found for symbol %s and strategy ID %d", e.Symbol, e.StrategyID)
 	}
-
-	return nil
 }
 
 func calculateEntryFee(InvestedAmount float32) float32 {
@@ -148,4 +158,43 @@ func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.S
 		return entities.Signal{}, nil
 	}
 	return openSignal, nil
+}
+
+func (s SignalUseCase) GetAll(ctx context.Context) ([]entities.Signal, error) {
+	signals, err := s.Repository.GetAll()
+	return signals, err
+}
+
+func (s SignalUseCase) GetByID(ctx context.Context, id uint) (entities.Signal, error) {
+	signal, err := s.Repository.GetByID(id)
+	return signal, err
+}
+
+func (s SignalUseCase) Close(ctx context.Context, id uint) error {
+	signal, err := s.Repository.GetByID(id)
+
+	if err != nil {
+		return err
+	}
+
+	if signal.Status == entities.SignalStatus(entities.Closed) {
+		return fmt.Errorf("Signal is already closed")
+	}
+
+	ticker, err := s.Broker.ListTickerPrices(ctx, signal.Symbol)
+	if err != nil {
+		return err
+	}
+
+	price, err := strconv.ParseFloat(ticker[0].Price, 32)
+	if err != nil {
+		return fmt.Errorf("failed to parse ticker price: %w", err)
+	}
+
+	return s.GenerateSellSignal(ExitSignal{
+		Symbol:     signal.Symbol,
+		StrategyID: signal.StrategyID,
+		ExitPrice:  float32(price),
+	})
+
 }
