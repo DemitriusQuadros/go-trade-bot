@@ -7,17 +7,29 @@ import (
 	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
 	"log"
-	"math"
 	"strconv"
-	"time"
 
 	"github.com/markcheno/go-talib"
 )
+
+var key = "grid-"
 
 type GridProcessor struct {
 	strategy entities.Strategy
 	broker   broker.Broker
 	usecase  SignalUseCase
+	cache    Cache
+}
+
+type GridOrder struct {
+	Type  string
+	Price float64
+}
+
+type Cache interface {
+	Get(key string) (any, bool)
+	Set(key string, value any)
+	Delete(key string)
 }
 
 type SignalUseCase interface {
@@ -26,11 +38,12 @@ type SignalUseCase interface {
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
-func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase) GridProcessor {
+func NewGridProcessor(s entities.Strategy, b broker.Broker, ss SignalUseCase, c Cache) GridProcessor {
 	return GridProcessor{
 		strategy: s,
 		broker:   b,
 		usecase:  ss,
+		cache:    c,
 	}
 }
 
@@ -45,6 +58,90 @@ func (p GridProcessor) Execute() error {
 }
 
 func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) error {
+	v, _ := p.cache.Get(key + symbol)
+
+	existGrid, ok := v.([]GridOrder)
+
+	if !ok {
+		existGrid = []GridOrder{}
+	}
+
+	var config map[string]interface{}
+	err := json.Unmarshal(p.strategy.StrategyConfiguration.Configuration, &config)
+	if err != nil {
+		return err
+	}
+
+	if len(existGrid) > 0 {
+		p.monitore(ctx, symbol, existGrid, config)
+	} else {
+		p.buildGridForSymbol(ctx, symbol, config)
+	}
+
+	return nil
+}
+
+func (p GridProcessor) monitore(ctx context.Context, symbol string, grid []GridOrder, config map[string]interface{}) error {
+	stopLossPct, _ := config["stop_loss_pct"].(float64)
+
+	ticker, err := p.broker.ListTickerPrices(ctx, symbol)
+	if err != nil {
+		return err
+	}
+	current, err := strconv.ParseFloat(ticker[0].Price, 64)
+	if err != nil {
+		log.Printf("Erro parsing value for grid symbol %s err %s", symbol, err.Error())
+	}
+
+	openSignal, err := p.usecase.GetOpenSignal(symbol, p.strategy.ID)
+	if err != nil {
+		return err
+	}
+
+	if openSignal.ID != 0 {
+		entryPrice := openSignal.Orders[0].EntryPrice
+		pnl := (current - float64(entryPrice)) / float64(entryPrice) * 100
+
+		if pnl <= -stopLossPct {
+			return p.usecase.GenerateSellSignal(usecase.ExitSignal{
+				Symbol:     openSignal.Symbol,
+				StrategyID: p.strategy.ID,
+				ExitPrice:  float32(current),
+			})
+		}
+	}
+
+	for _, order := range grid {
+		if order.Type == "buy" {
+			if current <= order.Price {
+				log.Printf("[GRID] %s triggered %s at %.2f", symbol, order.Type, current)
+				return p.usecase.GenerateBuySignal(usecase.EntrySignal{
+					Symbol:     symbol,
+					StrategyID: p.strategy.ID,
+					EntryPrice: float32(current),
+					MarginType: entities.MarginType(entities.Isolated),
+				})
+			}
+		}
+
+		if order.Type == "sell" {
+			if current >= order.Price {
+				if openSignal.ID != 0 {
+					log.Printf("[GRID] %s triggered %s at %.2f", symbol, order.Type, current)
+					return p.usecase.GenerateSellSignal(usecase.ExitSignal{
+						Symbol:     openSignal.Symbol,
+						StrategyID: p.strategy.ID,
+						ExitPrice:  float32(current),
+					})
+				}
+
+			}
+		}
+	}
+	return nil
+}
+
+func (p GridProcessor) buildGridForSymbol(ctx context.Context, symbol string, config map[string]interface{}) error {
 	klines, err := p.broker.ListKline(ctx, symbol, p.strategy.GetBrokerInterval(), 100)
 	if err != nil {
 		return err
@@ -52,19 +149,11 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 	if len(klines) == 0 {
 		return nil
 	}
-
-	var config map[string]interface{}
-	err = json.Unmarshal(p.strategy.StrategyConfiguration.Configuration, &config)
-	if err != nil {
-		return err
-	}
-
 	gridLevelsFloat, _ := config["grid_levels"].(float64)
 	gridLevels := int(gridLevelsFloat)
 	gridSpacingPct, _ := config["grid_spacing_pct"].(float64)
 	volumeFilter, _ := config["volume_filter"].(float64)
 	takeProfitPct, _ := config["take_profit_pct"].(float64)
-	stopLossPct, _ := config["stop_loss_pct"].(float64)
 	rsiPeriodFloat, _ := config["rsi_period"].(float64)
 	rsiBuyThreshold, _ := config["rsi_buy_threshold"].(float64)
 	rsiSellThreshold, _ := config["rsi_sell_threshold"].(float64)
@@ -105,47 +194,30 @@ func (p GridProcessor) RunGridAlgorithm(ctx context.Context, symbol string) erro
 		gridPrices[i] = latestClose + (float64(i)-float64(gridLevels/2))*gridSpacing
 	}
 
+	gridData := []GridOrder{}
+	hasBuySignal := false
 	for _, price := range gridPrices {
 		if price < latestClose {
 			if currentRSI < rsiBuyThreshold {
-				entry := usecase.EntrySignal{
-					Symbol:     symbol,
-					StrategyID: p.strategy.ID,
-					EntryPrice: float32(price),
-					MarginType: entities.MarginType(entities.Isolated),
-				}
-				p.usecase.GenerateBuySignal(entry)
+				hasBuySignal = true
+				gridData = append(gridData, GridOrder{
+					Type:  "buy",
+					Price: price,
+				})
 			}
 		} else {
-			openSignal, err := p.usecase.GetOpenSignal(symbol, p.strategy.ID)
-
-			if err != nil {
-				return err
-			}
-
-			if openSignal.ID != 0 {
-				// do not sell if is under one minute of diference
-				if time.Since(openSignal.CreatedAt) < time.Minute {
-					continue
-				}
-				pnl := (price - float64(openSignal.Orders[0].EntryPrice)) / float64(openSignal.Orders[0].EntryPrice) * 100
-
-				// ignoring low movements
-				priceDiffPct := math.Abs(price-float64(openSignal.Orders[0].EntryPrice)) / float64(openSignal.Orders[0].EntryPrice) * 100
-				if priceDiffPct < 0.1 {
-					continue
-				}
-
-				if pnl >= takeProfitPct || pnl <= -stopLossPct {
-					exit := usecase.ExitSignal{
-						Symbol:     symbol,
-						StrategyID: p.strategy.ID,
-						ExitPrice:  float32(price),
-					}
-					p.usecase.GenerateSellSignal(exit)
-				}
+			profit := ((price - latestClose) / latestClose) * 100
+			if profit >= takeProfitPct && hasBuySignal {
+				gridData = append(gridData, GridOrder{
+					Type:  "sell",
+					Price: price,
+				})
 			}
 		}
+	}
+
+	if len(gridData) > 0 {
+		p.cache.Set(key+symbol, gridData)
 	}
 
 	return nil

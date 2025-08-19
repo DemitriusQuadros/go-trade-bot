@@ -9,6 +9,7 @@ import (
 	"go-trade-bot/app/services/algorithm/scalping"
 	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/broker"
+	"go-trade-bot/internal/memcache"
 	"go-trade-bot/internal/metrics"
 	"log"
 	"time"
@@ -31,6 +32,7 @@ type StrategyProcessor struct {
 	repository    StrategyRepository
 	broker        broker.Broker
 	signalUseCase SignalUseCase
+	cache         memcache.Cache
 }
 
 type StrategyWorker interface {
@@ -49,13 +51,14 @@ type SignalUseCase interface {
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
-func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository, b broker.Broker, uc SignalUseCase) *StrategyProcessor {
+func NewStrategyProcessor(collector *metrics.MetricsCollector, w StrategyWorker, r StrategyRepository, b broker.Broker, uc SignalUseCase, c memcache.Cache) *StrategyProcessor {
 	return &StrategyProcessor{
 		collector:     collector,
 		worker:        w,
 		repository:    r,
 		broker:        b,
 		signalUseCase: uc,
+		cache:         c,
 	}
 }
 
@@ -106,7 +109,7 @@ func (p *StrategyProcessor) processStrategy(ctx context.Context, strategy entiti
 
 	switch strategy.Algorithm {
 	case entities.Grid:
-		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase)
+		executor = grid.NewGridProcessor(strategy, p.broker, p.signalUseCase, p.cache)
 	case entities.Scalping:
 		executor = scalping.NewScalpingProcessor(strategy, p.broker, p.signalUseCase)
 	case entities.Bollinger:

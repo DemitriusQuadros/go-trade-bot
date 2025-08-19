@@ -9,6 +9,7 @@ import (
 	"go-trade-bot/cmd/worker/modules"
 	"go-trade-bot/internal/broker"
 	config "go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/memcache"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/middleware"
 	"net/http"
@@ -51,12 +52,13 @@ func RegisterHandlers(
 	repository repository.StrategyRepository,
 	broker broker.Broker,
 	signalUC usecase.SignalUseCase,
+	cache memcache.Cache,
 ) {
 	StartMetricsServer(cfg)
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			mux := asynq.NewServeMux()
-			processor := handler.NewStrategyProcessor(collector, worker, repository, broker, signalUC)
+			processor := handler.NewStrategyProcessor(collector, worker, repository, broker, signalUC, cache)
 
 			mux.Handle(tasks.StrategyTask, middleware.AsynqConfigMiddleware(
 				asynq.HandlerFunc(processor.HandleStrategyTask),
@@ -99,6 +101,7 @@ func main() {
 		modules.ConfigurationModule,
 		modules.DbModule,
 		modules.MetricsModule,
+		modules.CacheModule,
 		modules.StrategyModule,
 		modules.SignalModule,
 		modules.BrokerModule,

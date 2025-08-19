@@ -14,8 +14,8 @@
   ],
     "Cycle": 1,
     "Configuration": {
-      "take_profit_pct": 0.4,
-      "stop_loss_pct": 0.25,
+      "take_profit_pct": 0.5,
+      "stop_loss_pct": 0.5,
       "leverage": 0
     }
   }
