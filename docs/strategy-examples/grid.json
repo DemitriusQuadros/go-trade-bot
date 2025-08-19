@@ -8,8 +8,8 @@
     "configuration": {
         "grid_levels": 8,
         "grid_spacing_pct": 0.35,
-        "take_profit_pct": 0.4,
-        "stop_loss_pct": 0.25,
+        "take_profit_pct": 0.5,
+        "stop_loss_pct": 1,
         "volume_filter": 150.0,
         "rsi_period": 14,
         "rsi_buy_threshold": 30,

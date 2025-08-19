@@ -15,7 +15,7 @@
     "cycle": 1,
     "configuration": {
         "leverage": 0,
-        "stop_loss_pct": 0.5,
+        "stop_loss_pct": 1,
         "take_profit_pct": 0.5
     }
 }
