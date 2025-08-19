@@ -75,7 +75,7 @@ func (p *OpenOrdersPage) renderOpenSignals() []ui.GridItem {
 
 		invested := widgets.NewParagraph()
 		invested.Text = fmt.Sprintf(
-			"Invested: %s - Qtd: %.2f - Entry Price: %.2f",
+			"Inv: %s - Q: %.2f - EP: $%.2f",
 			fmt.Sprintf("$%.2f", signal.Orders[0].InvestedAmount),
 			signal.Orders[0].Quantity,
 			signal.Orders[0].EntryPrice,
