@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/strategies"
 	usecase "go-trade-bot/app/usecase/strategy"
 	"go-trade-bot/app/usecase/strategy/mocks"
 
@@ -13,6 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+// This test package doesn't blank-import the real app/strategies/grid
+// package (that would couple usecase tests to the concrete Spec 08 ports),
+// so it registers a stand-in "grid" factory here purely to exercise the
+// registry-backed validation path (Spec 06) with the same "grid" name the
+// fixtures below use via entities.Grid.
+func init() {
+	strategies.Register("grid", func() strategies.Strategy { return nil })
+}
 
 func TestStrategyUseCase_GetAll(t *testing.T) {
 	mockRepo := new(mocks.StrategyRepository)

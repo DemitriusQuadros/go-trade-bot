@@ -30,11 +30,22 @@ const (
 )
 
 type Strategy struct {
-	ID                    uint `gorm:"primaryKey"`
-	Name                  string
-	Description           string
-	Algorithm             Algorithm
-	Status                StrategyStatus
+	ID          uint `gorm:"primaryKey"`
+	Name        string
+	Description string
+	// Algorithm is kept (not dropped/renamed) per Spec 06's migration step 5 -
+	// it becomes vestigial once StrategyName/the registry take over validation,
+	// but removing it is a Phase 2+ cleanup, not a Phase 1 change.
+	Algorithm Algorithm
+	// StrategyName is the registry-validated free-form strategy key (Spec 06,
+	// ADR-005) that replaces the closed Algorithm enum for validation
+	// purposes. Backfilled from Algorithm for pre-existing rows.
+	StrategyName string
+	Status       StrategyStatus
+	// Mode is the per-strategy persisted execution-mode tier (Spec 10,
+	// ADR-002): "backtest" | "dryrun" | "paper" | "live". New AND existing
+	// rows default to "dryrun" via migration - never "live".
+	Mode                  string                      `gorm:"default:'dryrun'"`
 	MonitoredSymbols      datatypes.JSONSlice[string] `gorm:"type:jsonb"`
 	StrategyConfiguration StrategyConfiguration       `gorm:"embedded"`
 	CreatedAt             time.Time

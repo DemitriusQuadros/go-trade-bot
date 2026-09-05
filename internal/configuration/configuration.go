@@ -8,15 +8,23 @@ import (
 )
 
 type Configuration struct {
-	Broker     Broker
-	DB         DB
-	Redis      Redis
-	Prometheus Prometheus
+	Broker      Broker
+	DB          DB
+	Redis       Redis
+	Prometheus  Prometheus
+	Mode        string // process-wide execution-mode ceiling, from MODE env var, e.g. "paper" (Spec 10)
+	ConfirmLive bool   // from --confirm-live CLI flag (Spec 10)
+	Testnet     bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
+	WebhookURL  string // outbound trade-event notification target (Spec 09)
 }
 
 type Broker struct {
 	ApiKey    string
 	ApiSecret string
+	// TestnetApiKey/TestnetApiSecret are used exclusively when Testnet == true
+	// (ModePaper, Spec 10) - never the production ApiKey/ApiSecret.
+	TestnetApiKey    string
+	TestnetApiSecret string
 }
 
 type Prometheus struct {
@@ -91,10 +99,30 @@ func NewConfiguration() *Configuration {
 		log.Fatalf("Invalid prometheus address")
 	}
 
+	// New Phase 1 fields are read leniently (no log.Fatalf on absence) so
+	// existing deployments/config.yml files that predate this feature set
+	// keep working: unset MODE defaults to the safest tier (Spec 10 AC#8),
+	// unset WebhookURL is a documented no-op (Spec 09 AC#4), unset Testnet
+	// defaults to false (production), and unset testnet credentials only
+	// matter if Testnet is actually enabled.
+	mode := viper.GetString("MODE")
+	if mode == "" {
+		// Spec 10 AC#8: an unset MODE must resolve to the safest tier, not an
+		// error and not "live" - matches the per-strategy schema default.
+		mode = "dryrun"
+	}
+	confirmLive := viper.GetBool("CONFIRM_LIVE")
+	testnet := viper.GetBool("TESTNET")
+	webhookURL := viper.GetString("WEBHOOK_URL")
+	testnetKey := viper.GetString("BROKER.TESTNET_KEY")
+	testnetSecret := viper.GetString("BROKER.TESTNET_SECRET")
+
 	return &Configuration{
 		Broker: Broker{
-			ApiKey:    key,
-			ApiSecret: secret,
+			ApiKey:           key,
+			ApiSecret:        secret,
+			TestnetApiKey:    testnetKey,
+			TestnetApiSecret: testnetSecret,
 		},
 		DB: DB{
 			Host:     host,
@@ -110,6 +138,10 @@ func NewConfiguration() *Configuration {
 		Prometheus: Prometheus{
 			Address: prometheus,
 		},
+		Mode:        mode,
+		ConfirmLive: confirmLive,
+		Testnet:     testnet,
+		WebhookURL:  webhookURL,
 	}
 }
 

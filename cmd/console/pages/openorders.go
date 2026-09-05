@@ -7,8 +7,7 @@ import (
 	repository "go-trade-bot/app/repository/signal"
 	"go-trade-bot/cmd/console/components"
 	"go-trade-bot/cmd/console/dependencies"
-	"go-trade-bot/internal/broker"
-	"strconv"
+	"go-trade-bot/internal/exchange"
 	"time"
 
 	ui "github.com/gizak/termui/v3"
@@ -57,7 +56,18 @@ func (p *OpenOrdersPage) Render() ui.Drawable {
 }
 
 func (p *OpenOrdersPage) renderOpenSignals() []ui.GridItem {
-	broker := broker.NewBroker(p.Dependencies.Cfg)
+	// NOTE: internal/broker was removed in Phase 1 (Spec 01) in favor of the
+	// internal/exchange ACL; this is the minimal mechanical substitution
+	// needed to keep cmd/console (explicitly out of scope for Phase 1 -
+	// full TUI rebuild is Phase 3 per ADR-007) compiling. Not a functional
+	// change beyond that: ListTickerPrices now returns a parsed float64
+	// directly instead of a string.
+	exchangeClient, err := exchange.NewBinanceAdapter(p.Dependencies.Cfg)
+	if err != nil {
+		return []ui.GridItem{
+			ui.NewRow(1.0, ui.NewCol(1.0, components.Error(err))),
+		}
+	}
 	signals, err := p.getOpenSignals()
 	if err != nil {
 		return []ui.GridItem{
@@ -87,20 +97,15 @@ func (p *OpenOrdersPage) renderOpenSignals() []ui.GridItem {
 				if p.Stop {
 					return
 				}
-				prices, err := broker.ListTickerPrices(context.TODO(), signal.Symbol)
+				prices, err := exchangeClient.ListTickerPrices(context.TODO(), signal.Symbol)
 				if err != nil {
 					current.Text = "Error fetching price: " + err.Error()
 					ui.Render(current)
 					return
 				}
-				priceFloat, err := strconv.ParseFloat(prices[0].Price, 32)
-				if err != nil {
-					current.Text = "Error parsing price: " + err.Error()
-					ui.Render(current)
-					return
-				}
+				priceFloat := prices[0].Price
 				pnl := (float32(priceFloat) * signal.Orders[0].Quantity) - (signal.Orders[0].Quantity * signal.Orders[0].EntryPrice)
-				current.Text = "Current: $" + prices[0].Price + " PnL: $" + fmt.Sprintf("%.2f", pnl)
+				current.Text = "Current: $" + fmt.Sprintf("%.2f", priceFloat) + " PnL: $" + fmt.Sprintf("%.2f", pnl)
 				if pnl < 0 {
 					current.TextStyle.Fg = ui.ColorRed
 				} else {

@@ -3,12 +3,48 @@ package modules
 import (
 	"go.uber.org/fx"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"go-trade-bot/internal/metrics"
 )
 
+// Phase1Metrics are the new Spec 02/04/11 metrics: order execution latency
+// and errors (emitted from app/usecase/signal, Spec 02/03), and WebSocket
+// connectivity (emitted from internal/feed.LiveFeed, Spec 04). Per Spec 11's
+// AC#7, these MetricConfigs must land in the same commit as the
+// metric-emitting code, since an unregistered metric name silently no-ops
+// rather than failing loudly.
+var Phase1Metrics = []metrics.MetricConfig{
+	{
+		Name:       "order_execution_duration_seconds",
+		Help:       "Time to complete a PlaceOrder call, from request to response.",
+		Type:       metrics.Histogram,
+		LabelNames: []string{"strategy", "side"},
+		Buckets:    prometheus.DefBuckets,
+	},
+	{
+		Name:       "order_execution_errors_total",
+		Help:       "Count of PlaceOrder/CancelOrder calls that returned an error or rejection.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"strategy", "reason"},
+	},
+	{
+		Name:       "websocket_reconnects_total",
+		Help:       "Count of LiveFeed WebSocket reconnect attempts.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"symbol"},
+	},
+	{
+		Name:       "websocket_connected",
+		Help:       "1 if the LiveFeed WebSocket for this symbol is currently connected, 0 otherwise.",
+		Type:       metrics.Gauge,
+		LabelNames: []string{"symbol"},
+	},
+}
+
 var MetricsModule = fx.Module("metrics",
 	fx.Provide(func() *metrics.MetricsCollector {
-		return metrics.NewMetricsCollector([]metrics.MetricConfig{
+		cfgs := []metrics.MetricConfig{
 			{
 				Name:       "http_requests_total",
 				Help:       "Total of http requets received",
@@ -28,6 +64,28 @@ var MetricsModule = fx.Module("metrics",
 				Type:       metrics.Counter,
 				LabelNames: []string{"strategy"},
 			},
-		})
+			// asyn_total_task_execution / asynq_total_task_duration (Spec 11
+			// AC#1): emitted by internal/middleware.AsynqConfigMiddleware on
+			// every asynq task since before this session's changes, but never
+			// had a MetricConfig entry - per the collector's map-lookup-with-ok
+			// pattern this meant both calls silently no-op'd. The "asyn" (not
+			// "asynq") spelling in the first name is intentional, matching the
+			// pre-existing constant in internal/middleware/async_middleware.go.
+			{
+				Name:       "asyn_total_task_execution",
+				Help:       "Total of asynq tasks processed by the worker.",
+				Type:       metrics.Counter,
+				LabelNames: []string{"task"},
+			},
+			{
+				Name:       "asynq_total_task_duration",
+				Help:       "Duration of asynq task processing.",
+				Type:       metrics.Histogram,
+				LabelNames: []string{"task"},
+				Buckets:    prometheus.DefBuckets,
+			},
+		}
+		cfgs = append(cfgs, Phase1Metrics...)
+		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

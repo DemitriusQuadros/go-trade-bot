@@ -2,9 +2,12 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/strategies"
 	"go-trade-bot/internal/customerror"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,6 +35,7 @@ func NewStrategyUseCase(repository StrategyRepository, worker StrategyWorker) St
 }
 
 func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) error {
+	strategy = applyStrategyNameFallback(strategy)
 	if err := u.validateStrategy(strategy); err != nil {
 		return err
 	}
@@ -49,6 +53,7 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 }
 
 func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy) error {
+	strategy = applyStrategyNameFallback(strategy)
 	if err := u.validateStrategy(strategy); err != nil {
 		return err
 	}
@@ -99,12 +104,18 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 		return customerror.New(http.StatusBadRequest, "Please define a set of symbols to monitor")
 	}
 
-	if strategy.Algorithm == "" {
-		return customerror.New(http.StatusBadRequest, "Please define a altorigthm to be used")
+	// Validation cutover (Spec 06 ADR-005): the closed Algorithm enum switch
+	// (entities.IsValidAlgorithm) is replaced by a runtime registry lookup on
+	// StrategyName, so adding a new strategy no longer requires a recompile
+	// of the entities package.
+	if strategy.StrategyName == "" {
+		return customerror.New(http.StatusBadRequest, "Strategy has to have a strategy_name")
 	}
 
-	if !entities.IsValidAlgorithm(string(strategy.Algorithm)) {
-		return customerror.New(http.StatusBadRequest, "Invalid algorithm option")
+	if !strategies.Exists(strategy.StrategyName) {
+		return customerror.New(http.StatusBadRequest, fmt.Sprintf(
+			"Invalid strategy name %q, must be one of: %s", strategy.StrategyName, strings.Join(strategies.Names(), ", "),
+		))
 	}
 
 	if strategy.StrategyConfiguration.Cycle == 0 {
@@ -115,4 +126,15 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 		return customerror.New(http.StatusBadRequest, "Invalid cycle option")
 	}
 	return nil
+}
+
+// applyStrategyNameFallback mirrors the DTO-layer backward-compat mapping
+// (app/handler/web/strategy/dto.go) for callers that construct
+// entities.Strategy directly (bypassing the DTO), so validation behaves
+// consistently regardless of entry point during the deprecation window.
+func applyStrategyNameFallback(strategy entities.Strategy) entities.Strategy {
+	if strategy.StrategyName == "" && strategy.Algorithm != "" {
+		strategy.StrategyName = string(strategy.Algorithm)
+	}
+	return strategy
 }

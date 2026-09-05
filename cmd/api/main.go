@@ -31,7 +31,8 @@ func main() {
 	fx.New(
 		modules.ConfigurationModule,
 		modules.DbModule,
-		modules.BrokerModule,
+		modules.ExchangeModule,
+		modules.NotifierModule,
 		modules.StrategyModule,
 		modules.MetricsModule,
 		modules.AccountModule,
@@ -49,7 +50,7 @@ func main() {
 		),
 		fx.Invoke(func(db *gorm.DB) {
 			if err := Migrate(db); err != nil {
-				log.Fatalf("failed to migrate database: %w", err)
+				log.Fatalf("failed to migrate database: %v", err)
 			}
 		}),
 		fx.Invoke(func(*http.Server) {}),
@@ -103,11 +104,29 @@ func AsRoute(f any) any {
 }
 
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&entities.Strategy{},
 		&entities.StrategyExecution{},
 		&entities.Signal{},
 		&entities.Order{},
 		&entities.Account{},
-	)
+	); err != nil {
+		return err
+	}
+
+	// Spec 06 migration step 2: backfill StrategyName from the legacy
+	// Algorithm enum for every pre-existing row - additive, not destructive,
+	// since Algorithm is kept (not dropped) per Spec 06 migration step 5.
+	// Spec 10 AC#5: Mode itself is backfilled to "dryrun" via the column's
+	// `gorm:"default:'dryrun'"` tag, which Postgres applies to existing rows
+	// when the column is added - never left NULL, never "live".
+	if err := db.Exec(`
+		UPDATE strategies
+		SET strategy_name = algorithm
+		WHERE (strategy_name IS NULL OR strategy_name = '') AND algorithm IS NOT NULL AND algorithm <> ''
+	`).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
