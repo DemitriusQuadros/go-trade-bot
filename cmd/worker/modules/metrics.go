@@ -42,6 +42,28 @@ var Phase1Metrics = []metrics.MetricConfig{
 	},
 }
 
+var Phase2Metrics = []metrics.MetricConfig{
+	{
+		Name:       "feed_candle_delay_seconds",
+		Help:       "Time between a candle's OpenTime and when the engine/driver processed it - the observable version of Feed/backtest parity risk.",
+		Type:       metrics.Gauge,
+		LabelNames: []string{"symbol", "feed_type"}, // feed_type: "live" | "replay" | "dryrun"
+	},
+	{
+		Name:       "candle_import_lag_seconds",
+		Help:       "Time between the most recently stored candle's OpenTime and now, per (symbol, timeframe).",
+		Type:       metrics.Gauge,
+		LabelNames: []string{"symbol", "timeframe"},
+	},
+	{
+		Name:       "backtest_run_duration_seconds",
+		Help:       "Wall-clock duration of a completed backtest or walk-forward run.",
+		Type:       metrics.Histogram,
+		LabelNames: []string{"strategy", "is_walk_forward"},
+		Buckets:    []float64{1, 5, 15, 30, 60, 120, 300, 600},
+	},
+}
+
 var MetricsModule = fx.Module("metrics",
 	fx.Provide(func() *metrics.MetricsCollector {
 		cfgs := []metrics.MetricConfig{
@@ -86,6 +108,7 @@ var MetricsModule = fx.Module("metrics",
 			},
 		}
 		cfgs = append(cfgs, Phase1Metrics...)
+		cfgs = append(cfgs, Phase2Metrics...)
 		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

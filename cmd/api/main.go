@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"go-trade-bot/app/entities"
 	account "go-trade-bot/app/handler/web/account"
+	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
+	_ "go-trade-bot/app/strategies/bollinger"
+	_ "go-trade-bot/app/strategies/grid"
+	_ "go-trade-bot/app/strategies/scalping"
 	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/handler"
@@ -37,12 +41,15 @@ func main() {
 		modules.MetricsModule,
 		modules.AccountModule,
 		modules.SignalModule,
+		modules.CandleModule,
+		modules.BacktestModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
 			AsRoute(broker.NewBrokerHandler),
 			AsRoute(account.NewAccountHandler),
 			AsRoute(signal.NewSignalHandler),
+			AsRoute(backtest.NewBacktestHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`),
@@ -110,6 +117,8 @@ func Migrate(db *gorm.DB) error {
 		&entities.Signal{},
 		&entities.Order{},
 		&entities.Account{},
+		&entities.Candle{},
+		&entities.BacktestRun{},
 	); err != nil {
 		return err
 	}

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"go-trade-bot/app/engine"
 	handler "go-trade-bot/app/handler/tasks/strategy"
+	candle_repo "go-trade-bot/app/repository/candle"
 	repository "go-trade-bot/app/repository/strategy"
 	"go-trade-bot/app/strategies"
+	"time"
 
 	// Blank-imported for their init() side effect only: each package
 	// self-registers a Strategy factory into app/strategies' registry
@@ -87,6 +89,7 @@ func RegisterHandlers(
 	cfg *config.Configuration,
 	collector *metrics.MetricsCollector,
 	worker tasks.StrategyWorker,
+	candleRepo candle_repo.Repository,
 	repository repository.StrategyRepository,
 	eng *engine.Engine,
 	notifySender notifier.NotificationSender,
@@ -111,6 +114,7 @@ func RegisterHandlers(
 			))
 
 			go server.Run(mux)
+			go startCandleLagMonitor(ctx, candleRepo, repository, collector)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -118,6 +122,40 @@ func RegisterHandlers(
 			return nil
 		},
 	})
+}
+
+func startCandleLagMonitor(
+	ctx context.Context,
+	candleRepo candle_repo.Repository,
+	stratRepo repository.StrategyRepository,
+	collector *metrics.MetricsCollector,
+) {
+	ticker := time.NewTicker(2 * time.Minute)
+	for {
+		select {
+		case <-ctx.Done():
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			strats, err := stratRepo.GetAll(ctx)
+			if err != nil {
+				continue
+			}
+			for _, s := range strats {
+				for _, sym := range s.MonitoredSymbols {
+					tf := s.GetBrokerInterval()
+					if tf == "" {
+						tf = "1m"
+					}
+					latest, err := candleRepo.LatestOpenTime(ctx, sym, tf)
+					if err == nil && !latest.IsZero() {
+						lag := time.Since(latest).Seconds()
+						collector.SetGauge("candle_import_lag_seconds", map[string]string{"symbol": sym, "timeframe": tf}, lag)
+					}
+				}
+			}
+		}
+	}
 }
 
 func StartMetricsServer(cfg *config.Configuration) {
@@ -165,6 +203,7 @@ func main() {
 		modules.NotifierModule,
 		modules.EngineModule,
 		modules.AccountModule,
+		modules.CandleModule,
 		fx.Provide(
 			NewRedisClient,
 			NewAsynqServer,

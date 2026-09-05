@@ -12,6 +12,7 @@ import (
 const (
 	metricWebsocketReconnects = "websocket_reconnects_total"
 	metricWebsocketConnected  = "websocket_connected"
+	metricFeedCandleDelay     = "feed_candle_delay_seconds"
 
 	// bufferCapacity is generous relative to any realistic strategy cycle
 	// length (1-60 minutes), small relative to the 4GB homelab RAM budget
@@ -80,6 +81,10 @@ func (f *LiveFeed) Next() (exchange.Candle, bool) {
 	case c, ok := <-f.buffer:
 		if !ok {
 			return exchange.Candle{}, false
+		}
+		if f.collector != nil && !c.OpenTime.IsZero() {
+			delay := time.Since(c.OpenTime).Seconds()
+			f.collector.SetGauge(metricFeedCandleDelay, map[string]string{"symbol": f.symbol, "feed_type": "live"}, delay)
 		}
 		return c, true
 	case <-f.done:

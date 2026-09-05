@@ -74,6 +74,7 @@ type SignalUseCase struct {
 	Exchange       exchange.ExchangeClient
 	Notifier       notifier.NotificationSender
 	Metrics        *metrics.MetricsCollector
+	FeePct         float64 // optional override (DryRun), defaults to 0.1% if <= 0
 }
 
 func NewSignalUseCase(
@@ -89,6 +90,7 @@ func NewSignalUseCase(
 		Exchange:       exchangeClient,
 		Notifier:       notifySender,
 		Metrics:        collector,
+		FeePct:         0.1,
 	}
 }
 
@@ -166,7 +168,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 				Quantity:        float32(filledQty),
 				InvestedAmount:  spentAmount,
 				MarginType:      e.MarginType,
-				EntryFee:        calculateEntryFee(spentAmount),
+				EntryFee:        s.calculateEntryFee(spentAmount),
 				ExitFee:         0,
 				Leverage:        0,
 				ExecutedQty:     float32(filledQty),
@@ -319,7 +321,7 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 
 	openSignal.Status = entities.SignalStatus(entities.Closed)
 	openSignal.Orders[0].ExitPrice = exitPrice
-	openSignal.Orders[0].ExitFee = calculateExitFee(openSignal.Orders[0], exitPrice)
+	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
 	openSignal.Orders[0].UpdatedAt = time.Now()
 	openSignal.Orders[0].IsClosing = true
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
@@ -374,7 +376,7 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 
 	openSignal.Status = entities.SignalStatus(entities.Closed)
 	openSignal.Orders[0].ExitPrice = exitPrice
-	openSignal.Orders[0].ExitFee = calculateExitFee(openSignal.Orders[0], exitPrice)
+	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
 	openSignal.Orders[0].UpdatedAt = time.Now()
 	openSignal.Orders[0].IsClosing = true
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
@@ -416,17 +418,21 @@ func exitReasonOrDefault(reason string) string {
 	return reason
 }
 
-func calculateEntryFee(InvestedAmount float32) float32 {
-	feePct := 0.1
-	fee := float32(float64(InvestedAmount) * feePct / 100)
-	return fee
+func (s SignalUseCase) calculateEntryFee(investedAmount float32) float32 {
+	feePct := s.FeePct
+	if feePct <= 0 {
+		feePct = 0.1
+	}
+	return float32(float64(investedAmount) * feePct / 100.0)
 }
 
-func calculateExitFee(order entities.Order, sellPrice float32) float32 {
-	feePct := 0.1
+func (s SignalUseCase) calculateExitFee(order entities.Order, sellPrice float32) float32 {
+	feePct := s.FeePct
+	if feePct <= 0 {
+		feePct = 0.1
+	}
 	total := float64(order.Quantity) * float64(sellPrice)
-	fee := float32(total * feePct / 100)
-	return fee
+	return float32(total * feePct / 100.0)
 }
 
 func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error) {

@@ -3,6 +3,7 @@ package configuration
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -16,6 +17,13 @@ type Configuration struct {
 	ConfirmLive bool   // from --confirm-live CLI flag (Spec 10)
 	Testnet     bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
 	WebhookURL  string // outbound trade-event notification target (Spec 09)
+	DryRun      DryRunConfig
+}
+
+type DryRunConfig struct {
+	SlippagePct float64
+	FeePct      float64
+	FillDelay   time.Duration
 }
 
 type Broker struct {
@@ -117,6 +125,13 @@ func NewConfiguration() *Configuration {
 	testnetKey := viper.GetString("BROKER.TESTNET_KEY")
 	testnetSecret := viper.GetString("BROKER.TESTNET_SECRET")
 
+	dryRunSlippage := viper.GetFloat64("DRY_RUN.SLIPPAGE_PCT")
+	dryRunFeePct := viper.GetFloat64("DRY_RUN.FEE_PCT")
+	if dryRunFeePct == 0 {
+		dryRunFeePct = 0.1
+	}
+	dryRunFillDelay := viper.GetDuration("DRY_RUN.FILL_DELAY")
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -142,6 +157,11 @@ func NewConfiguration() *Configuration {
 		ConfirmLive: confirmLive,
 		Testnet:     testnet,
 		WebhookURL:  webhookURL,
+		DryRun: DryRunConfig{
+			SlippagePct: dryRunSlippage,
+			FeePct:      dryRunFeePct,
+			FillDelay:   dryRunFillDelay,
+		},
 	}
 }
 

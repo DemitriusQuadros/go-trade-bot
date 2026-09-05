@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestAccountUseCase_CreateAccount(t *testing.T) {
@@ -17,7 +18,9 @@ func TestAccountUseCase_CreateAccount(t *testing.T) {
 		Currency:        "USD",
 	}
 	repo := new(mocks.AccountRepository)
-	repo.On("Create", account).Return(nil)
+	repo.On("Create", mock.MatchedBy(func(a entities.Account) bool {
+		return a.ID == 1 && a.Amount == 1000.0 && a.AvailableOrders == 10 && a.Currency == "USD" && !a.CreatedAt.IsZero()
+	})).Return(nil)
 
 	usecase := usecase.NewAccountUseCase(repo)
 	err := usecase.CreateAccount(account)
@@ -33,15 +36,11 @@ func TestAccountUseCase_DeductOrder(t *testing.T) {
 		Currency:        "USD",
 	}
 
-	deducted := entities.Account{
-		ID:              1,
-		Amount:          900.0,
-		AvailableOrders: 9,
-		Currency:        "USD",
-	}
 	repo := new(mocks.AccountRepository)
 	repo.On("GetAccountByID", int64(1)).Return(account, nil)
-	repo.On("UpdateAccount", deducted).Return(nil)
+	repo.On("UpdateAccount", mock.MatchedBy(func(a entities.Account) bool {
+		return a.ID == 1 && a.Amount == 900.0 && a.AvailableOrders == 9 && a.Currency == "USD"
+	})).Return(nil)
 
 	usecase := usecase.NewAccountUseCase(repo)
 	err := usecase.DeductOrder(100.0)
@@ -57,16 +56,11 @@ func TestAccountUseCase_AddOrder(t *testing.T) {
 		Currency:        "USD",
 	}
 
-	added := entities.Account{
-		ID:              1,
-		Amount:          1000.0,
-		AvailableOrders: 10,
-		Currency:        "USD",
-	}
-
 	repo := new(mocks.AccountRepository)
 	repo.On("GetAccountByID", int64(1)).Return(account, nil)
-	repo.On("UpdateAccount", added).Return(nil)
+	repo.On("UpdateAccount", mock.MatchedBy(func(a entities.Account) bool {
+		return a.ID == 1 && a.Amount == 1000.0 && a.AvailableOrders == 10 && a.Currency == "USD"
+	})).Return(nil)
 
 	usecase := usecase.NewAccountUseCase(repo)
 	err := usecase.AddOrder(100.0)
