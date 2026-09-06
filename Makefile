@@ -29,10 +29,10 @@ clean: ## Stop and remove containers, volumes, networks, and images
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all --remove-orphans
 
 run-api-local: ## Run the API project locally
-	go run cmd/api/main.go
+	go run ./cmd/api
 
 run-worker-local: ## Run the Worker project locally
-	go run cmd/worker/main.go
+	go run ./cmd/worker
 
 run-console: ## Run the console project locally
-	go run cmd/console/main.go
+	go run ./cmd/console

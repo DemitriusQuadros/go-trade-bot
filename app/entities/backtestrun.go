@@ -23,5 +23,18 @@ type BacktestRun struct {
 	Passed         bool           `json:"passed"`
 	HTMLReportPath string         `json:"html_report_path"`
 	TradeLogJSON   datatypes.JSON `json:"trade_log_json"`
+	// InitialCapital is additive (backend-03): Run()/RunWalkForward() always
+	// received an InitialCapital in their request, but never persisted it -
+	// backend-03's Monte Carlo simulation needs the run's starting balance to
+	// recompute BacktestMetrics per shuffle via the same MetricsProvider used
+	// originally, and there was no column to read it back from. Pre-existing
+	// rows read back as 0, in which case RunMonteCarlo falls back to the same
+	// 1000.0 default used elsewhere in this package.
+	InitialCapital float64 `json:"initial_capital"`
+	// MonteCarloJSON caches the most recently computed engine.MonteCarloResult
+	// for this run (backend-03) - POST /backtest/{id}/montecarlo persists
+	// here so a repeated GET doesn't re-run potentially thousands of
+	// Compute() calls.
+	MonteCarloJSON datatypes.JSON `json:"monte_carlo_json,omitempty" gorm:"type:jsonb"`
 	CreatedAt      time.Time      `json:"created_at"`
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -354,6 +355,93 @@ func (c *Client) ListBacktests(ctx context.Context, strategyID uint) ([]Backtest
 	var views []BacktestRunView
 	if err := json.Unmarshal(body, &views); err != nil {
 		return nil, fmt.Errorf("failed to parse backtest list response: %w", err)
+	}
+	return views, nil
+}
+
+// --- Optimization (Page 7) --------------------------------------------------
+
+// ErrOptimizationNotReady indicates GET /optimize/{id}/results was called
+// before the run finished (409 per backend-01 AC#6) — distinct from a plain
+// ErrAPI so callers can tell "not ready yet, keep polling GET /optimize/{id}"
+// apart from "doesn't exist" (404) or any other API error.
+var ErrOptimizationNotReady = errors.New("optimization results not ready")
+
+// RunOptimization starts an asynchronous hyperparameter optimization grid
+// search via POST /optimize. Unlike RunBacktest, this returns immediately
+// (202, pending status) rather than blocking for the search to complete, so
+// it uses the default (short) httpClient timeout, not the longHttpClient
+// override — the call only enqueues work.
+func (c *Client) RunOptimization(ctx context.Context, req RunOptimizationRequest) (OptimizationRunView, error) {
+	var view OptimizationRunView
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return view, err
+	}
+
+	body, _, err := c.doRequest(ctx, c.httpClient, http.MethodPost, "/optimize", reqBody)
+	if err != nil {
+		return view, err
+	}
+	if err := json.Unmarshal(body, &view); err != nil {
+		return view, fmt.Errorf("failed to parse optimization response: %w", err)
+	}
+	return view, nil
+}
+
+// GetOptimization polls the status/progress of an optimization run via
+// GET /optimize/{id}.
+func (c *Client) GetOptimization(ctx context.Context, id uint) (OptimizationRunView, error) {
+	var view OptimizationRunView
+	body, _, err := c.doRequest(ctx, c.httpClient, http.MethodGet, fmt.Sprintf("/optimize/%d", id), nil)
+	if err != nil {
+		return view, err
+	}
+	if err := json.Unmarshal(body, &view); err != nil {
+		return view, fmt.Errorf("failed to parse optimization response: %w", err)
+	}
+	return view, nil
+}
+
+// GetOptimizationResults fetches the full per-combination grid for a
+// completed optimization run via GET /optimize/{id}/results. Returns
+// ErrOptimizationNotReady if the run hasn't finished yet (409).
+func (c *Client) GetOptimizationResults(ctx context.Context, id uint) (OptimizationResultsView, error) {
+	var view OptimizationResultsView
+	body, _, err := c.doRequest(ctx, c.httpClient, http.MethodGet, fmt.Sprintf("/optimize/%d/results", id), nil)
+	if err != nil {
+		var apiErr ErrAPI
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+			return view, ErrOptimizationNotReady
+		}
+		return view, err
+	}
+	if err := json.Unmarshal(body, &view); err != nil {
+		return view, fmt.Errorf("failed to parse optimization results response: %w", err)
+	}
+	return view, nil
+}
+
+// --- Strategy performance history (Page 2 detail overlay sparkline) --------
+
+// GetStrategyPerformanceHistory fetches time-bucketed P&L history for one
+// (strategy, symbol) pair via GET /strategy/{id}/performance/history. symbol
+// and bucket are both required by the backend contract (400 if either is
+// missing/invalid).
+func (c *Client) GetStrategyPerformanceHistory(ctx context.Context, strategyID uint, symbol, bucket string, limit int) ([]PerformanceHistoryPointView, error) {
+	v := url.Values{}
+	v.Set("symbol", symbol)
+	v.Set("bucket", bucket)
+	v.Set("limit", strconv.Itoa(limit))
+
+	body, _, err := c.doRequest(ctx, c.httpClient, http.MethodGet,
+		fmt.Sprintf("/strategy/%d/performance/history?%s", strategyID, v.Encode()), nil)
+	if err != nil {
+		return nil, err
+	}
+	var views []PerformanceHistoryPointView
+	if err := json.Unmarshal(body, &views); err != nil {
+		return nil, fmt.Errorf("failed to parse performance history response: %w", err)
 	}
 	return views, nil
 }

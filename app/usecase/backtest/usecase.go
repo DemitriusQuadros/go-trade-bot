@@ -199,6 +199,7 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		Passed:         passed,
 		HTMLReportPath: htmlPath,
 		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
+		InitialCapital: req.InitialCapital,
 		CreatedAt:      time.Now().UTC(),
 	}
 
@@ -320,6 +321,7 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		Passed:         passed,
 		HTMLReportPath: htmlPath,
 		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
+		InitialCapital: req.InitialCapital,
 		CreatedAt:      time.Now().UTC(),
 	}
 
@@ -331,12 +333,159 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 	return run, nil
 }
 
+// RunEphemeral executes one backtest against an in-memory strategy config
+// override, WITHOUT persisting a BacktestRun row or generating an HTML
+// report - the metrics-only, no-artifact sibling of Run(), built for
+// backend-02's grid-search use case (dozens-to-hundreds of throwaway
+// evaluations where persisting each as a full BacktestRun would flood the
+// backtest_runs table and the reports/ directory for no operational value).
+// baseStrategy is expected to be the caller's in-memory clone with
+// Configuration already overridden - this method never mutates or persists
+// it.
+func (u *BacktestUseCase) RunEphemeral(
+	ctx context.Context,
+	baseStrategy entities.Strategy,
+	symbol, timeframe string,
+	from, to time.Time,
+	initialCapital float64,
+	fillPolicy engine.FillPolicy,
+) (metrics_provider.BacktestMetrics, error) {
+	if timeframe == "" {
+		timeframe = "1m"
+	}
+	if initialCapital <= 0 {
+		initialCapital = 1000.0
+	}
+
+	tradeLog, err := u.executeReplay(ctx, baseStrategy, symbol, timeframe, from, to, initialCapital, fillPolicy)
+	if err != nil {
+		return metrics_provider.BacktestMetrics{}, fmt.Errorf("ephemeral backtest execution failed: %w", err)
+	}
+
+	periodsPerYear := periodsPerYearForTimeframe(timeframe)
+	return u.metricsProvider.Compute(tradeLog, initialCapital, periodsPerYear), nil
+}
+
 func (u *BacktestUseCase) GetByID(ctx context.Context, id uint) (entities.BacktestRun, error) {
 	return u.backtestRepo.GetByID(ctx, id)
 }
 
 func (u *BacktestUseCase) ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error) {
 	return u.backtestRepo.ListByStrategy(ctx, strategyID)
+}
+
+const (
+	// MonteCarloMaxIterations is backend-03 AC#6's cap: Monte Carlo's
+	// per-iteration cost is trivial (no candle reload, just a shuffle +
+	// Compute call over a typically-small trade list), so this is basic
+	// input hygiene, not a homelab-memory-ceiling concern the way
+	// backend-02's grid-size cap is.
+	MonteCarloMaxIterations = 10000
+	// MonteCarloDefaultIterations is used when the caller passes 0/negative.
+	MonteCarloDefaultIterations = 1000
+	// MonteCarloMinTrades is backend-03 AC#7's floor: reordering a 0- or
+	// 1-element trade list is meaningless.
+	MonteCarloMinTrades = 2
+)
+
+var (
+	ErrInvalidMonteCarloIterations     = fmt.Errorf("iterations must be a positive integer no greater than %d", MonteCarloMaxIterations)
+	ErrInsufficientTradesForMonteCarlo = fmt.Errorf("backtest run has fewer than %d trades; Monte Carlo reordering is not meaningful", MonteCarloMinTrades)
+	ErrMonteCarloNotYetComputed        = fmt.Errorf("Monte Carlo has not been computed for this backtest run yet")
+	// ErrBacktestRunNotFound is a sentinel wrapped around the underlying
+	// repository error (which for the GORM-backed implementation is
+	// gorm.ErrRecordNotFound) so callers (the web handler) can distinguish
+	// "run doesn't exist" from other failure modes via errors.Is, without
+	// needing to import gorm.
+	ErrBacktestRunNotFound = fmt.Errorf("backtest run not found")
+)
+
+// RunMonteCarlo loads the persisted trade log for `runID` (handling both a
+// flat backtest's []TradeLogEntry and a walk-forward run's wrapped
+// {trades, windows} shape - AC#8), runs engine.RunMonteCarlo over it, caches
+// the result onto the run row's MonteCarloJSON column (so a subsequent
+// GetMonteCarlo doesn't re-run the simulation), and returns it.
+func (u *BacktestUseCase) RunMonteCarlo(ctx context.Context, runID uint, iterations int) (engine.MonteCarloResult, error) {
+	if iterations < 0 || iterations > MonteCarloMaxIterations {
+		return engine.MonteCarloResult{}, ErrInvalidMonteCarloIterations
+	}
+	if iterations == 0 {
+		iterations = MonteCarloDefaultIterations
+	}
+
+	run, err := u.backtestRepo.GetByID(ctx, runID)
+	if err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("%w: %v", ErrBacktestRunNotFound, err)
+	}
+
+	trades, err := extractTradeLog(run)
+	if err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("failed to parse trade log: %w", err)
+	}
+	if len(trades) < MonteCarloMinTrades {
+		return engine.MonteCarloResult{}, ErrInsufficientTradesForMonteCarlo
+	}
+
+	startingBalance := run.InitialCapital
+	if startingBalance <= 0 {
+		startingBalance = 1000.0
+	}
+	periodsPerYear := periodsPerYearForTimeframe("") // BacktestRun does not persist Timeframe; falls back to the 1m default.
+
+	result := engine.RunMonteCarlo(trades, startingBalance, periodsPerYear, u.metricsProvider, engine.MonteCarloConfig{
+		Iterations: iterations,
+	})
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("failed to marshal monte carlo result: %w", err)
+	}
+	run.MonteCarloJSON = datatypes.JSON(resultBytes)
+	if err := u.backtestRepo.Update(ctx, run); err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("failed to cache monte carlo result: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetMonteCarlo returns the most recently cached Monte Carlo result for
+// `runID`, without recomputing it - ErrMonteCarloNotYetComputed if
+// RunMonteCarlo has never been called for this run.
+func (u *BacktestUseCase) GetMonteCarlo(ctx context.Context, runID uint) (engine.MonteCarloResult, error) {
+	run, err := u.backtestRepo.GetByID(ctx, runID)
+	if err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("%w: %v", ErrBacktestRunNotFound, err)
+	}
+
+	if len(run.MonteCarloJSON) == 0 {
+		return engine.MonteCarloResult{}, ErrMonteCarloNotYetComputed
+	}
+
+	var result engine.MonteCarloResult
+	if err := json.Unmarshal(run.MonteCarloJSON, &result); err != nil {
+		return engine.MonteCarloResult{}, fmt.Errorf("failed to parse cached monte carlo result: %w", err)
+	}
+	return result, nil
+}
+
+// extractTradeLog handles backend-03 AC#8: a walk-forward run's
+// TradeLogJSON is a WalkForwardTradeLogPayload ({trades, windows}), not a
+// flat []TradeLogEntry - this must be parsed correctly rather than assuming
+// every BacktestRun.TradeLogJSON has the same shape.
+func extractTradeLog(run entities.BacktestRun) ([]metrics_provider.TradeLogEntry, error) {
+	if run.IsWalkForward {
+		var payload WalkForwardTradeLogPayload
+		if err := json.Unmarshal(run.TradeLogJSON, &payload); err != nil {
+			return nil, err
+		}
+		return payload.Trades, nil
+	}
+
+	var trades []metrics_provider.TradeLogEntry
+	if err := json.Unmarshal(run.TradeLogJSON, &trades); err != nil {
+		return nil, err
+	}
+	return trades, nil
 }
 
 func (u *BacktestUseCase) executeReplay(

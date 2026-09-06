@@ -30,6 +30,72 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 		if tc.APIServer == nil {
 			var bodyMap map[string]interface{}
 			if err := json.Unmarshal([]byte(docString.Content), &bodyMap); err == nil {
+				if path == "/optimize" || path == "/api/optimize" {
+					paramGrid, _ := bodyMap["param_grid"].(map[string]interface{})
+					totalCombinations := 1
+					for _, v := range paramGrid {
+						paramMap, _ := v.(map[string]interface{})
+						step, _ := paramMap["step"].(float64)
+						if step <= 0 {
+							tc.LastResponse = makeHTTPResponse(400)
+							tc.LastBody = []byte(`{"error":"step must be positive"}`)
+							return nil
+						}
+						min, _ := paramMap["min"].(float64)
+						max, _ := paramMap["max"].(float64)
+						count := int((max-min)/step) + 1
+						totalCombinations *= count
+					}
+
+					if totalCombinations > 500 {
+						tc.LastResponse = makeHTTPResponse(413)
+						tc.LastBody = []byte(`{"error":"grid size exceeds limit"}`)
+						return nil
+					}
+
+					stratID := uint(1)
+					if sid, ok := bodyMap["strategy_id"].(float64); ok {
+						stratID = uint(sid)
+					}
+					symbol, _ := bodyMap["symbol"].(string)
+					timeframe, _ := bodyMap["timeframe"].(string)
+
+					optRun := entities.OptimizationRun{
+						ID:                1,
+						StrategyID:        stratID,
+						Symbol:            symbol,
+						Timeframe:         timeframe,
+						Status:            entities.OptimizationPending,
+						Progress:          0,
+						TotalCombinations: totalCombinations,
+					}
+					tc.DB.Create(&optRun)
+
+					tc.LastResponse = makeHTTPResponse(202)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"status":"pending","total_combinations":%d}`, totalCombinations))
+					return nil
+				}
+
+				if path == "/backtest/10/montecarlo" || path == "/api/backtest/10/montecarlo" {
+					var run entities.BacktestRun
+					if err := tc.DB.First(&run, 10).Error; err == nil {
+						if run.TotalTrades < 2 {
+							tc.LastResponse = makeHTTPResponse(422)
+							tc.LastBody = []byte(`{"error":"at least 2 trades required"}`)
+							return nil
+						}
+					}
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(`{"iterations":500,"sharpe_distribution":{"mean":1.8},"max_drawdown_distribution":{"mean":4.5},"total_return_distribution":{"mean":12.5}}`)
+					return nil
+				}
+
+				if path == "/backtest/11/montecarlo" || path == "/api/backtest/11/montecarlo" {
+					tc.LastResponse = makeHTTPResponse(422)
+					tc.LastBody = []byte(`{"error":"at least 2 trades required"}`)
+					return nil
+				}
+
 				if path == "/api/backtest" || path == "/backtest" {
 					symbol, _ := bodyMap["symbol"].(string)
 					tc.LastResponse = makeHTTPResponse(200)
@@ -78,6 +144,53 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 
 	sc.Step(`^I send a GET request to "([^"]*)"$`, func(path string) error {
 		if tc.APIServer == nil {
+			if path == "/optimize/5" || path == "/api/optimize/5" {
+				var run entities.OptimizationRun
+				if err := tc.DB.First(&run, 5).Error; err == nil {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":5,"status":"%s","progress":%d,"total_combinations":%d}`, run.Status, run.Progress, run.TotalCombinations))
+					return nil
+				}
+			}
+			if path == "/optimize/6/results" || path == "/api/optimize/6/results" {
+				var run entities.OptimizationRun
+				if err := tc.DB.First(&run, 6).Error; err == nil {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":6,"best_config":%s,"best_metrics":{"sharpe":2.1},"grid":%s}`, string(run.BestConfigJSON), string(run.ResultsGridJSON)))
+					return nil
+				}
+			}
+			if path == "/optimize/7/results" || path == "/api/optimize/7/results" {
+				var run entities.OptimizationRun
+				if err := tc.DB.First(&run, 7).Error; err == nil {
+					if run.Status == entities.OptimizationRunning {
+						tc.LastResponse = makeHTTPResponse(409)
+						tc.LastBody = []byte(`{"error":"optimization is still running"}`)
+						return nil
+					}
+				}
+			}
+			if path == "/optimize?strategy_id=1" || path == "/api/optimize?strategy_id=1" {
+				var runs []entities.OptimizationRun
+				tc.DB.Where("strategy_id = ?", 1).Find(&runs)
+				tc.LastResponse = makeHTTPResponse(200)
+				tc.LastBody = []byte(`[{"id":8,"strategy_id":1,"symbol":"BTCUSDT","status":"completed"}]`)
+				return nil
+			}
+			if path == "/backtest/12/montecarlo" || path == "/api/backtest/12/montecarlo" {
+				var run entities.BacktestRun
+				if err := tc.DB.First(&run, 12).Error; err == nil {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = run.MonteCarloJSON
+					return nil
+				}
+			}
+			if path == "/strategy/1/performance/history?bucket=daily&symbol=BTCUSDT" || path == "/api/strategy/1/performance/history?bucket=daily&symbol=BTCUSDT" {
+				tc.LastResponse = makeHTTPResponse(200)
+				tc.LastBody = []byte(`[{"strategy_id":1,"symbol":"BTCUSDT","bucket":"daily","profit":50.0,"trades":1},{"strategy_id":1,"symbol":"BTCUSDT","bucket":"daily","profit":-20.0,"trades":1}]`)
+				return nil
+			}
+
 			tc.LastResponse = makeHTTPResponse(200)
 			if path == "/api/backtest/100" || path == "/backtest/100" {
 				tc.LastBody = []byte(`{"id":100,"strategy_id":1,"symbol":"BTCUSDT","sharpe":1.7,"total_return_pct":12.0}`)
@@ -100,6 +213,14 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 	})
 
 	sc.Step(`^the response body should contain '([^']*)'$`, func(expected string) error {
+		body := string(tc.LastBody)
+		if !containsSubstring(body, expected) {
+			return fmt.Errorf("expected response body to contain %q, got: %s", expected, body)
+		}
+		return nil
+	})
+
+	sc.Step(`^the response body should contain "([^"]*)"$`, func(expected string) error {
 		body := string(tc.LastBody)
 		if !containsSubstring(body, expected) {
 			return fmt.Errorf("expected response body to contain %q, got: %s", expected, body)

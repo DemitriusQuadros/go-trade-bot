@@ -3,10 +3,12 @@ package backtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 
+	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/backtest"
 	"go-trade-bot/internal/handler"
@@ -19,6 +21,8 @@ type UseCase interface {
 	RunWalkForward(ctx context.Context, req usecase.WalkForwardRequest) (entities.BacktestRun, error)
 	GetByID(ctx context.Context, id uint) (entities.BacktestRun, error)
 	ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error)
+	RunMonteCarlo(ctx context.Context, runID uint, iterations int) (engine.MonteCarloResult, error)
+	GetMonteCarlo(ctx context.Context, runID uint) (engine.MonteCarloResult, error)
 }
 
 type BacktestHandler struct {
@@ -51,6 +55,16 @@ func (h *BacktestHandler) Handlers() []handler.Configuration {
 		{
 			Pattern: "/backtest",
 			Action:  h.List,
+			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/backtest/{id:[0-9]+}/montecarlo",
+			Action:  h.RunMonteCarlo,
+			Method:  http.MethodPost,
+		},
+		{
+			Pattern: "/backtest/{id:[0-9]+}/montecarlo",
+			Action:  h.GetMonteCarlo,
 			Method:  http.MethodGet,
 		},
 	}
@@ -157,4 +171,95 @@ func (h *BacktestHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(respList)
+}
+
+type monteCarloRequestDTO struct {
+	Iterations int `json:"iterations"`
+}
+
+// RunMonteCarlo implements backend-03's POST /backtest/{id}/montecarlo:
+// 404 (run not found), 400 (iterations <= 0 or > cap), 422 (fewer than 2
+// trades - reordering is meaningless), 200 with the computed distribution
+// otherwise. The use case itself persists the result onto the run row so a
+// subsequent GET doesn't recompute it.
+func (h *BacktestHandler) RunMonteCarlo(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseBacktestID(w, r)
+	if !ok {
+		return
+	}
+
+	var dto monteCarloRequestDTO
+	if r.ContentLength != 0 {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &dto); err != nil {
+				http.Error(w, "invalid request json: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	result, err := h.useCase.RunMonteCarlo(r.Context(), id, dto.Iterations)
+	if err != nil {
+		writeMonteCarloError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// GetMonteCarlo implements backend-03's GET /backtest/{id}/montecarlo:
+// returns the cached result, 404 if the run doesn't exist or Monte Carlo has
+// never been computed for it.
+func (h *BacktestHandler) GetMonteCarlo(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseBacktestID(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := h.useCase.GetMonteCarlo(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, usecase.ErrMonteCarloNotYetComputed) || errors.Is(err, usecase.ErrBacktestRunNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func writeMonteCarloError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, usecase.ErrInvalidMonteCarloIterations):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, usecase.ErrInsufficientTradesForMonteCarlo):
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	case errors.Is(err, usecase.ErrBacktestRunNotFound):
+		http.Error(w, "backtest run not found", http.StatusNotFound)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func parseBacktestID(w http.ResponseWriter, r *http.Request) (uint, bool) {
+	vars := mux.Vars(r)
+	idStr, ok := vars["id"]
+	if !ok {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return 0, false
+	}
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return 0, false
+	}
+	return uint(id), true
 }

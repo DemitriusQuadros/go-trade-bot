@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"go-trade-bot/app/entities"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -66,4 +67,27 @@ func (r StrategyRepository) GetStrategyPerformanceBySymbol(ctx context.Context) 
 		`).Scan(&performances)
 
 	return performances
+}
+
+// GetPerformanceInRange mirrors GetStrategyPerformanceBySymbol's existing
+// join/aggregate query, with a WHERE o.updated_at (the close time - Order
+// rows use UpdatedAt as their "closed at" timestamp today, per
+// GenerateSellSignal setting Orders[0].UpdatedAt at close time) filter added
+// - backend-05's daily snapshot job's data source. Unlike the all-time
+// method, this one also selects st.id so the caller can persist a
+// StrategyPerformanceSnapshot row keyed by StrategyID, not just strategy
+// name.
+func (r StrategyRepository) GetPerformanceInRange(ctx context.Context, from, to time.Time) ([]entities.StrategyPerformance, error) {
+	var performances []entities.StrategyPerformance
+	err := r.db.WithContext(ctx).Raw(`
+			select st.id strategy_id, st.name Name, s.symbol Symbol, coalesce(sum(profit),0) Profit, count(*) Trades
+			from orders o
+			join signals s on o.signal_id = s.id
+			join strategies st on st.id = s.strategy_id
+			where o.updated_at >= ? and o.updated_at < ?
+			group by st.id, st.name, s.symbol
+			order by profit desc
+		`, from, to).Scan(&performances).Error
+
+	return performances, err
 }

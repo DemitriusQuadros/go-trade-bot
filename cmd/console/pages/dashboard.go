@@ -19,7 +19,8 @@ type DashboardPage struct {
 	Header       *widgets.Paragraph
 	TabPane      *widgets.TabPane
 	Dependencies *dependencies.Dependencies
-	stop         chan struct{}
+	cancel       context.CancelFunc
+	isActive     bool
 	mu           sync.RWMutex
 
 	lastAccount    apiclient.AccountView
@@ -268,7 +269,12 @@ func (p *DashboardPage) buildPairsGrid(width, height int) *widgets.Paragraph {
 
 func (p *DashboardPage) StartSync() {
 	p.StopSync()
-	p.stop = make(chan struct{})
+
+	p.mu.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+	p.isActive = true
+	p.mu.Unlock()
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
@@ -276,22 +282,36 @@ func (p *DashboardPage) StartSync() {
 
 		for {
 			select {
-			case <-p.stop:
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				p.mu.Lock()
-				p.fetchDataOnce(context.Background())
+				active := p.isActive
+				if !active || ctx.Err() != nil {
+					p.mu.Unlock()
+					return
+				}
+				p.fetchDataOnce(ctx)
 				p.updateHeader()
 				p.mu.Unlock()
-				SafeRender(p.Render())
+
+				p.mu.RLock()
+				active = p.isActive
+				p.mu.RUnlock()
+				if active && ctx.Err() == nil {
+					SafeRender(p.Render())
+				}
 			}
 		}
 	}()
 }
 
 func (p *DashboardPage) StopSync() {
-	if p.stop != nil {
-		close(p.stop)
-		p.stop = nil
+	p.mu.Lock()
+	p.isActive = false
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
 	}
+	p.mu.Unlock()
 }

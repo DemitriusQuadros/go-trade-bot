@@ -156,3 +156,85 @@ type WalkForwardRequest struct {
 	StepMonths      int        `json:"step_months,omitempty"`
 	InitialCapital  float64    `json:"initial_capital,omitempty"`
 }
+
+// --- Optimization (Page 7) --------------------------------------------------
+
+// ParamRange represents a single parameter's sweep range for a hyperparameter
+// optimization grid search, per backend-01's { "min", "max", "step" } shape
+// (NOT "from"/"to" — reconciled against the final backend-01 contract).
+type ParamRange struct {
+	Min  float64 `json:"min"`
+	Max  float64 `json:"max"`
+	Step float64 `json:"step"`
+}
+
+// RunOptimizationRequest represents parameters to launch a hyperparameter
+// optimization grid search via POST /optimize.
+type RunOptimizationRequest struct {
+	StrategyID     uint                  `json:"strategy_id"`
+	Symbol         string                `json:"symbol"`
+	Timeframe      string                `json:"timeframe"`
+	StartDate      time.Time             `json:"start_date"`
+	EndDate        time.Time             `json:"end_date"`
+	InitialCapital float64               `json:"initial_capital,omitempty"`
+	ParamGrid      map[string]ParamRange `json:"param_grid"`
+}
+
+// BacktestMetricsView mirrors internal/metrics_provider.BacktestMetrics for a
+// single grid-search combination's computed performance.
+type BacktestMetricsView struct {
+	SharpeRatio    float64 `json:"sharpe_ratio"`
+	MaxDrawdownPct float64 `json:"max_drawdown_pct"`
+	WinRatePct     float64 `json:"win_rate_pct"`
+	ProfitFactor   any     `json:"profit_factor"` // float64 or string "Infinity", matching BacktestRunView's convention
+	TotalTrades    int     `json:"total_trades"`
+	TotalReturnPct float64 `json:"total_return_pct"`
+}
+
+// OptimizationRunView represents the status/progress of an optimization run,
+// as returned by POST /optimize (202) and GET /optimize/{id}. It deliberately
+// does NOT carry the full per-combination grid — per backend-01, that lives
+// behind the separate GET /optimize/{id}/results endpoint (see
+// OptimizationResultsView), which 409s until status == "completed".
+type OptimizationRunView struct {
+	ID                uint                 `json:"id"`
+	StrategyID        uint                 `json:"strategy_id"`
+	Status            string               `json:"status"` // "pending" | "running" | "completed" | "failed"
+	Progress          int                  `json:"progress"`
+	TotalCombinations int                  `json:"total_combinations"`
+	BestConfig        map[string]float64   `json:"best_config"`
+	BestMetrics       *BacktestMetricsView `json:"best_metrics"`
+	ErrorMessage      string               `json:"error_message"`
+}
+
+// OptimizationResultItemView represents one (params, metrics) combination in
+// an optimization run's full grid. Metrics is nil when this specific
+// combination errored out (backend-01 AC#7 — one bad combination doesn't
+// abort the whole run).
+type OptimizationResultItemView struct {
+	Params  map[string]float64   `json:"params"`
+	Metrics *BacktestMetricsView `json:"metrics"`
+}
+
+// OptimizationResultsView represents the full per-combination grid for a
+// completed optimization run, as returned by GET /optimize/{id}/results.
+type OptimizationResultsView struct {
+	ID          uint                         `json:"id"`
+	BestConfig  map[string]float64           `json:"best_config"`
+	BestMetrics BacktestMetricsView          `json:"best_metrics"`
+	Grid        []OptimizationResultItemView `json:"grid"`
+}
+
+// --- Strategy performance history (Page 2 detail overlay sparkline) --------
+
+// PerformanceHistoryPointView represents one time-bucketed P&L snapshot for a
+// (strategy, symbol) pair, as returned by
+// GET /strategy/{id}/performance/history. Rows are sparse — a bucket with
+// zero closed trades has no row at all (backend-05 AC#5) — callers must not
+// assume one row per calendar day/week/month in range.
+type PerformanceHistoryPointView struct {
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	Profit      float64   `json:"profit"`
+	Trades      int       `json:"trades"`
+}

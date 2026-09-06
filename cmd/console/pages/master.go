@@ -20,7 +20,9 @@ type EventHandler interface {
 	HandleEvent(e ui.Event) error
 }
 
-// RegisterPages centralizes the 6-tab construction and returns the ordered slice of pages.
+// RegisterPages centralizes the 7-tab construction and returns the ordered slice of pages.
+// Page 7 (Optimization Results, spec tui-01 Phase 4) is additive to Phase 3's
+// original 6-page set — see docs/specs/phase-4/tui-01-page-optimization-results.md.
 func RegisterPages(header *widgets.Paragraph, tabPane *widgets.TabPane, d *dependencies.Dependencies) []Page {
 	p1 := NewDashboardPage().Set(header, tabPane, d)
 	p2 := NewStrategiesPage().Set(header, tabPane, d)
@@ -28,6 +30,7 @@ func RegisterPages(header *widgets.Paragraph, tabPane *widgets.TabPane, d *depen
 	p4 := NewBacktestLauncherPage().Set(header, tabPane, d)
 	p5 := NewBacktestResultsPage().Set(header, tabPane, d)
 	p6 := NewExecutionLogPage().Set(header, tabPane, d)
+	p7 := NewOptimizeResultsPage().Set(header, tabPane, d)
 
 	// Cross-page wiring:
 	// Page 2 [b] navigates to Page 4 with preselected strategy
@@ -50,7 +53,7 @@ func RegisterPages(header *widgets.Paragraph, tabPane *widgets.TabPane, d *depen
 		}
 	}
 
-	return []Page{p1, p2, p3, p4, p5, p6}
+	return []Page{p1, p2, p3, p4, p5, p6, p7}
 }
 
 // getTerminalDimensions safely queries terminal dimensions without panicking if ui.Init() wasn't called.

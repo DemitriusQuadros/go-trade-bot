@@ -7,10 +7,13 @@ import (
 	account "go-trade-bot/app/handler/web/account"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
+	optimize "go-trade-bot/app/handler/web/optimize"
+	performancehistory "go-trade-bot/app/handler/web/performancehistory"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	_ "go-trade-bot/app/strategies/bollinger"
 	_ "go-trade-bot/app/strategies/grid"
+	_ "go-trade-bot/app/strategies/mlgrpc"
 	_ "go-trade-bot/app/strategies/scalping"
 	"go-trade-bot/cmd/api/modules"
 	config "go-trade-bot/internal/configuration"
@@ -43,6 +46,8 @@ func main() {
 		modules.SignalModule,
 		modules.CandleModule,
 		modules.BacktestModule,
+		modules.OptimizeModule,
+		modules.PerformanceHistoryModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
@@ -50,6 +55,8 @@ func main() {
 			AsRoute(account.NewAccountHandler),
 			AsRoute(signal.NewSignalHandler),
 			AsRoute(backtest.NewBacktestHandler),
+			AsRoute(optimize.NewOptimizeHandler),
+			AsRoute(performancehistory.NewHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`),
@@ -119,6 +126,8 @@ func Migrate(db *gorm.DB) error {
 		&entities.Account{},
 		&entities.Candle{},
 		&entities.BacktestRun{},
+		&entities.OptimizationRun{},
+		&entities.StrategyPerformanceSnapshot{},
 	); err != nil {
 		return err
 	}

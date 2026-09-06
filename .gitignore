@@ -1,2 +1,5 @@
 config.yml
 .vscode
+.DS_Store
+.tmpbin/
+reports/

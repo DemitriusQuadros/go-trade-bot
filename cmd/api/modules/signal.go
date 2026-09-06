@@ -13,7 +13,6 @@ var SignalModule = fx.Module("signal",
 	fx.Provide(
 		repository.NewSignalRepository,
 		usecase.NewDefaultPositionSizer,
-		func(d *usecase.DefaultPositionSizer) usecase.PositionSizer { return d },
 		usecase.NewSignalUseCase,
 		func(a *account.AccountUseCase) usecase.AccountUseCase { return a },
 		func(s repository.SignalRepository) usecase.SignalRepository { return s },

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	handler "go-trade-bot/app/handler/web/backtest"
 	usecase "go-trade-bot/app/usecase/backtest"
@@ -21,9 +22,19 @@ import (
 )
 
 type mockUseCase struct {
-	runResult entities.BacktestRun
-	runErr    error
-	listRuns  []entities.BacktestRun
+	runResult        entities.BacktestRun
+	runErr           error
+	listRuns         []entities.BacktestRun
+	monteCarloResult engine.MonteCarloResult
+	monteCarloErr    error
+}
+
+func (m *mockUseCase) RunMonteCarlo(ctx context.Context, runID uint, iterations int) (engine.MonteCarloResult, error) {
+	return m.monteCarloResult, m.monteCarloErr
+}
+
+func (m *mockUseCase) GetMonteCarlo(ctx context.Context, runID uint) (engine.MonteCarloResult, error) {
+	return m.monteCarloResult, m.monteCarloErr
 }
 
 func (m *mockUseCase) Run(ctx context.Context, req usecase.RunRequest) (entities.BacktestRun, error) {
@@ -120,4 +131,118 @@ func TestBacktestHandler_List(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Len(t, resp, 2)
+}
+
+func TestBacktestHandler_RunMonteCarlo_Success(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloResult: engine.MonteCarloResult{Iterations: 1000},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.RunMonteCarlo).Methods(http.MethodPost)
+
+	req := httptest.NewRequest(http.MethodPost, "/backtest/1/montecarlo", bytes.NewBufferString(`{"iterations":1000}`))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp engine.MonteCarloResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 1000, resp.Iterations)
+}
+
+func TestBacktestHandler_RunMonteCarlo_NoBody_UsesDefault(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloResult: engine.MonteCarloResult{Iterations: 1000},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.RunMonteCarlo).Methods(http.MethodPost)
+
+	req := httptest.NewRequest(http.MethodPost, "/backtest/1/montecarlo", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestBacktestHandler_RunMonteCarlo_InvalidIterations_400(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloErr: usecase.ErrInvalidMonteCarloIterations,
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.RunMonteCarlo).Methods(http.MethodPost)
+
+	req := httptest.NewRequest(http.MethodPost, "/backtest/1/montecarlo", bytes.NewBufferString(`{"iterations":50000}`))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestBacktestHandler_RunMonteCarlo_InsufficientTrades_422(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloErr: usecase.ErrInsufficientTradesForMonteCarlo,
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.RunMonteCarlo).Methods(http.MethodPost)
+
+	req := httptest.NewRequest(http.MethodPost, "/backtest/1/montecarlo", bytes.NewBufferString(`{}`))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestBacktestHandler_RunMonteCarlo_RunNotFound_404(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloErr: usecase.ErrBacktestRunNotFound,
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.RunMonteCarlo).Methods(http.MethodPost)
+
+	req := httptest.NewRequest(http.MethodPost, "/backtest/999/montecarlo", bytes.NewBufferString(`{}`))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestBacktestHandler_GetMonteCarlo_Success(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloResult: engine.MonteCarloResult{Iterations: 500},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.GetMonteCarlo).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1/montecarlo", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp engine.MonteCarloResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 500, resp.Iterations)
+}
+
+// TestBacktestHandler_GetMonteCarlo_NotComputed_404 covers backend-03's
+// contract: GET before any POST returns 404, distinct from a successful
+// cached read.
+func TestBacktestHandler_GetMonteCarlo_NotComputed_404(t *testing.T) {
+	mockUC := &mockUseCase{
+		monteCarloErr: usecase.ErrMonteCarloNotYetComputed,
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/montecarlo", h.GetMonteCarlo).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1/montecarlo", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

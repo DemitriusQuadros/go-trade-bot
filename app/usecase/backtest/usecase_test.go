@@ -2,6 +2,7 @@ package backtest_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func (m *mockBacktestRepo) GetByID(ctx context.Context, id uint) (entities.Backt
 			return r, nil
 		}
 	}
-	return entities.BacktestRun{}, nil
+	return entities.BacktestRun{}, fmt.Errorf("backtest run %d not found", id)
 }
 
 func (m *mockBacktestRepo) ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error) {

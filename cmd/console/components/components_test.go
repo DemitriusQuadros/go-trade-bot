@@ -57,11 +57,11 @@ func TestStrategyTableComponents(t *testing.T) {
 		if r.URL.Path == "/strategy" {
 			_ = json.NewEncoder(w).Encode([]apiclient.StrategyView{
 				{
-					ID:           1,
-					Name:         "grid_btc",
-					StrategyName: "grid",
-					Status:       "productive",
-					Mode:         "live",
+					ID:               1,
+					Name:             "grid_btc",
+					StrategyName:     "grid",
+					Status:           "productive",
+					Mode:             "live",
 					MonitoredSymbols: []string{"BTCUSDT"},
 					StrategyConfiguration: apiclient.StrategyConfigurationView{
 						Cycle: 5,
@@ -86,4 +86,45 @@ func TestStrategyTableComponents(t *testing.T) {
 	assert.NotNil(t, table)
 	assert.Len(t, list, 1)
 	assert.Equal(t, "grid_btc", list[0].Name)
+}
+
+func TestBuildHeatmapGrid(t *testing.T) {
+	xValues := []float64{10, 12, 14}
+	yValues := []float64{1.0, 1.5, 2.0}
+	cellValues := [][]float64{
+		{0.61, 0.74, 0.88},
+		{0.70, 0.91, 1.10},
+		{0.82, 1.05, 1.24},
+	}
+
+	drawable := BuildHeatmapGrid("rsi_period", xValues, "stop_loss_pct", yValues, cellValues, 2, 2, false)
+	require.NotNil(t, drawable)
+
+	grid, ok := drawable.(*HeatmapGrid)
+	require.True(t, ok)
+	grid.SetRect(0, 0, 80, 10)
+	buf := ui.NewBuffer(grid.GetRect())
+	assert.NotPanics(t, func() { grid.Draw(buf) })
+
+	// Degenerate 1D sweep (single row) must still render without panicking.
+	singleRow := BuildHeatmapGrid("rsi_period", xValues, "stop_loss_pct", []float64{1.0}, [][]float64{{0.61, 0.74, 0.88}}, 0, 1, false)
+	sr, ok := singleRow.(*HeatmapGrid)
+	require.True(t, ok)
+	sr.SetRect(0, 0, 80, 10)
+	buf2 := ui.NewBuffer(sr.GetRect())
+	assert.NotPanics(t, func() { sr.Draw(buf2) })
+}
+
+func TestHeatmapColorGradientAndInversion(t *testing.T) {
+	// Higher normalized value must trend toward green, lower toward red,
+	// for the non-inverted (higher-is-better) case.
+	worst := heatmapColor(0.0)
+	best := heatmapColor(1.0)
+	assert.NotEqual(t, worst, best)
+	assert.Equal(t, ui.Color(196), worst)
+	assert.Equal(t, ui.Color(46), best)
+
+	// Out-of-range inputs are clamped, not out-of-bounds.
+	assert.Equal(t, heatmapColor(0.0), heatmapColor(-0.5))
+	assert.Equal(t, heatmapColor(1.0), heatmapColor(1.5))
 }

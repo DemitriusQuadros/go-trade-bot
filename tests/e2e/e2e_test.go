@@ -24,6 +24,10 @@ func TestFeatures(t *testing.T) {
 			steps.RegisterNotificationSteps(sc, tc)
 			steps.RegisterCandleSteps(sc, tc)
 			steps.RegisterBacktestSteps(sc, tc)
+			steps.RegisterOptimizationSteps(sc, tc)
+			steps.RegisterMonteCarloSteps(sc, tc)
+			steps.RegisterPerformanceHistorySteps(sc, tc)
+			steps.RegisterGRPCStrategySteps(sc, tc)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",

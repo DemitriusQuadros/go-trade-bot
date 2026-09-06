@@ -35,6 +35,7 @@ type BacktestLauncherPage struct {
 	progressMsg         string
 	recent              []apiclient.BacktestRunView
 	errBanner           string
+	isActive            bool
 	mu                  sync.RWMutex
 	OnBacktestCompleted func(result any)
 }
@@ -361,14 +362,20 @@ func (p *BacktestLauncherPage) HandleEvent(e ui.Event) error {
 					p.errBanner = fmt.Sprintf("Backtest failed: %v", err)
 				}
 				p.progressPct = 0
+				active := p.isActive
 				p.mu.Unlock()
-				SafeRender(p.Render())
+				if active {
+					SafeRender(p.Render())
+				}
 				return
 			}
 
 			p.progressPct = 100
+			active := p.isActive
 			p.mu.Unlock()
-			SafeRender(p.Render())
+			if active {
+				SafeRender(p.Render())
+			}
 
 			if p.OnBacktestCompleted != nil {
 				p.OnBacktestCompleted(runRes)
@@ -379,5 +386,14 @@ func (p *BacktestLauncherPage) HandleEvent(e ui.Event) error {
 	return nil
 }
 
-func (p *BacktestLauncherPage) StartSync() {}
-func (p *BacktestLauncherPage) StopSync()  {}
+func (p *BacktestLauncherPage) StartSync() {
+	p.mu.Lock()
+	p.isActive = true
+	p.mu.Unlock()
+}
+
+func (p *BacktestLauncherPage) StopSync() {
+	p.mu.Lock()
+	p.isActive = false
+	p.mu.Unlock()
+}

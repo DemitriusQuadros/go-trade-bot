@@ -24,6 +24,7 @@ type BacktestResultsPage struct {
 	bannerMsg    string
 	bannerUntil  time.Time
 	runningWF    bool
+	isActive     bool
 	mu           sync.RWMutex
 }
 
@@ -268,8 +269,11 @@ func (p *BacktestResultsPage) HandleEvent(e ui.Event) error {
 				p.bannerMsg = "Walk-forward validation completed"
 			}
 			p.bannerUntil = time.Now().Add(4 * time.Second)
+			active := p.isActive
 			p.mu.Unlock()
-			SafeRender(p.Render())
+			if active {
+				SafeRender(p.Render())
+			}
 		}()
 
 	case "s":
@@ -282,5 +286,14 @@ func (p *BacktestResultsPage) HandleEvent(e ui.Event) error {
 	return nil
 }
 
-func (p *BacktestResultsPage) StartSync() {}
-func (p *BacktestResultsPage) StopSync()  {}
+func (p *BacktestResultsPage) StartSync() {
+	p.mu.Lock()
+	p.isActive = true
+	p.mu.Unlock()
+}
+
+func (p *BacktestResultsPage) StopSync() {
+	p.mu.Lock()
+	p.isActive = false
+	p.mu.Unlock()
+}

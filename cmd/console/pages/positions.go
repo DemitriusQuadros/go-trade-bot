@@ -22,7 +22,8 @@ type PositionsPage struct {
 	positions    []apiclient.SignalView
 	prices       map[string]float64
 	selectedCard int
-	stop         chan struct{}
+	cancel       context.CancelFunc
+	isActive     bool
 	confirming   bool
 	errBanner    string
 	mu           sync.RWMutex
@@ -286,12 +287,18 @@ func (p *PositionsPage) HandleEvent(e ui.Event) error {
 
 				go func() {
 					err := p.Dependencies.API.CloseSignal(context.Background(), sigID)
+					p.mu.Lock()
 					if err != nil {
-						p.mu.Lock()
 						p.errBanner = fmt.Sprintf("Failed to close signal: %v", err)
-						p.mu.Unlock()
-						p.fetchSignals()
-						SafeRender(p.Render())
+					}
+					active := p.isActive
+					p.mu.Unlock()
+
+					if err != nil {
+						p.fetchSignals(context.Background())
+						if active {
+							SafeRender(p.Render())
+						}
 					}
 				}()
 			}
@@ -326,20 +333,20 @@ func (p *PositionsPage) HandleEvent(e ui.Event) error {
 	return nil
 }
 
-func (p *PositionsPage) fetchSignals() {
-	if p.Dependencies == nil || p.Dependencies.API == nil {
+func (p *PositionsPage) fetchSignals(ctx context.Context) {
+	if p.Dependencies == nil || p.Dependencies.API == nil || ctx.Err() != nil {
 		return
 	}
-	sigs, err := p.Dependencies.API.GetOpenSignals(context.Background())
-	if err == nil {
+	sigs, err := p.Dependencies.API.GetOpenSignals(ctx)
+	if err == nil && ctx.Err() == nil {
 		p.mu.Lock()
 		p.positions = sigs
 		p.mu.Unlock()
 	}
 }
 
-func (p *PositionsPage) fetchPrices() {
-	if p.Dependencies == nil || p.Dependencies.API == nil {
+func (p *PositionsPage) fetchPrices(ctx context.Context) {
+	if p.Dependencies == nil || p.Dependencies.API == nil || ctx.Err() != nil {
 		return
 	}
 	p.mu.RLock()
@@ -349,12 +356,15 @@ func (p *PositionsPage) fetchPrices() {
 	}
 	p.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	for sym := range symSet {
-		prices, err := p.Dependencies.API.ListTickerPrices(ctx, sym)
-		if err == nil && len(prices) > 0 {
+		if callCtx.Err() != nil {
+			return
+		}
+		prices, err := p.Dependencies.API.ListTickerPrices(callCtx, sym)
+		if err == nil && len(prices) > 0 && callCtx.Err() == nil {
 			p.mu.Lock()
 			p.prices[sym] = prices[0].Price
 			p.mu.Unlock()
@@ -364,30 +374,59 @@ func (p *PositionsPage) fetchPrices() {
 
 func (p *PositionsPage) StartSync() {
 	p.StopSync()
-	p.stop = make(chan struct{})
-	p.fetchSignals()
-	p.fetchPrices()
+
+	p.mu.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+	p.isActive = true
+	p.mu.Unlock()
 
 	go func() {
+		p.fetchSignals(ctx)
+		p.fetchPrices(ctx)
+
+		p.mu.RLock()
+		active := p.isActive
+		p.mu.RUnlock()
+		if active && ctx.Err() == nil {
+			SafeRender(p.Render())
+		}
+
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-p.stop:
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				p.fetchSignals()
-				p.fetchPrices()
-				SafeRender(p.Render())
+				p.mu.RLock()
+				active := p.isActive
+				p.mu.RUnlock()
+				if !active || ctx.Err() != nil {
+					return
+				}
+
+				p.fetchSignals(ctx)
+				p.fetchPrices(ctx)
+
+				p.mu.RLock()
+				active = p.isActive
+				p.mu.RUnlock()
+				if active && ctx.Err() == nil {
+					SafeRender(p.Render())
+				}
 			}
 		}
 	}()
 }
 
 func (p *PositionsPage) StopSync() {
-	if p.stop != nil {
-		close(p.stop)
-		p.stop = nil
+	p.mu.Lock()
+	p.isActive = false
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
 	}
+	p.mu.Unlock()
 }

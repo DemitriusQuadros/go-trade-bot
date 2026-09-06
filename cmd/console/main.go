@@ -23,7 +23,7 @@ func main() {
 	header.Border = true
 
 	tabPane := widgets.NewTabPane(
-		"Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log",
+		"Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log", "Optimize",
 	)
 	tabPane.Border = true
 	tabPane.BorderStyle.Fg = ui.ColorGreen
@@ -70,7 +70,7 @@ func main() {
 
 func isFunctionKey(id string) bool {
 	switch id {
-	case "<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>":
+	case "<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>", "<F7>":
 		return true
 	default:
 		return false
@@ -91,6 +91,8 @@ func functionKeyIndex(id string) int {
 		return 4
 	case "<F6>":
 		return 5
+	case "<F7>":
+		return 6
 	default:
 		return -1
 	}

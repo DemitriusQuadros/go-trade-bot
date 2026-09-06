@@ -1,9 +1,11 @@
 package pages
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +89,34 @@ func setupTestServerAndDeps(t *testing.T) (*httptest.Server, *dependencies.Depen
 			})
 		case r.URL.Path == "/signal/close/10":
 			w.WriteHeader(http.StatusAccepted)
+		case r.URL.Path == "/optimize" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(apiclient.OptimizationRunView{
+				ID: 1, StrategyID: 1, Status: "pending", TotalCombinations: 6,
+			})
+		case r.URL.Path == "/optimize/1":
+			_ = json.NewEncoder(w).Encode(apiclient.OptimizationRunView{
+				ID: 1, StrategyID: 1, Status: "completed", Progress: 6, TotalCombinations: 6,
+				BestConfig:  map[string]float64{"rsi_period": 14, "stop_loss_pct": 2.0},
+				BestMetrics: &apiclient.BacktestMetricsView{SharpeRatio: 1.24, MaxDrawdownPct: 12.1, WinRatePct: 59.4},
+			})
+		case r.URL.Path == "/optimize/1/results":
+			_ = json.NewEncoder(w).Encode(apiclient.OptimizationResultsView{
+				ID:         1,
+				BestConfig: map[string]float64{"rsi_period": 14, "stop_loss_pct": 2.0},
+				BestMetrics: apiclient.BacktestMetricsView{
+					SharpeRatio: 1.24, MaxDrawdownPct: 12.1, WinRatePct: 59.4, ProfitFactor: 1.8, TotalTrades: 20,
+				},
+				Grid: []apiclient.OptimizationResultItemView{
+					{Params: map[string]float64{"rsi_period": 10, "stop_loss_pct": 1.0}, Metrics: &apiclient.BacktestMetricsView{SharpeRatio: 0.61, MaxDrawdownPct: 20.0, WinRatePct: 40.0, ProfitFactor: 1.1}},
+					{Params: map[string]float64{"rsi_period": 14, "stop_loss_pct": 2.0}, Metrics: &apiclient.BacktestMetricsView{SharpeRatio: 1.24, MaxDrawdownPct: 12.1, WinRatePct: 59.4, ProfitFactor: 1.8}},
+				},
+			})
+		case strings.HasPrefix(r.URL.Path, "/strategy/") && strings.HasSuffix(r.URL.Path, "/performance/history"):
+			_ = json.NewEncoder(w).Encode([]apiclient.PerformanceHistoryPointView{
+				{PeriodStart: time.Now().AddDate(0, 0, -2), PeriodEnd: time.Now().AddDate(0, 0, -1), Profit: 12.5, Trades: 2},
+				{PeriodStart: time.Now().AddDate(0, 0, -1), PeriodEnd: time.Now(), Profit: 42.10, Trades: 3},
+			})
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
@@ -107,10 +137,10 @@ func TestRegisterPages(t *testing.T) {
 	defer ts.Close()
 
 	header := widgets.NewParagraph()
-	tabPane := widgets.NewTabPane("Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log")
+	tabPane := widgets.NewTabPane("Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log", "Optimize")
 
 	pageList := RegisterPages(header, tabPane, deps)
-	require.Len(t, pageList, 6)
+	require.Len(t, pageList, 7)
 
 	for _, p := range pageList {
 		drawable := p.Render()
@@ -161,6 +191,104 @@ func TestStrategiesPage_Events(t *testing.T) {
 	assert.True(t, backtestTriggered)
 }
 
+func TestStrategiesPage_HistorySparkline(t *testing.T) {
+	ts, deps := setupTestServerAndDeps(t)
+	defer ts.Close()
+
+	header := widgets.NewParagraph()
+	tabPane := widgets.NewTabPane("Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log", "Optimize")
+
+	sp := NewStrategiesPage()
+	sp.Set(header, tabPane, deps)
+	_ = sp.Render()
+
+	// AC#1: opening the overlay initializes bucket=daily and
+	// symbol=MonitoredSymbols[0], and kicks off the history fetch.
+	err := sp.HandleEvent(ui.Event{ID: "<Enter>"})
+	require.NoError(t, err)
+	sp.mu.RLock()
+	assert.True(t, sp.detailVisible)
+	assert.Equal(t, "daily", sp.historyBucket)
+	assert.Equal(t, "BTCUSDT", sp.historySymbol)
+	sp.mu.RUnlock()
+
+	require.Eventually(t, func() bool {
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+		return !sp.historyLoading
+	}, 2*time.Second, 20*time.Millisecond, "expected history fetch to resolve")
+
+	sp.mu.RLock()
+	assert.Len(t, sp.historyData, 2)
+	assert.NoError(t, sp.historyErr)
+	sp.mu.RUnlock()
+
+	drawable, _, footer := sp.buildDetailOverlay(sp.strategies[0], 160, 50)
+	assert.NotNil(t, drawable)
+	require.NotNil(t, footer)
+	assert.Contains(t, footer.Text, "[g] toggle bucket")
+	assert.NotContains(t, footer.Text, "[y] toggle symbol", "single-symbol strategy must not show the [y] hint")
+
+	// AC#3: [g] cycles the bucket and re-fetches.
+	err = sp.HandleEvent(ui.Event{ID: "g"})
+	require.NoError(t, err)
+	sp.mu.RLock()
+	assert.Equal(t, "weekly", sp.historyBucket)
+	sp.mu.RUnlock()
+
+	require.Eventually(t, func() bool {
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+		return !sp.historyLoading
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// AC#3a: [y] is a no-op for a single-symbol strategy.
+	err = sp.HandleEvent(ui.Event{ID: "y"})
+	require.NoError(t, err)
+	sp.mu.RLock()
+	assert.Equal(t, "BTCUSDT", sp.historySymbol)
+	sp.mu.RUnlock()
+
+	// AC#7: closing and reopening resets bucket/symbol to defaults.
+	err = sp.HandleEvent(ui.Event{ID: "<Escape>"})
+	require.NoError(t, err)
+	err = sp.HandleEvent(ui.Event{ID: "<Enter>"})
+	require.NoError(t, err)
+	sp.mu.RLock()
+	assert.Equal(t, "daily", sp.historyBucket)
+	sp.mu.RUnlock()
+}
+
+func TestStrategiesPage_HistorySparkline_EmptyAndError(t *testing.T) {
+	sp := NewStrategiesPage()
+	sp.historyBucket = "daily"
+	sp.historySymbol = "BTCUSDT"
+	strat := apiclient.StrategyView{MonitoredSymbols: []string{"BTCUSDT"}}
+
+	// AC#4: an empty (but successful) fetch shows "No history yet", not an
+	// empty sparkline.
+	sp.historyData = nil
+	sp.historyErr = nil
+	sp.historyLoading = false
+	section := sp.buildHistorySection()
+	para, ok := section.(*widgets.Paragraph)
+	require.True(t, ok)
+	assert.Equal(t, "No history yet", para.Text)
+
+	// AC#5: a failed fetch shows components.Error scoped to just this section.
+	sp.historyErr = apiclient.ErrAPI{StatusCode: 500, Body: "boom"}
+	section = sp.buildHistorySection()
+	errPara, ok := section.(*widgets.Paragraph)
+	require.True(t, ok)
+	assert.Contains(t, errPara.Text, "Failed to load")
+
+	// Multi-symbol strategy: [y] hint appears.
+	strat.MonitoredSymbols = []string{"BTCUSDT", "ETHUSDT"}
+	sp.historyErr = nil
+	footer := sp.buildHistoryFooter(strat)
+	assert.Contains(t, footer.Text, "[y] toggle symbol")
+}
+
 func TestPositionsPage_Events(t *testing.T) {
 	ts, deps := setupTestServerAndDeps(t)
 	defer ts.Close()
@@ -170,7 +298,7 @@ func TestPositionsPage_Events(t *testing.T) {
 
 	pp := NewPositionsPage()
 	pp.Set(header, tabPane, deps)
-	pp.fetchSignals()
+	pp.fetchSignals(context.Background())
 	_ = pp.Render()
 
 	// Select card
@@ -269,4 +397,105 @@ func TestExecutionLogPage_Events(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "", el.filterType)
 	assert.Equal(t, "", el.filterQuery)
+}
+
+func TestOptimizeResultsPage_Events(t *testing.T) {
+	ts, deps := setupTestServerAndDeps(t)
+	defer ts.Close()
+
+	header := widgets.NewParagraph()
+	tabPane := widgets.NewTabPane("Dashboard", "Strategies", "Positions", "Backtest", "Results", "Log", "Optimize")
+
+	op := NewOptimizeResultsPage()
+	op.Set(header, tabPane, deps)
+	_ = op.Render() // populates op.strategies via fetchStrategies
+
+	// Tab cycles through form fields without error.
+	err := op.HandleEvent(ui.Event{ID: "<Tab>"})
+	assert.NoError(t, err)
+	err = op.HandleEvent(ui.Event{ID: "<Right>"})
+	assert.NoError(t, err)
+
+	// [m] cycles the rank metric before any run has started.
+	err = op.HandleEvent(ui.Event{ID: "m"})
+	assert.NoError(t, err)
+	assert.Equal(t, "max_drawdown_pct", op.displayMetric)
+	assert.Equal(t, "max_drawdown_pct", op.form.RankMetric)
+
+	// Submitting starts the run and, after the 2s poll picks up the
+	// "completed" mock response, loads the full results grid.
+	err = op.HandleEvent(ui.Event{ID: "<Enter>"})
+	assert.NoError(t, err)
+
+	op.mu.RLock()
+	running := op.running
+	op.mu.RUnlock()
+	assert.True(t, running)
+
+	require.Eventually(t, func() bool {
+		op.mu.RLock()
+		defer op.mu.RUnlock()
+		return op.result != nil && !op.running
+	}, 5*time.Second, 100*time.Millisecond, "expected optimization polling to complete")
+
+	op.mu.RLock()
+	defer op.mu.RUnlock()
+	assert.Len(t, op.result.Grid, 2)
+	bestY, bestX := op.bestCellFor(op.displayMetric)
+	assert.GreaterOrEqual(t, bestY, 0)
+	assert.GreaterOrEqual(t, bestX, 0)
+
+	drawable := op.buildHeatmapArea(120)
+	assert.NotNil(t, drawable)
+}
+
+func TestOptimizeResultsPage_HeatmapEdgeCases(t *testing.T) {
+	op := NewOptimizeResultsPage()
+	op.strategies = []apiclient.StrategyView{{ID: 1, Name: "grid_btc"}}
+	op.axisXValues = []float64{10, 12}
+	op.axisYValues = []float64{1.0}
+
+	// Zero valid combinations must not render an empty heatmap.
+	op.result = &apiclient.OptimizationResultsView{Grid: nil}
+	drawable := op.buildHeatmapArea(120)
+	para, ok := drawable.(*widgets.Paragraph)
+	require.True(t, ok)
+	assert.Contains(t, para.Text, "No valid results")
+
+	// A single-row (1D sweep) grid is a legitimate degenerate case, not an error.
+	op.result = &apiclient.OptimizationResultsView{
+		BestConfig: map[string]float64{"rsi_period": 10, "stop_loss_pct": 1.0},
+		Grid: []apiclient.OptimizationResultItemView{
+			{Params: map[string]float64{"rsi_period": 10, "stop_loss_pct": 1.0}, Metrics: &apiclient.BacktestMetricsView{SharpeRatio: 0.5}},
+			{Params: map[string]float64{"rsi_period": 12, "stop_loss_pct": 1.0}, Metrics: &apiclient.BacktestMetricsView{SharpeRatio: 0.9}},
+		},
+	}
+	op.form.ParamX = "rsi_period"
+	op.form.ParamY = "stop_loss_pct"
+	op.form.RankMetric = "sharpe_ratio"
+	op.displayMetric = "sharpe_ratio"
+	drawable = op.buildHeatmapArea(120)
+	_, isHeatmap := drawable.(*heatmapComposite)
+	assert.True(t, isHeatmap)
+}
+
+func TestOptimizeResultsPage_MaxDrawdownInversion(t *testing.T) {
+	// Given max_drawdown_pct is active, lower values must be treated as
+	// "better" — the opposite direction from every other metric.
+	metrics := apiclient.BacktestMetricsView{MaxDrawdownPct: 5.0}
+	assert.Equal(t, 5.0, metricValue(metrics, "max_drawdown_pct"))
+
+	op := NewOptimizeResultsPage()
+	op.form.ParamX, op.form.ParamY = "rsi_period", "stop_loss_pct"
+	op.form.RankMetric = "sharpe_ratio" // submitted metric differs from displayMetric below
+	op.axisXValues = []float64{10, 12}
+	op.axisYValues = []float64{1.0}
+	op.result = &apiclient.OptimizationResultsView{
+		Grid: []apiclient.OptimizationResultItemView{
+			{Params: map[string]float64{"rsi_period": 10, "stop_loss_pct": 1.0}, Metrics: &apiclient.BacktestMetricsView{MaxDrawdownPct: 20.0}},
+			{Params: map[string]float64{"rsi_period": 12, "stop_loss_pct": 1.0}, Metrics: &apiclient.BacktestMetricsView{MaxDrawdownPct: 5.0}},
+		},
+	}
+	_, bestX := op.bestCellFor("max_drawdown_pct")
+	assert.Equal(t, 1, bestX, "the LOWER drawdown (5.0, at index 1) must be selected as best")
 }
