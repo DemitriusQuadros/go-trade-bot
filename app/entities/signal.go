@@ -36,6 +36,7 @@ type Order struct {
 	// StopLossOrderID is the BrokerOrderID of the resting STOP_MARKET order
 	// (Spec 03); empty if none/not-yet-triggered/cancelled.
 	StopLossOrderID string     `gorm:"type:varchar(50);"`
+	StopLossPrice   float32    `gorm:"default:0"`
 	EntryPrice      float32    `gorm:"not null"`
 	ExitPrice       float32    `gorm:"not null"`
 	Quantity        float32    `gorm:"not null"`

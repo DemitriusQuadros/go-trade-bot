@@ -24,9 +24,9 @@ const (
 type StrategyStatus string
 
 const (
-	Productive = "productive"
-	Testing    = "testing"
-	Disabled   = "disabled"
+	Productive StrategyStatus = "productive"
+	Testing    StrategyStatus = "testing"
+	Disabled   StrategyStatus = "disabled"
 )
 
 type Strategy struct {
@@ -80,6 +80,15 @@ const (
 func IsValidAlgorithm(algo string) bool {
 	switch Algorithm(algo) {
 	case Grid, Bollinger, Scalping:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidStatus(status string) bool {
+	switch StrategyStatus(status) {
+	case Productive, Testing, Disabled:
 		return true
 	default:
 		return false

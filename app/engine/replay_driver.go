@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"log"
+	"time"
 
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/repository/candle"
 	"go-trade-bot/app/strategies"
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/feed"
@@ -15,16 +18,52 @@ type SignalRepositoryReader interface {
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 }
 
+type WarmupCandleSource interface {
+	Warmup(ctx context.Context, symbol, timeframe string, window int) ([]exchange.Candle, error)
+}
+
+type ExchangeWarmupSource struct {
+	client exchange.ExchangeClient
+}
+
+func NewExchangeWarmupSource(client exchange.ExchangeClient) *ExchangeWarmupSource {
+	return &ExchangeWarmupSource{client: client}
+}
+
+func (s *ExchangeWarmupSource) Warmup(ctx context.Context, symbol, timeframe string, window int) ([]exchange.Candle, error) {
+	if s.client == nil {
+		return nil, nil
+	}
+	return s.client.ListKline(ctx, symbol, timeframe, window)
+}
+
+type CandleRepoWarmupSource struct {
+	repo candle.Repository
+	from time.Time
+}
+
+func NewCandleRepoWarmupSource(repo candle.Repository, from time.Time) *CandleRepoWarmupSource {
+	return &CandleRepoWarmupSource{repo: repo, from: from}
+}
+
+func (s *CandleRepoWarmupSource) Warmup(ctx context.Context, symbol, timeframe string, window int) ([]exchange.Candle, error) {
+	if s.repo == nil {
+		return nil, nil
+	}
+	return s.repo.RangeBefore(ctx, symbol, timeframe, s.from, window)
+}
+
 // ReplayDriver drives Engine.Run once per candle delivered by a Feed.
 type ReplayDriver struct {
-	Feed       feed.Feed
-	Exchange   *SimulatedFillExchange
-	Engine     *Engine
-	Strategy   strategies.Strategy
-	DBStrategy entities.Strategy
-	Symbol     string
-	Mode       strategies.ExecutionMode
-	SignalRepo SignalRepositoryReader
+	Feed         feed.Feed
+	Exchange     *SimulatedFillExchange
+	Engine       *Engine
+	Strategy     strategies.Strategy
+	DBStrategy   entities.Strategy
+	Symbol       string
+	Mode         strategies.ExecutionMode
+	SignalRepo   SignalRepositoryReader
+	WarmupSource WarmupCandleSource
 }
 
 func NewReplayDriver(
@@ -51,6 +90,16 @@ func NewReplayDriver(
 
 // Run consumes the Feed to exhaustion, calling Engine.Run once per candle.
 func (d *ReplayDriver) Run(ctx context.Context) ([]metrics_provider.TradeLogEntry, error) {
+	if d.WarmupSource != nil {
+		interval := d.DBStrategy.GetBrokerInterval()
+		if interval == "" {
+			interval = "1m"
+		}
+		if _, err := d.WarmupSource.Warmup(ctx, d.Symbol, interval, 100); err != nil {
+			log.Printf("[ReplayDriver] warmup failed for %s: %v", d.Symbol, err)
+		}
+	}
+
 	var lastCandle exchange.Candle
 
 	for {

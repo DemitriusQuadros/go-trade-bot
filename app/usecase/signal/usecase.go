@@ -36,6 +36,8 @@ type EntrySignal struct {
 	// computation). No Phase 1 ported strategy sets this - the hook
 	// contract is honored for forward-compatibility with future strategies.
 	StopLossPrice *float64
+	// PositionSizing, if non-nil, specifies pluggable position sizing (fixed amount or % of capital).
+	PositionSizing *PositionSizingConfig
 }
 
 type ExitSignal struct {
@@ -53,6 +55,8 @@ type ExitSignal struct {
 type SignalRepository interface {
 	Create(signal entities.Signal) error
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
+	GetAllOpenSignals() ([]entities.Signal, error)
+	GetAllClosedSignals() ([]entities.Signal, error)
 	Update(signal entities.Signal) error
 	GetByID(id uint) (entities.Signal, error)
 	GetAll() ([]entities.Signal, error)
@@ -74,6 +78,7 @@ type SignalUseCase struct {
 	Exchange       exchange.ExchangeClient
 	Notifier       notifier.NotificationSender
 	Metrics        *metrics.MetricsCollector
+	Sizer          PositionSizer
 	FeePct         float64 // optional override (DryRun), defaults to 0.1% if <= 0
 }
 
@@ -83,13 +88,18 @@ func NewSignalUseCase(
 	exchangeClient exchange.ExchangeClient,
 	notifySender notifier.NotificationSender,
 	collector *metrics.MetricsCollector,
+	sizer PositionSizer,
 ) SignalUseCase {
+	if sizer == nil {
+		sizer = NewDefaultPositionSizer()
+	}
 	return SignalUseCase{
 		Repository:     repository,
 		AccountUseCase: ac,
 		Exchange:       exchangeClient,
 		Notifier:       notifySender,
 		Metrics:        collector,
+		Sizer:          sizer,
 		FeePct:         0.1,
 	}
 }
@@ -119,8 +129,16 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		return nil
 	}
 
-	investedAmount, _ := s.AccountUseCase.GetDisponibleAmout()
-	requestedQty := float64(investedAmount) / float64(e.EntryPrice)
+	available, _ := s.AccountUseCase.GetDisponibleAmout()
+	sizer := s.Sizer
+	if sizer == nil {
+		sizer = NewDefaultPositionSizer()
+	}
+	investedAmount, err := sizer.Size(e.PositionSizing, float64(available))
+	if err != nil {
+		return fmt.Errorf("failed to compute position sizing: %w", err)
+	}
+	requestedQty := investedAmount / float64(e.EntryPrice)
 
 	ordinal := time.Now().UnixNano()
 	buyClientOrderID := fmt.Sprintf("gtb-%d-buy-%d", e.StrategyID, ordinal)
@@ -153,6 +171,11 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 
 	stopLossOrderID, stopLossPrice := s.submitStopLoss(ctx, e, ordinal, filledQty, fillPrice)
 
+	var slPrice float32
+	if stopLossPrice != nil {
+		slPrice = float32(*stopLossPrice)
+	}
+
 	signal := entities.Signal{
 		Symbol:     e.Symbol,
 		Status:     entities.Open,
@@ -163,6 +186,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 			{
 				BrokerOrderID:   result.BrokerOrderID,
 				StopLossOrderID: stopLossOrderID,
+				StopLossPrice:   slPrice,
 				EntryPrice:      float32(fillPrice),
 				ExitPrice:       0,
 				Quantity:        float32(filledQty),
@@ -449,6 +473,14 @@ func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.S
 func (s SignalUseCase) GetAll(ctx context.Context) ([]entities.Signal, error) {
 	signals, err := s.Repository.GetAll()
 	return signals, err
+}
+
+func (s SignalUseCase) GetAllOpen(ctx context.Context) ([]entities.Signal, error) {
+	return s.Repository.GetAllOpenSignals()
+}
+
+func (s SignalUseCase) GetAllClosed(ctx context.Context) ([]entities.Signal, error) {
+	return s.Repository.GetAllClosedSignals()
 }
 
 func (s SignalUseCase) GetByID(ctx context.Context, id uint) (entities.Signal, error) {

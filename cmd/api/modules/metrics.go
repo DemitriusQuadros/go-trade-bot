@@ -30,6 +30,15 @@ var Phase2Metrics = []metrics.MetricConfig{
 	},
 }
 
+var Phase3Metrics = []metrics.MetricConfig{
+	{
+		Name:       "strategy_panics_total",
+		Help:       "Total count of strategy panics recovered by the engine.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"strategy", "symbol"},
+	},
+}
+
 var MetricsModule = fx.Module("metrics",
 	fx.Provide(func() *metrics.MetricsCollector {
 		cfgs := []metrics.MetricConfig{
@@ -65,6 +74,7 @@ var MetricsModule = fx.Module("metrics",
 			},
 		}
 		cfgs = append(cfgs, Phase2Metrics...)
+		cfgs = append(cfgs, Phase3Metrics...)
 		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

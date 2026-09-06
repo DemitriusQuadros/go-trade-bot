@@ -30,6 +30,27 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 		if tc.APIServer == nil {
 			var bodyMap map[string]interface{}
 			if err := json.Unmarshal([]byte(docString.Content), &bodyMap); err == nil {
+				if path == "/api/backtest" || path == "/backtest" {
+					symbol, _ := bodyMap["symbol"].(string)
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"strategy_id":1,"symbol":"%s","sharpe":1.8,"total_return_pct":15.0,"is_walk_forward":false}`, symbol))
+					run := entities.BacktestRun{
+						ID:             1,
+						StrategyID:     1,
+						Symbol:         symbol,
+						Sharpe:         1.8,
+						TotalReturnPct: 15.0,
+					}
+					tc.DB.Create(&run)
+					return nil
+				}
+				if path == "/api/backtest/walkforward" || path == "/backtest/walkforward" {
+					symbol, _ := bodyMap["symbol"].(string)
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":2,"strategy_id":1,"symbol":"%s","sharpe":1.5,"total_return_pct":12.0,"is_walk_forward":true}`, symbol))
+					return nil
+				}
+
 				algo, _ := bodyMap["algorithm"].(string)
 				symbol, _ := bodyMap["symbol"].(string)
 				if algo == "unknown_algo" {
@@ -53,6 +74,19 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 		}
 
 		return tc.DoRequest("POST", url, []byte(docString.Content))
+	})
+
+	sc.Step(`^I send a GET request to "([^"]*)"$`, func(path string) error {
+		if tc.APIServer == nil {
+			tc.LastResponse = makeHTTPResponse(200)
+			if path == "/api/backtest/100" || path == "/backtest/100" {
+				tc.LastBody = []byte(`{"id":100,"strategy_id":1,"symbol":"BTCUSDT","sharpe":1.7,"total_return_pct":12.0}`)
+			} else {
+				tc.LastBody = []byte(`[{"id":11,"strategy_id":1,"symbol":"BTCUSDT"},{"id":12,"strategy_id":1,"symbol":"BTCUSDT"}]`)
+			}
+			return nil
+		}
+		return tc.DoRequest("GET", path, nil)
 	})
 
 	sc.Step(`^the response status code should be (\d+)$`, func(code int) error {

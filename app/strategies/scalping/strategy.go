@@ -119,7 +119,10 @@ func validateRSI(indicatorProvider indicatorProvider, candles []exchange.Candle)
 // its long-term candles from the engine-injected Config entry instead of a
 // direct broker.ListKline call.
 func isUptrend(ctx strategies.Context) bool {
-	longTermCandles, ok := ctx.Config[strategies.ConfigKeyLongTermCandles].([]exchange.Candle)
+	longTermCandles, ok := ctx.Config[strategies.ConfigKeyTimeframeCandles("15m")].([]exchange.Candle)
+	if !ok {
+		longTermCandles, ok = ctx.Config[strategies.ConfigKeyLongTermCandles].([]exchange.Candle)
+	}
 	if !ok || len(longTermCandles) < 20 {
 		return false
 	}

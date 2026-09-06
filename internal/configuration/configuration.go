@@ -17,7 +17,14 @@ type Configuration struct {
 	ConfirmLive bool   // from --confirm-live CLI flag (Spec 10)
 	Testnet     bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
 	WebhookURL  string // outbound trade-event notification target (Spec 09)
+	APIBaseURL  string // base URL for cmd/api (Spec TUI-01, default http://localhost:8080)
 	DryRun      DryRunConfig
+	Console     ConsoleConfig
+}
+
+type ConsoleConfig struct {
+	MetricsEnabled bool   // default false
+	MetricsPort    string // default "9192"
 }
 
 type DryRunConfig struct {
@@ -132,6 +139,20 @@ func NewConfiguration() *Configuration {
 	}
 	dryRunFillDelay := viper.GetDuration("DRY_RUN.FILL_DELAY")
 
+	consoleMetricsEnabled := viper.GetBool("CONSOLE.METRICS_ENABLED")
+	consoleMetricsPort := viper.GetString("CONSOLE.METRICS_PORT")
+	if consoleMetricsPort == "" {
+		consoleMetricsPort = "9192"
+	}
+
+	apiBaseURL := viper.GetString("API_BASE_URL")
+	if apiBaseURL == "" {
+		apiBaseURL = viper.GetString("API.BASE_URL")
+	}
+	if apiBaseURL == "" {
+		apiBaseURL = "http://localhost:8080"
+	}
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -157,10 +178,15 @@ func NewConfiguration() *Configuration {
 		ConfirmLive: confirmLive,
 		Testnet:     testnet,
 		WebhookURL:  webhookURL,
+		APIBaseURL:  apiBaseURL,
 		DryRun: DryRunConfig{
 			SlippagePct: dryRunSlippage,
 			FeePct:      dryRunFeePct,
 			FillDelay:   dryRunFillDelay,
+		},
+		Console: ConsoleConfig{
+			MetricsEnabled: consoleMetricsEnabled,
+			MetricsPort:    consoleMetricsPort,
 		},
 	}
 }

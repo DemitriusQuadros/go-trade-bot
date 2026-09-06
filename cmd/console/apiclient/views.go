@@ -1,0 +1,158 @@
+package apiclient
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// AccountView represents account balance and margin details.
+type AccountView struct {
+	ID              int64     `json:"id"`
+	Amount          float32   `json:"amount"`
+	AvailableOrders int64     `json:"available_orders"`
+	Currency        string    `json:"currency"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// StrategyConfigurationView holds embedded cycle and config blob.
+type StrategyConfigurationView struct {
+	Cycle         int             `json:"cycle"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+// StrategyView represents a configured strategy.
+type StrategyView struct {
+	ID                    uint                      `json:"id"`
+	Name                  string                    `json:"name"`
+	Description           string                    `json:"description"`
+	Algorithm             string                    `json:"algorithm"`
+	StrategyName          string                    `json:"strategy_name"`
+	Status                string                    `json:"status"`
+	Mode                  string                    `json:"mode"`
+	MonitoredSymbols      []string                  `json:"monitored_symbols"`
+	StrategyConfiguration StrategyConfigurationView `json:"strategy_configuration"`
+	CreatedAt             time.Time                 `json:"created_at"`
+	UpdatedAt             time.Time                 `json:"updated_at"`
+}
+
+// StrategyPerformanceView represents strategy performance aggregated by symbol.
+type StrategyPerformanceView struct {
+	Name   string  `json:"name"`
+	Symbol string  `json:"symbol"`
+	Profit float64 `json:"profit"`
+	Trades int     `json:"trades"`
+}
+
+// TickerPriceView represents price info for a ticker.
+type TickerPriceView struct {
+	Symbol string  `json:"symbol"`
+	Price  float64 `json:"price"`
+}
+
+// CandleView represents an individual OHLCV candle.
+type CandleView struct {
+	OpenTime  time.Time `json:"open_time"`
+	Open      float64   `json:"open"`
+	High      float64   `json:"high"`
+	Low       float64   `json:"low"`
+	Close     float64   `json:"close"`
+	Volume    float64   `json:"volume"`
+	CloseTime time.Time `json:"close_time"`
+}
+
+// OrderView represents a trade order belonging to a signal.
+type OrderView struct {
+	ID              uint      `json:"id"`
+	SignalID        uint      `json:"signal_id"`
+	BrokerOrderID   string    `json:"broker_order_id"`
+	StopLossOrderID string    `json:"stop_loss_order_id"`
+	StopLossPrice   float32   `json:"stop_loss_price"`
+	EntryPrice      float32   `json:"entry_price"`
+	ExitPrice       float32   `json:"exit_price"`
+	Quantity        float32   `json:"quantity"`
+	InvestedAmount  float32   `json:"invested_amount"`
+	MarginType      string    `json:"margin_type"`
+	EntryFee        float32   `json:"entry_fee"`
+	ExitFee         float32   `json:"exit_fee"`
+	Leverage        float32   `json:"leverage"`
+	ExecutedQty     float32   `json:"executed_qty"`
+	IsClosing       bool      `json:"is_closing"`
+	Profit          float32   `json:"profit"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// SignalView represents a trading signal with its associated orders.
+type SignalView struct {
+	ID         uint         `json:"id"`
+	Symbol     string       `json:"symbol"`
+	StrategyID uint         `json:"strategy_id"`
+	Strategy   StrategyView `json:"strategy"`
+	CreatedAt  time.Time    `json:"created_at"`
+	UpdatedAt  time.Time    `json:"updated_at"`
+	Status     string       `json:"status"`
+	Orders     []OrderView  `json:"orders"`
+}
+
+// BacktestRunView represents the outcome of a backtest run.
+type BacktestRunView struct {
+	ID             uint      `json:"id"`
+	StrategyID     uint      `json:"strategy_id"`
+	Symbol         string    `json:"symbol"`
+	StartDate      time.Time `json:"start_date"`
+	EndDate        time.Time `json:"end_date"`
+	IsWalkForward  bool      `json:"is_walk_forward"`
+	Sharpe         float64   `json:"sharpe"`
+	MaxDrawdownPct float64   `json:"max_drawdown_pct"`
+	WinRatePct     float64   `json:"win_rate_pct"`
+	ProfitFactor   any       `json:"profit_factor"` // float64 or string "Infinity"
+	TotalTrades    int       `json:"total_trades"`
+	TotalReturnPct float64   `json:"total_return_pct"`
+	Passed         bool      `json:"passed"`
+	HTMLReportPath string    `json:"html_report_path"`
+	TradeLog       any       `json:"trade_log,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// ExecutionEventView represents an event emitted by strategy execution or system.
+type ExecutionEventView struct {
+	Timestamp    time.Time `json:"timestamp"`
+	StrategyName string    `json:"strategy_name"`
+	Symbol       string    `json:"symbol"`
+	EventType    string    `json:"event_type"`
+	Message      string    `json:"message"`
+}
+
+// RunBacktestRequest represents parameters to launch a single backtest.
+type RunBacktestRequest struct {
+	StrategyID     uint      `json:"strategy_id"`
+	Symbol         string    `json:"symbol"`
+	Timeframe      string    `json:"timeframe"`
+	StartDate      time.Time `json:"start_date"`
+	EndDate        time.Time `json:"end_date"`
+	InitialCapital float64   `json:"initial_capital,omitempty"`
+}
+
+// TimeRange represents a time range for walk-forward validation.
+type TimeRange struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+// WalkForwardRequest represents parameters to launch walk-forward validation.
+type WalkForwardRequest struct {
+	StrategyID      uint       `json:"strategy_id"`
+	Symbol          string     `json:"symbol"`
+	Timeframe       string     `json:"timeframe"`
+	StartDate       time.Time  `json:"start_date,omitempty"`
+	EndDate         time.Time  `json:"end_date,omitempty"`
+	TotalRange      *TimeRange `json:"total_range,omitempty"`
+	TrainWindowDays int        `json:"train_window_days,omitempty"`
+	TestWindowDays  int        `json:"test_window_days,omitempty"`
+	StepDays        int        `json:"step_days,omitempty"`
+	TrainMonths     int        `json:"train_months,omitempty"`
+	TestMonths      int        `json:"test_months,omitempty"`
+	StepMonths      int        `json:"step_months,omitempty"`
+	InitialCapital  float64    `json:"initial_capital,omitempty"`
+}

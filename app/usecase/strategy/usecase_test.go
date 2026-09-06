@@ -252,3 +252,74 @@ func TestStrategyUseCase_Update(t *testing.T) {
 		mockRepo.AssertExpectations(t)
 	})
 }
+
+func TestStrategyUseCase_UpdateStatus(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	t.Run("should update status successfully", func(t *testing.T) {
+		current := entities.Strategy{ID: 1, Name: "Test", Status: entities.Productive}
+		mockRepo.On("GetByID", ctx, uint(1)).Return(current, nil).Once()
+		mockRepo.On("Update", ctx, mock.MatchedBy(func(s entities.Strategy) bool {
+			return s.ID == 1 && s.Status == entities.Disabled
+		})).Return(nil).Once()
+
+		updated, err := strategyUC.UpdateStatus(ctx, 1, entities.Disabled)
+		assert.NoError(t, err)
+		assert.Equal(t, entities.Disabled, updated.Status)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("should return error on invalid status", func(t *testing.T) {
+		_, err := strategyUC.UpdateStatus(ctx, 1, entities.StrategyStatus("invalid_status"))
+		assert.Error(t, err)
+	})
+
+	t.Run("should return error when strategy not found", func(t *testing.T) {
+		mockRepo.On("GetByID", ctx, uint(99)).Return(entities.Strategy{}, errors.New("not found")).Once()
+		_, err := strategyUC.UpdateStatus(ctx, 99, entities.Disabled)
+		assert.Error(t, err)
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func TestStrategyUseCase_UpdateMode(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	t.Run("should update mode successfully", func(t *testing.T) {
+		current := entities.Strategy{ID: 1, Name: "Test", Mode: "dryrun"}
+		mockRepo.On("GetByID", ctx, uint(1)).Return(current, nil).Once()
+		mockRepo.On("Update", ctx, mock.MatchedBy(func(s entities.Strategy) bool {
+			return s.ID == 1 && s.Mode == "paper"
+		})).Return(nil).Once()
+
+		updated, err := strategyUC.UpdateMode(ctx, 1, "paper")
+		assert.NoError(t, err)
+		assert.Equal(t, "paper", updated.Mode)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("should return error on unparseable mode", func(t *testing.T) {
+		_, err := strategyUC.UpdateMode(ctx, 1, "unsupported_mode")
+		assert.Error(t, err)
+	})
+}
+
+func TestStrategyUseCase_GetPerformance(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	perfs := []entities.StrategyPerformance{
+		{Name: "grid-btc", Symbol: "BTCUSDT", Profit: 50.0, Trades: 4},
+	}
+	mockRepo.On("GetStrategyPerformanceBySymbol", ctx).Return(perfs).Once()
+
+	res, err := strategyUC.GetPerformance(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, perfs, res)
+	mockRepo.AssertExpectations(t)
+}

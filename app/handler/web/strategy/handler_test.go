@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"gorm.io/datatypes"
@@ -148,5 +149,109 @@ func TestStrategyHandler_GetAll_EmptyResponse(t *testing.T) {
 	err = json.Unmarshal(rec.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Empty(t, response)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_GetPerformance(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	perfs := []entities.StrategyPerformance{
+		{Name: "grid-btc", Symbol: "BTCUSDT", Profit: 150.5, Trades: 12},
+	}
+	mockUseCase.On("GetPerformance", mock.Anything).Return(perfs, nil)
+
+	req, err := http.NewRequest(http.MethodGet, "/strategy/performance", nil)
+	assert.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	h.GetPerformance(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp []entities.StrategyPerformance
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "grid-btc", resp[0].Name)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_PatchStatus(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	updated := entities.Strategy{ID: 5, Name: "Test", Status: entities.Disabled}
+	mockUseCase.On("UpdateStatus", mock.Anything, uint(5), entities.Disabled).Return(updated, nil)
+
+	body, _ := json.Marshal(map[string]string{"status": "disabled"})
+	req, err := http.NewRequest(http.MethodPatch, "/strategy/5/status", bytes.NewBuffer(body))
+	assert.NoError(t, err)
+
+	// Route vars mock via gorilla/mux
+	req = muxSetURLVars(req, map[string]string{"id": "5"})
+	rec := httptest.NewRecorder()
+
+	h.PatchStatus(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp entities.Strategy
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, entities.Disabled, resp.Status)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_PatchMode(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	updated := entities.Strategy{ID: 5, Name: "Test", Mode: "paper"}
+	mockUseCase.On("UpdateMode", mock.Anything, uint(5), "paper").Return(updated, nil)
+
+	body, _ := json.Marshal(map[string]string{"mode": "paper"})
+	req, err := http.NewRequest(http.MethodPatch, "/strategy/5/mode", bytes.NewBuffer(body))
+	assert.NoError(t, err)
+
+	req = muxSetURLVars(req, map[string]string{"id": "5"})
+	rec := httptest.NewRecorder()
+
+	h.PatchMode(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp entities.Strategy
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "paper", resp.Mode)
+	mockUseCase.AssertExpectations(t)
+}
+
+func muxSetURLVars(r *http.Request, vars map[string]string) *http.Request {
+	return mux.SetURLVars(r, vars)
+}
+
+func TestStrategyHandler_RoutingOrder_PerformanceDoesNotCollideWithGetByID(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	perfs := []entities.StrategyPerformance{
+		{Name: "grid-btc", Symbol: "BTCUSDT", Profit: 100, Trades: 5},
+	}
+	mockUseCase.On("GetPerformance", mock.Anything).Return(perfs, nil)
+
+	r := mux.NewRouter()
+	for _, route := range h.Handlers() {
+		r.HandleFunc(route.Pattern, route.Action).Methods(route.Method)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/strategy/performance", nil)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp []entities.StrategyPerformance
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Len(t, resp, 1)
 	mockUseCase.AssertExpectations(t)
 }

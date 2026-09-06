@@ -356,17 +356,18 @@ func (u *BacktestUseCase) executeReplay(
 	simExchange := engine.NewSimulatedFillExchange(dataSource, fillPolicy)
 	signalRepo := &memSignalRepo{}
 	accountUC := &memAccountUC{amount: float32(initialCapital)}
-	signalUC := signal_usecase.NewSignalUseCase(signalRepo, accountUC, simExchange, nil, nil)
+	signalUC := signal_usecase.NewSignalUseCase(signalRepo, accountUC, simExchange, nil, nil, nil)
 	indicatorProvider := indicators.NewTalibAdapter()
 	cache := memcache.NewInMemoryCache()
 
-	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache)
+	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache, nil)
 	stratImpl, ok := strategies.Get(strat.StrategyName)
 	if !ok {
 		return nil, fmt.Errorf("strategy %q not registered", strat.StrategyName)
 	}
 
 	driver := engine.NewReplayDriver(replayFeed, simExchange, eng, stratImpl, strat, symbol, strategies.ModeBacktest, signalRepo)
+	driver.WarmupSource = engine.NewCandleRepoWarmupSource(u.candleRepo, from)
 	return driver.Run(ctx)
 }
 
@@ -447,6 +448,26 @@ func (m *memSignalRepo) GetByID(id uint) (entities.Signal, error) {
 
 func (m *memSignalRepo) GetAll() ([]entities.Signal, error) {
 	return m.signals, nil
+}
+
+func (m *memSignalRepo) GetAllOpenSignals() ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.Status == entities.Open {
+			res = append(res, s)
+		}
+	}
+	return res, nil
+}
+
+func (m *memSignalRepo) GetAllClosedSignals() ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.Status == entities.Closed {
+			res = append(res, s)
+		}
+	}
+	return res, nil
 }
 
 type memAccountUC struct {

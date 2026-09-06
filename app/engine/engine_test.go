@@ -26,7 +26,7 @@ func newTestEngine() (*engine.Engine, *mocks.SignalUseCase, *mocks.AccountReader
 	exchangeClient := new(signalmocks.ExchangeClient)
 	notifySender := new(signalmocks.NotificationSender)
 
-	e := engine.NewEngine(exchangeClient, indicators.NewTalibAdapter(), signalUC, accountReader, notifySender, memcache.NewInMemoryCache())
+	e := engine.NewEngine(exchangeClient, indicators.NewTalibAdapter(), signalUC, accountReader, notifySender, memcache.NewInMemoryCache(), nil)
 	return e, signalUC, accountReader, exchangeClient, notifySender
 }
 
@@ -223,7 +223,12 @@ func TestEngine_Run_RecoversFromPanic(t *testing.T) {
 	stubCandleFetches(exchangeClient, "BTCUSDT")
 	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
 	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{}, nil)
-	notifySender.On("Send", mock.Anything, mock.Anything).Return(nil)
+
+	var capturedEvent notifier.Event
+	notifySender.On("Send", mock.Anything, mock.MatchedBy(func(ev notifier.Event) bool {
+		capturedEvent = ev
+		return ev.Type == notifier.EventStrategyError
+	})).Return(nil)
 
 	strategy := new(mocks.Strategy)
 	strategy.On("Before", mock.Anything).Run(func(args mock.Arguments) {
@@ -235,6 +240,71 @@ func TestEngine_Run_RecoversFromPanic(t *testing.T) {
 		assert.Error(t, err)
 	})
 	strategy.AssertNotCalled(t, "Terminate", mock.Anything)
+	assert.Equal(t, true, capturedEvent.Data["panic"])
+}
+
+func TestEngine_Run_GoLong_WithPositionSizing(t *testing.T) {
+	e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+	stubCandleFetches(exchangeClient, "BTCUSDT")
+	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{}, nil)
+
+	stratFixture := entities.Strategy{
+		ID:   1,
+		Name: "test-sizing-strategy",
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle:         entities.OneMinute,
+			Configuration: []byte(`{"position_sizing": {"type": "fixed_amount", "value": 250}}`),
+		},
+	}
+
+	signalUC.On("GenerateBuySignal", mock.MatchedBy(func(entry usecase.EntrySignal) bool {
+		return entry.PositionSizing != nil &&
+			entry.PositionSizing.Type == usecase.SizingFixedAmount &&
+			entry.PositionSizing.Value == 250
+	})).Return(nil)
+
+	strategy := new(mocks.Strategy)
+	strategy.On("Before", mock.Anything).Return()
+	strategy.On("ShouldLong", mock.Anything).Return(true)
+	strategy.On("GoLong", mock.Anything).Return(strategies.Signal{Buy: &strategies.Order{Qty: 0.02, Price: 50000}})
+	strategy.On("After", mock.Anything).Return()
+
+	err := e.Run(context.Background(), strategy, stratFixture, "BTCUSDT", strategies.ModeDryRun)
+	assert.NoError(t, err)
+	signalUC.AssertExpectations(t)
+}
+
+func TestEngine_Run_Scalping_TimeframeInjection(t *testing.T) {
+	e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+	stubCandleFetches(exchangeClient, "BTCUSDT")
+	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+	signalUC.On("GetOpenSignal", "BTCUSDT", uint(2)).Return(entities.Signal{}, nil)
+
+	scalpFixture := entities.Strategy{
+		ID:           2,
+		Name:         "scalping-live",
+		StrategyName: "scalping",
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: entities.OneMinute,
+		},
+	}
+
+	var capturedContext strategies.Context
+	strategy := new(mocks.Strategy)
+	strategy.On("Before", mock.MatchedBy(func(ctx strategies.Context) bool {
+		capturedContext = ctx
+		return true
+	})).Return()
+	strategy.On("ShouldLong", mock.Anything).Return(false)
+	strategy.On("ShouldShort", mock.Anything).Return(false)
+	strategy.On("After", mock.Anything).Return()
+
+	err := e.Run(context.Background(), strategy, scalpFixture, "BTCUSDT", strategies.ModeDryRun)
+	assert.NoError(t, err)
+
+	assert.NotNil(t, capturedContext.Config[strategies.ConfigKeyTimeframeCandles("15m")])
+	assert.NotNil(t, capturedContext.Config[strategies.ConfigKeyLongTermCandles])
 }
 
 // Edge case: the exchange fails to return candles at all - the cycle fails

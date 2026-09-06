@@ -69,6 +69,26 @@ func (m *memorySignalRepo) GetAll() ([]entities.Signal, error) {
 	return m.signals, nil
 }
 
+func (m *memorySignalRepo) GetAllOpenSignals() ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.Status == entities.Open {
+			res = append(res, s)
+		}
+	}
+	return res, nil
+}
+
+func (m *memorySignalRepo) GetAllClosedSignals() ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.Status == entities.Closed {
+			res = append(res, s)
+		}
+	}
+	return res, nil
+}
+
 type memoryAccountUseCase struct {
 	amount float32
 }
@@ -208,11 +228,11 @@ func TestSimulatorParity_Bollinger(t *testing.T) {
 	simExchangeA := engine.NewSimulatedFillExchange(dataSourceA, engine.FillPolicy{})
 	signalRepoA := &memorySignalRepo{}
 	accountUCA := &memoryAccountUseCase{amount: 1000.0}
-	signalUCA := usecase.NewSignalUseCase(signalRepoA, accountUCA, simExchangeA, nil, nil)
+	signalUCA := usecase.NewSignalUseCase(signalRepoA, accountUCA, simExchangeA, nil, nil, nil)
 	indicatorProviderA := indicators.NewTalibAdapter()
 	cacheA := memcache.NewInMemoryCache()
 
-	engineA := engine.NewEngine(simExchangeA, indicatorProviderA, signalUCA, accountUCA, nil, cacheA)
+	engineA := engine.NewEngine(simExchangeA, indicatorProviderA, signalUCA, accountUCA, nil, cacheA, nil)
 	stratA, _ := strategies.Get("bollinger")
 	driverA := engine.NewReplayDriver(replayFeedA, simExchangeA, engineA, stratA, dbStrat, symbol, strategies.ModeBacktest, signalRepoA)
 
@@ -257,11 +277,11 @@ func TestSimulatorParity_Bollinger(t *testing.T) {
 
 	signalRepoB := &memorySignalRepo{}
 	accountUCB := &memoryAccountUseCase{amount: 1000.0}
-	signalUCA_B := usecase.NewSignalUseCase(signalRepoB, accountUCB, simExchangeB, nil, nil)
+	signalUCA_B := usecase.NewSignalUseCase(signalRepoB, accountUCB, simExchangeB, nil, nil, nil)
 	indicatorProviderB := indicators.NewTalibAdapter()
 	cacheB := memcache.NewInMemoryCache()
 
-	engineB := engine.NewEngine(simExchangeB, indicatorProviderB, signalUCA_B, accountUCB, nil, cacheB)
+	engineB := engine.NewEngine(simExchangeB, indicatorProviderB, signalUCA_B, accountUCB, nil, cacheB, nil)
 	stratB, _ := strategies.Get("bollinger")
 	driverB := engine.NewReplayDriver(countedLiveFeedB, simExchangeB, engineB, stratB, dbStratB(dbStrat), symbol, strategies.ModeBacktest, signalRepoB)
 
@@ -339,7 +359,7 @@ func TestSimulatorParity_Grid_And_Scalping(t *testing.T) {
 	simExchangeA := engine.NewSimulatedFillExchange(engine.NewCandleRepoMarketDataSource(repoA), engine.FillPolicy{})
 	signalRepoA := &memorySignalRepo{}
 	accountUCA := &memoryAccountUseCase{amount: 1000.0}
-	engineA := engine.NewEngine(simExchangeA, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoA, accountUCA, simExchangeA, nil, nil), accountUCA, nil, memcache.NewInMemoryCache())
+	engineA := engine.NewEngine(simExchangeA, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoA, accountUCA, simExchangeA, nil, nil, nil), accountUCA, nil, memcache.NewInMemoryCache(), nil)
 	stratGridA, _ := strategies.Get("grid")
 	driverA := engine.NewReplayDriver(replayFeedA, simExchangeA, engineA, stratGridA, dbStratGrid, symbol, strategies.ModeBacktest, signalRepoA)
 
@@ -380,7 +400,7 @@ func TestSimulatorParity_Grid_And_Scalping(t *testing.T) {
 
 	signalRepoB := &memorySignalRepo{}
 	accountUCB := &memoryAccountUseCase{amount: 1000.0}
-	engineB := engine.NewEngine(simExchangeB, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoB, accountUCB, simExchangeB, nil, nil), accountUCB, nil, memcache.NewInMemoryCache())
+	engineB := engine.NewEngine(simExchangeB, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoB, accountUCB, simExchangeB, nil, nil, nil), accountUCB, nil, memcache.NewInMemoryCache(), nil)
 	stratGridB, _ := strategies.Get("grid")
 	dbStratGridB := dbStratGrid
 	dbStratGridB.ID = 20

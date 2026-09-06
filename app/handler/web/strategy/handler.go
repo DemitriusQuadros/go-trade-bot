@@ -18,6 +18,9 @@ type UseCase interface {
 	Enqueue(ctx context.Context) error
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
+	GetPerformance(ctx context.Context) ([]entities.StrategyPerformance, error)
+	UpdateStatus(ctx context.Context, id uint, status entities.StrategyStatus) (entities.Strategy, error)
+	UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error)
 }
 type StrategyHandler struct {
 	UseCase UseCase
@@ -42,9 +45,24 @@ func (h *StrategyHandler) Handlers() []handler.Configuration {
 			Method:  http.MethodPost,
 		},
 		{
+			Pattern: "/strategy/performance",
+			Action:  h.GetPerformance,
+			Method:  http.MethodGet,
+		},
+		{
 			Pattern: "/strategy",
 			Action:  h.GetAll,
 			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/strategy/{id:[0-9]+}/status",
+			Action:  h.PatchStatus,
+			Method:  http.MethodPatch,
+		},
+		{
+			Pattern: "/strategy/{id:[0-9]+}/mode",
+			Action:  h.PatchMode,
+			Method:  http.MethodPatch,
 		},
 		{
 			Pattern: "/strategy/{id}",
@@ -153,4 +171,71 @@ func (h *StrategyHandler) GetById(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(strategy)
+}
+
+func (h *StrategyHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
+	perfs, err := h.UseCase.GetPerformance(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(perfs)
+}
+
+type PatchStatusDTO struct {
+	Status string `json:"status"`
+}
+
+func (h *StrategyHandler) PatchStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	var dto PatchStatusDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, "Invalid Body", http.StatusBadRequest)
+		return
+	}
+
+	strat, err := h.UseCase.UpdateStatus(r.Context(), uint(id), entities.StrategyStatus(dto.Status))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(strat)
+}
+
+type PatchModeDTO struct {
+	Mode string `json:"mode"`
+}
+
+func (h *StrategyHandler) PatchMode(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	var dto PatchModeDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		http.Error(w, "Invalid Body", http.StatusBadRequest)
+		return
+	}
+
+	strat, err := h.UseCase.UpdateMode(r.Context(), uint(id), dto.Mode)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(strat)
 }

@@ -108,6 +108,26 @@ func (_m *StrategyRepository) Update(ctx context.Context, strategy entities.Stra
 	return r0
 }
 
+// GetStrategyPerformanceBySymbol provides a mock function with given fields: ctx
+func (_m *StrategyRepository) GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStrategyPerformanceBySymbol")
+	}
+
+	var r0 []entities.StrategyPerformance
+	if rf, ok := ret.Get(0).(func(context.Context) []entities.StrategyPerformance); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.StrategyPerformance)
+		}
+	}
+
+	return r0
+}
+
 // NewStrategyRepository creates a new instance of StrategyRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewStrategyRepository(t interface {

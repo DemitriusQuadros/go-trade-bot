@@ -1,26 +1,24 @@
 package dependencies
 
 import (
+	"go-trade-bot/cmd/console/apiclient"
 	"go-trade-bot/internal/configuration"
-	"go-trade-bot/internal/db"
-
-	"gorm.io/gorm"
 )
 
 type Dependencies struct {
 	Cfg *configuration.Configuration
-	Db  *gorm.DB
+	API *apiclient.Client
 }
 
 func Init() *Dependencies {
 	cfg := configuration.NewConfiguration()
-	db, err := db.NewDatabase(cfg)
-	if err != nil {
-		panic("Failed to connect to database: " + err.Error())
+	baseURL := cfg.APIBaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
 	}
 
 	return &Dependencies{
 		Cfg: cfg,
-		Db:  db,
+		API: apiclient.NewClient(baseURL),
 	}
 }

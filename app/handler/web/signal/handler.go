@@ -14,6 +14,8 @@ import (
 type UseCase interface {
 	Close(ctx context.Context, id uint) error
 	GetAll(ctx context.Context) ([]entities.Signal, error)
+	GetAllOpen(ctx context.Context) ([]entities.Signal, error)
+	GetAllClosed(ctx context.Context) ([]entities.Signal, error)
 	GetByID(ctx context.Context, id uint) (entities.Signal, error)
 }
 type SignalHandler struct {
@@ -65,9 +67,25 @@ func (h *SignalHandler) Close(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SignalHandler) GetAll(w http.ResponseWriter, r *http.Request) {
-	signals, err := h.UseCase.GetAll(r.Context())
+	status := r.URL.Query().Get("status")
+	var (
+		signals []entities.Signal
+		err     error
+	)
+	switch status {
+	case "":
+		signals, err = h.UseCase.GetAll(r.Context())
+	case "open":
+		signals, err = h.UseCase.GetAllOpen(r.Context())
+	case "closed":
+		signals, err = h.UseCase.GetAllClosed(r.Context())
+	default:
+		http.Error(w, "invalid status filter", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(signals)

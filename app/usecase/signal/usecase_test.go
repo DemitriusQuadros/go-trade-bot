@@ -21,7 +21,7 @@ func newSignalUseCase() (usecase.SignalUseCase, *mocks.SignalRepository, *mocks.
 	mockAccountUseCase := new(mocks.AccountUseCase)
 	mockExchange := new(mocks.ExchangeClient)
 	mockNotifier := new(mocks.NotificationSender)
-	signalUC := usecase.NewSignalUseCase(mockRepo, mockAccountUseCase, mockExchange, mockNotifier, nil)
+	signalUC := usecase.NewSignalUseCase(mockRepo, mockAccountUseCase, mockExchange, mockNotifier, nil, nil)
 	return signalUC, mockRepo, mockAccountUseCase, mockExchange, mockNotifier
 }
 
@@ -427,6 +427,87 @@ func TestSignalUseCase_Close(t *testing.T) {
 		err := signalUC.Close(context.TODO(), signalID)
 		assert.Error(t, err)
 		assert.Equal(t, "broker error", err.Error())
+	})
+}
+
+func TestSignalUseCase_GetAllOpen_GetAllClosed(t *testing.T) {
+	t.Run("GetAllOpen returns open signals from repository", func(t *testing.T) {
+		signalUC, mockRepo, _, _, _ := newSignalUseCase()
+		expected := []entities.Signal{{ID: 1, Status: entities.Open}}
+		mockRepo.On("GetAllOpenSignals").Return(expected, nil).Once()
+
+		res, err := signalUC.GetAllOpen(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, expected, res)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("GetAllClosed returns closed signals from repository", func(t *testing.T) {
+		signalUC, mockRepo, _, _, _ := newSignalUseCase()
+		expected := []entities.Signal{{ID: 2, Status: entities.Closed}}
+		mockRepo.On("GetAllClosedSignals").Return(expected, nil).Once()
+
+		res, err := signalUC.GetAllClosed(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, expected, res)
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func TestSignalUseCase_GenerateBuySignal_WithSizingAndStopLossPrice(t *testing.T) {
+	t.Run("sizes order using PositionSizing and persists StopLossPrice", func(t *testing.T) {
+		signalUC, mockRepo, mockAccountUseCase, mockExchange, mockNotifier := newSignalUseCase()
+
+		entrySignal := usecase.EntrySignal{
+			Symbol:      "BTCUSDT",
+			StrategyID:  1,
+			EntryPrice:  50000,
+			MarginType:  entities.Isolated,
+			StopLossPct: 2,
+			PositionSizing: &usecase.PositionSizingConfig{
+				Type:  usecase.SizingFixedAmount,
+				Value: 200, // will invest 200 instead of 1000
+			},
+		}
+
+		mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+		mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
+		mockRepo.On("GetOpenSignals", entrySignal.Symbol, entrySignal.StrategyID).Return(entities.Signal{}, nil).Once()
+
+		// requestedQty = 200 / 50000 = 0.004
+		mockExchange.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+			return r.Side == exchange.SideBuy && r.Quantity == 0.004
+		})).Return(exchange.OrderResult{
+			BrokerOrderID: "1001",
+			Status:        exchange.OrderStatusFilled,
+			ExecutedQty:   0.004,
+			AvgFillPrice:  50000,
+		}, nil).Once()
+
+		// Stop price = 50000 * 0.98 = 49000
+		mockExchange.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+			return r.Type == exchange.OrderTypeStopMarket && r.StopPrice == 49000
+		})).Return(exchange.OrderResult{
+			BrokerOrderID: "1002",
+			Status:        exchange.OrderStatusNew,
+		}, nil).Once()
+
+		mockRepo.On("Create", mock.MatchedBy(func(s entities.Signal) bool {
+			order := s.Orders[0]
+			return order.BrokerOrderID == "1001" &&
+				order.StopLossOrderID == "1002" &&
+				order.StopLossPrice == float32(49000) &&
+				order.Quantity == float32(0.004)
+		})).Return(nil).Once()
+
+		mockAccountUseCase.On("DeductOrder", float32(0.004*50000)).Return(nil).Once()
+		mockNotifier.On("Send", mock.Anything, eventOfType(notifier.EventPositionOpened)).Return(nil).Once()
+
+		err := signalUC.GenerateBuySignal(entrySignal)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockExchange.AssertExpectations(t)
 	})
 }
 

@@ -22,6 +22,8 @@ func TestFeatures(t *testing.T) {
 			steps.RegisterExchangeSteps(sc, tc)
 			steps.RegisterDBAndRiskSteps(sc, tc)
 			steps.RegisterNotificationSteps(sc, tc)
+			steps.RegisterCandleSteps(sc, tc)
+			steps.RegisterBacktestSteps(sc, tc)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",

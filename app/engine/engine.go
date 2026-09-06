@@ -17,6 +17,7 @@ import (
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/indicators"
 	"go-trade-bot/internal/memcache"
+	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/notifier"
 )
 
@@ -37,6 +38,8 @@ type SignalUseCase interface {
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 }
 
+const metricStrategyPanics = "strategy_panics_total"
+
 // AccountReader is the local interface the engine depends on to populate
 // Context.Account.
 type AccountReader interface {
@@ -55,6 +58,7 @@ type Engine struct {
 	AccountReader AccountReader
 	Notifier      notifier.NotificationSender
 	Cache         memcache.Cache
+	Metrics       *metrics.MetricsCollector
 }
 
 func NewEngine(
@@ -64,6 +68,7 @@ func NewEngine(
 	accountReader AccountReader,
 	notifySender notifier.NotificationSender,
 	cache memcache.Cache,
+	collector *metrics.MetricsCollector,
 ) *Engine {
 	return &Engine{
 		Exchange:      exchangeClient,
@@ -72,6 +77,7 @@ func NewEngine(
 		AccountReader: accountReader,
 		Notifier:      notifySender,
 		Cache:         cache,
+		Metrics:       collector,
 	}
 }
 
@@ -84,7 +90,8 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("strategy %s panicked processing %s: %v", dbStrategy.Name, symbol, r)
-			e.notifyError(dbStrategy, symbol, mode, err.Error())
+			e.incrementPanicCounter(dbStrategy.Name)
+			e.notifyErrorWithPanic(dbStrategy, symbol, mode, err.Error(), true)
 		}
 	}()
 
@@ -163,7 +170,16 @@ func (e *Engine) buildContext(ctx context.Context, dbStrategy entities.Strategy,
 	if volume, volErr := e.fetch24hVolume(ctx, symbol); volErr == nil {
 		config[strategies.ConfigKey24hVolume] = volume
 	}
-	if longTermCandles, ltErr := e.Exchange.ListKline(ctx, symbol, "15m", 50); ltErr == nil {
+	if reqTfs, ok := strategyTimeframeRequirements[dbStrategy.StrategyName]; ok {
+		for _, tf := range reqTfs {
+			if tfCandles, tfErr := e.Exchange.ListKline(ctx, symbol, tf, 50); tfErr == nil {
+				config[strategies.ConfigKeyTimeframeCandles(tf)] = tfCandles
+				if tf == "15m" {
+					config[strategies.ConfigKeyLongTermCandles] = tfCandles
+				}
+			}
+		}
+	} else if longTermCandles, ltErr := e.Exchange.ListKline(ctx, symbol, "15m", 50); ltErr == nil {
 		config[strategies.ConfigKeyLongTermCandles] = longTermCandles
 	}
 
@@ -230,13 +246,14 @@ func (e *Engine) processGoLong(dbStrategy entities.Strategy, symbol string, mode
 	}
 
 	entry := usecase.EntrySignal{
-		Symbol:       symbol,
-		StrategyID:   dbStrategy.ID,
-		StrategyName: dbStrategy.Name,
-		Mode:         mode.String(),
-		EntryPrice:   float32(signal.Buy.Price),
-		MarginType:   entities.Isolated,
-		StopLossPct:  strategyStopLossPct(dbStrategy),
+		Symbol:         symbol,
+		StrategyID:     dbStrategy.ID,
+		StrategyName:   dbStrategy.Name,
+		Mode:           mode.String(),
+		EntryPrice:     float32(signal.Buy.Price),
+		MarginType:     entities.Isolated,
+		StopLossPct:    strategyStopLossPct(dbStrategy),
+		PositionSizing: strategyPositionSizing(dbStrategy),
 	}
 	if signal.StopLoss != nil {
 		price := signal.StopLoss.Price
@@ -271,8 +288,16 @@ func (e *Engine) processUpdatePosition(dbStrategy entities.Strategy, symbol stri
 }
 
 func (e *Engine) notifyError(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, message string) {
+	e.notifyErrorWithPanic(dbStrategy, symbol, mode, message, false)
+}
+
+func (e *Engine) notifyErrorWithPanic(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, message string, isPanic bool) {
 	if e.Notifier == nil {
 		return
+	}
+	data := map[string]any{"error": message, "context": "engine.Run"}
+	if isPanic {
+		data["panic"] = true
 	}
 	_ = e.Notifier.Send(context.Background(), notifier.Event{
 		Type:       notifier.EventStrategyError,
@@ -282,8 +307,15 @@ func (e *Engine) notifyError(dbStrategy entities.Strategy, symbol string, mode s
 		Symbol:     symbol,
 		Mode:       mode.String(),
 		Message:    message,
-		Data:       map[string]any{"error": message, "context": "engine.Run"},
+		Data:       data,
 	})
+}
+
+func (e *Engine) incrementPanicCounter(strategyName string) {
+	if e.Metrics == nil {
+		return
+	}
+	e.Metrics.IncrementCounter(metricStrategyPanics, map[string]string{"strategy": strategyName})
 }
 
 func strategyStopLossPct(dbStrategy entities.Strategy) float64 {
@@ -293,4 +325,34 @@ func strategyStopLossPct(dbStrategy entities.Strategy) float64 {
 	}
 	pct, _ := config["stop_loss_pct"].(float64)
 	return pct
+}
+
+func strategyPositionSizing(dbStrategy entities.Strategy) *usecase.PositionSizingConfig {
+	var config map[string]interface{}
+	if err := json.Unmarshal(dbStrategy.StrategyConfiguration.Configuration, &config); err != nil {
+		return nil
+	}
+	sizing, ok := config["position_sizing"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	stType, okType := sizing["type"].(string)
+	if !okType {
+		return nil
+	}
+	var val float64
+	switch v := sizing["value"].(type) {
+	case float64:
+		val = v
+	case int:
+		val = float64(v)
+	case int64:
+		val = float64(v)
+	default:
+		return nil
+	}
+	return &usecase.PositionSizingConfig{
+		Type:  usecase.SizingType(stType),
+		Value: val,
+	}
 }

@@ -36,3 +36,9 @@ const (
 	// already used for ConfigKey24hVolume.
 	ConfigKeyLongTermCandles = "_long_term_candles"
 )
+
+// ConfigKeyTimeframeCandles builds a Config key for an arbitrary supplementary
+// timeframe, e.g. ConfigKeyTimeframeCandles("15m") == "_timeframe_candles_15m".
+func ConfigKeyTimeframeCandles(timeframe string) string {
+	return "_timeframe_candles_" + timeframe
+}

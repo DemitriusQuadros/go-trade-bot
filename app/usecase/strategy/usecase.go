@@ -16,6 +16,7 @@ type StrategyRepository interface {
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 	Update(ctx context.Context, strategy entities.Strategy) error
+	GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance
 }
 
 type StrategyWorker interface {
@@ -64,6 +65,56 @@ func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy)
 	}
 
 	return nil
+}
+
+func (u StrategyUseCase) UpdateStatus(ctx context.Context, id uint, status entities.StrategyStatus) (entities.Strategy, error) {
+	if id == 0 {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+	if !entities.IsValidStatus(string(status)) {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Invalid status value")
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+
+	strat.Status = status
+	strat.UpdatedAt = time.Now()
+
+	if err := u.Repository.Update(ctx, strat); err != nil {
+		return entities.Strategy{}, err
+	}
+
+	return strat, nil
+}
+
+func (u StrategyUseCase) UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error) {
+	if id == 0 {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+	if _, err := strategies.ParseExecutionMode(mode); err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Invalid mode: "+err.Error())
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+
+	strat.Mode = mode
+	strat.UpdatedAt = time.Now()
+
+	if err := u.Repository.Update(ctx, strat); err != nil {
+		return entities.Strategy{}, err
+	}
+
+	return strat, nil
+}
+
+func (u StrategyUseCase) GetPerformance(ctx context.Context) ([]entities.StrategyPerformance, error) {
+	return u.Repository.GetStrategyPerformanceBySymbol(ctx), nil
 }
 
 func (u StrategyUseCase) Enqueue(ctx context.Context) error {
