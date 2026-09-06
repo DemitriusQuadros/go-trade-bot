@@ -519,6 +519,22 @@ These gates are enforced by `MODE` guard logic, not by discipline alone.
 ### Won't Have (now)
 
 - Bybit or other exchange support (interface ready, implementation not scoped)
-- Web dashboard (TUI is the primary interface; REST API exists for programmatic access)
 - Social or copy trading features
 - Automated strategy discovery or genetic strategy generation
+
+### Reversed decision (2026-09-06): Web dashboard is now in scope
+
+Originally scoped out ("TUI is the primary interface; REST API exists for programmatic access"). Reversed
+after hands-on use of the completed Phase 3 TUI (`cmd/console`, built on `termui/v3` per §4.5): the terminal
+interface was found too limited on two fronts — missing interactivity/richer data views (real charts vs.
+block-character sparklines, deeper drill-down than a fixed-layout terminal panel allows), and more
+fundamentally, a terminal window is the wrong form factor for how the bot is actually meant to be operated
+day-to-day (not accessible from a phone/tablet/browser on the network).
+
+This reversal costs little at the architecture level specifically because of ADR-007 (blueprint
+`docs/architecture/refactoring-blueprint.md` §5): the Phase 3 rewrite already made `cmd/console` a pure HTTP
+client of `cmd/api`, with zero direct database access. Every capability the TUI exposes — strategy
+management, positions, backtests, optimization, P&L history — is already served over REST with no backend
+changes required to add a second, richer client. See the forthcoming web-frontend architecture design (new
+blueprint section / phase) for the chosen stack and whether `cmd/console` is retired or kept as a secondary
+interface.
