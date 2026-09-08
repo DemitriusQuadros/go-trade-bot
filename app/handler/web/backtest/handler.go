@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"go-trade-bot/app/engine"
@@ -50,6 +51,11 @@ func (h *BacktestHandler) Handlers() []handler.Configuration {
 		{
 			Pattern: "/backtest/{id:[0-9]+}",
 			Action:  h.GetByID,
+			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/backtest/{id:[0-9]+}/report",
+			Action:  h.GetReport,
 			Method:  http.MethodGet,
 		},
 		{
@@ -236,6 +242,37 @@ func (h *BacktestHandler) GetMonteCarlo(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+func (h *BacktestHandler) GetReport(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.ParseUint(vars["id"], 10, 32)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	run, err := h.useCase.GetByID(r.Context(), uint(id))
+	if err != nil {
+		writeReportNotFound(w)
+		return
+	}
+	if run.HTMLReportPath == "" {
+		writeReportNotFound(w)
+		return
+	}
+	content, err := os.ReadFile(run.HTMLReportPath)
+	if err != nil {
+		writeReportNotFound(w)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(content)
+}
+
+func writeReportNotFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(`{"error":"report not found","message":"no HTML report is available for this backtest run"}`))
+}
+
 func writeMonteCarloError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, usecase.ErrInvalidMonteCarloIterations):
@@ -263,3 +300,4 @@ func parseBacktestID(w http.ResponseWriter, r *http.Request) (uint, bool) {
 	}
 	return uint(id), true
 }
+

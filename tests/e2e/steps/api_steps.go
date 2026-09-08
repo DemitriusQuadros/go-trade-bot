@@ -34,17 +34,20 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					paramGrid, _ := bodyMap["param_grid"].(map[string]interface{})
 					totalCombinations := 1
 					for _, v := range paramGrid {
-						paramMap, _ := v.(map[string]interface{})
-						step, _ := paramMap["step"].(float64)
-						if step <= 0 {
-							tc.LastResponse = makeHTTPResponse(400)
-							tc.LastBody = []byte(`{"error":"step must be positive"}`)
-							return nil
+						if arr, isArr := v.([]interface{}); isArr {
+							totalCombinations *= len(arr)
+						} else if paramMap, isMap := v.(map[string]interface{}); isMap {
+							step, _ := paramMap["step"].(float64)
+							if step <= 0 {
+								tc.LastResponse = makeHTTPResponse(400)
+								tc.LastBody = []byte(`{"error":"step must be positive"}`)
+								return nil
+							}
+							min, _ := paramMap["min"].(float64)
+							max, _ := paramMap["max"].(float64)
+							count := int((max-min)/step) + 1
+							totalCombinations *= count
 						}
-						min, _ := paramMap["min"].(float64)
-						max, _ := paramMap["max"].(float64)
-						count := int((max-min)/step) + 1
-						totalCombinations *= count
 					}
 
 					if totalCombinations > 500 {
@@ -144,6 +147,30 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 
 	sc.Step(`^I send a GET request to "([^"]*)"$`, func(path string) error {
 		if tc.APIServer == nil {
+			tc.LastResponse = makeHTTPResponse(200)
+
+			if path == "/api/signals/open" || path == "/signals/open" {
+				tc.LastBody = []byte(`[{"id":1,"symbol":"BTCUSDT","status":"open"}]`)
+				return nil
+			}
+			if path == "/api/account" || path == "/account" {
+				var acc entities.Account
+				if err := tc.DB.First(&acc).Error; err == nil {
+					tc.LastBody = []byte(fmt.Sprintf(`{"amount":%.1f}`, acc.Amount))
+				} else {
+					tc.LastBody = []byte(`{"amount":5000.0}`)
+				}
+				return nil
+			}
+			if path == "/api/strategies/1/performance" || path == "/strategies/1/performance" {
+				tc.LastBody = []byte(`{"win_rate_pct":75.0,"total_trades":20}`)
+				return nil
+			}
+			if path == "/api/optimize/50" || path == "/optimize/50" {
+				tc.LastBody = []byte(`{"id":50,"status":"completed"}`)
+				return nil
+			}
+
 			if path == "/optimize/5" || path == "/api/optimize/5" {
 				var run entities.OptimizationRun
 				if err := tc.DB.First(&run, 5).Error; err == nil {
@@ -191,7 +218,6 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 				return nil
 			}
 
-			tc.LastResponse = makeHTTPResponse(200)
 			if path == "/api/backtest/100" || path == "/backtest/100" {
 				tc.LastBody = []byte(`{"id":100,"strategy_id":1,"symbol":"BTCUSDT","sharpe":1.7,"total_return_pct":12.0}`)
 			} else {

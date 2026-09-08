@@ -88,7 +88,7 @@ func (h *SignalHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(signals)
+	json.NewEncoder(w).Encode(ToSignalResponseList(signals))
 }
 
 func (h *SignalHandler) GetById(w http.ResponseWriter, r *http.Request) {
@@ -107,5 +107,5 @@ func (h *SignalHandler) GetById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(signal)
+	json.NewEncoder(w).Encode(ToSignalResponse(signal))
 }

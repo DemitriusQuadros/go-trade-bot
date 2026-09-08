@@ -8,6 +8,7 @@ import (
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/backtest"
+	"go-trade-bot/internal/metrics_provider"
 )
 
 type RunRequestDTO struct {
@@ -61,22 +62,23 @@ func (dto WalkForwardRequestDTO) ToUseCase() usecase.WalkForwardRequest {
 }
 
 type BacktestRunResponse struct {
-	ID             uint      `json:"id"`
-	StrategyID     uint      `json:"strategy_id"`
-	Symbol         string    `json:"symbol"`
-	StartDate      time.Time `json:"start_date"`
-	EndDate        time.Time `json:"end_date"`
-	IsWalkForward  bool      `json:"is_walk_forward"`
-	Sharpe         float64   `json:"sharpe"`
-	MaxDrawdownPct float64   `json:"max_drawdown_pct"`
-	WinRatePct     float64   `json:"win_rate_pct"`
-	ProfitFactor   any       `json:"profit_factor"`
-	TotalTrades    int       `json:"total_trades"`
-	TotalReturnPct float64   `json:"total_return_pct"`
-	Passed         bool      `json:"passed"`
-	HTMLReportPath string    `json:"html_report_path"`
-	TradeLog       any       `json:"trade_log,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID             uint                          `json:"id"`
+	StrategyID     uint                          `json:"strategy_id"`
+	Symbol         string                        `json:"symbol"`
+	StartDate      time.Time                     `json:"start_date"`
+	EndDate        time.Time                     `json:"end_date"`
+	IsWalkForward  bool                          `json:"is_walk_forward"`
+	Sharpe         float64                       `json:"sharpe"`
+	MaxDrawdownPct float64                       `json:"max_drawdown_pct"`
+	WinRatePct     float64                       `json:"win_rate_pct"`
+	ProfitFactor   any                           `json:"profit_factor"`
+	TotalTrades    int                           `json:"total_trades"`
+	TotalReturnPct float64                       `json:"total_return_pct"`
+	Passed         bool                          `json:"passed"`
+	HTMLReportPath string                        `json:"html_report_path"`
+	EquityCurve    []metrics_provider.EquityPoint `json:"equity_curve"`
+	TradeLog       any                           `json:"trade_log,omitempty"`
+	CreatedAt      time.Time                     `json:"created_at"`
 }
 
 func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunResponse {
@@ -100,7 +102,17 @@ func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunRe
 		TotalReturnPct: run.TotalReturnPct,
 		Passed:         run.Passed,
 		HTMLReportPath: run.HTMLReportPath,
+		EquityCurve:    []metrics_provider.EquityPoint{},
 		CreatedAt:      run.CreatedAt,
+	}
+
+	if len(run.MetricsJSON) > 0 {
+		var m metrics_provider.BacktestMetrics
+		if err := json.Unmarshal(run.MetricsJSON, &m); err == nil {
+			if m.EquityCurve != nil {
+				res.EquityCurve = m.EquityCurve
+			}
+		}
 	}
 
 	if includeTradeLog && len(run.TradeLogJSON) > 0 {

@@ -114,9 +114,10 @@ func (h *StrategyHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	strategies, err := h.UseCase.GetAll(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(strategies)
+	json.NewEncoder(w).Encode(ToStrategyResponseList(strategies))
 }
 
 func (h *StrategyHandler) Put(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +127,7 @@ func (h *StrategyHandler) Put(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
 	}
 
 	body, err := io.ReadAll(io.Reader(r.Body))
@@ -170,7 +172,7 @@ func (h *StrategyHandler) GetById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(strategy)
+	json.NewEncoder(w).Encode(ToStrategyResponse(strategy))
 }
 
 func (h *StrategyHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +211,7 @@ func (h *StrategyHandler) PatchStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(strat)
+	json.NewEncoder(w).Encode(ToStrategyResponse(strat))
 }
 
 type PatchModeDTO struct {
@@ -237,5 +239,5 @@ func (h *StrategyHandler) PatchMode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(strat)
+	json.NewEncoder(w).Encode(ToStrategyResponse(strat))
 }

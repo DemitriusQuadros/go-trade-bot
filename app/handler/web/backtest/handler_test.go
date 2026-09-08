@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -246,3 +247,98 @@ func TestBacktestHandler_GetMonteCarlo_NotComputed_404(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestBacktestHandler_GetReport_Success(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "report-*.html")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	expectedContent := "<html><body><h1>Report</h1></body></html>"
+	_, err = tmpFile.WriteString(expectedContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+
+	mockUC := &mockUseCase{
+		runResult: entities.BacktestRun{
+			ID:             1,
+			HTMLReportPath: tmpFile.Name(),
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/report", h.GetReport).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1/report", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, expectedContent, rec.Body.String())
+}
+
+func TestBacktestHandler_GetReport_EmptyPath_404(t *testing.T) {
+	mockUC := &mockUseCase{
+		runResult: entities.BacktestRun{
+			ID:             1,
+			HTMLReportPath: "",
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/report", h.GetReport).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1/report", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Body.String(), "report not found")
+}
+
+func TestBacktestHandler_GetReport_MissingFileOnDisk_404(t *testing.T) {
+	mockUC := &mockUseCase{
+		runResult: entities.BacktestRun{
+			ID:             1,
+			HTMLReportPath: "/nonexistent/path/report.html",
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}/report", h.GetReport).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1/report", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+}
+
+func TestBacktestHandler_GetByID_WithEquityCurve(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	metricsJSON := `{"sharpe_ratio":1.5,"max_drawdown_pct":10.0,"equity_curve":[{"time":"` + now.Format(time.RFC3339) + `","value":1000.0},{"time":"` + now.Add(time.Hour).Format(time.RFC3339) + `","value":1050.0}]}`
+
+	mockUC := &mockUseCase{
+		runResult: entities.BacktestRun{
+			ID:          1,
+			MetricsJSON: datatypes.JSON(metricsJSON),
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}", h.GetByID).Methods(http.MethodGet)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest/1", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp handler.BacktestRunResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Len(t, resp.EquityCurve, 2)
+	assert.Equal(t, 1000.0, resp.EquityCurve[0].Value)
+	assert.Equal(t, 1050.0, resp.EquityCurve[1].Value)
+}
+

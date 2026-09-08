@@ -178,6 +178,9 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 	// Marshal trade log
 	tradeLogBytes, _ := json.Marshal(tradeLog)
 
+	// Marshal full metrics
+	metricsBytes, _ := json.Marshal(metrics)
+
 	// Safe Profit Factor for DB
 	dbProfitFactor := metrics.ProfitFactor
 	if math.IsInf(dbProfitFactor, 1) || dbProfitFactor > 1e15 {
@@ -199,6 +202,7 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		Passed:         passed,
 		HTMLReportPath: htmlPath,
 		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
+		MetricsJSON:    datatypes.JSON(metricsBytes),
 		InitialCapital: req.InitialCapital,
 		CreatedAt:      time.Now().UTC(),
 	}
@@ -300,6 +304,7 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		Windows: wfResult.Windows,
 	}
 	tradeLogBytes, _ := json.Marshal(wfPayload)
+	metricsBytes, _ := json.Marshal(metrics)
 
 	dbProfitFactor := metrics.ProfitFactor
 	if math.IsInf(dbProfitFactor, 1) || dbProfitFactor > 1e15 {
@@ -321,6 +326,7 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		Passed:         passed,
 		HTMLReportPath: htmlPath,
 		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
+		MetricsJSON:    datatypes.JSON(metricsBytes),
 		InitialCapital: req.InitialCapital,
 		CreatedAt:      time.Now().UTC(),
 	}

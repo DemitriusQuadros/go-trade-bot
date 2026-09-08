@@ -34,5 +34,10 @@ run-api-local: ## Run the API project locally
 run-worker-local: ## Run the Worker project locally
 	go run ./cmd/worker
 
-run-console: ## Run the console project locally
-	go run ./cmd/console
+web-build: ## Build React web frontend and copy to embed dist
+	cd web && npm ci && npm run build
+	rm -rf cmd/api/webui/dist/assets cmd/api/webui/dist/index.html
+	cp -r web/dist/* cmd/api/webui/dist/
+
+web-dev: ## Run Vite dev server for frontend development
+	cd web && npm run dev

@@ -8,14 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 go run cmd/api/main.go        # HTTP API server (port 8080)
 go run cmd/worker/main.go     # Asynq task worker + monitoring UI (port 9191)
-go run cmd/console/main.go    # Terminal UI dashboard
 ```
 
 Or via Makefile:
 ```bash
 make run-api-local
 make run-worker-local
-make run-console
 ```
 
 ### Infrastructure (Docker)
@@ -38,12 +36,13 @@ Copy `config.example.yml` to `config.yml` and fill in credentials. The app reads
 
 ## Architecture
 
-This is a Binance trading bot with three separate entry points sharing common `app/` and `internal/` packages.
+This is a Binance trading bot with two entry points sharing common `app/` and `internal/` packages. A
+terminal UI (`cmd/console`) previously served as the operator dashboard but was removed in favor of a web
+frontend — see `docs/architecture/web-frontend-blueprint.md`.
 
 ### Entry Points (`cmd/`)
 - **api** — REST API server using `gorilla/mux`, port 8080. Handles strategy CRUD, account, signal management. Runs DB migrations on startup via GORM `AutoMigrate`.
 - **worker** — Asynq async task processor that executes trading strategies on their configured cycles. Also serves the Asynqmon monitoring UI at port 9191.
-- **console** — Terminal dashboard (termui) with three tabs: Status, Performance, and Open Signals.
 
 Each entry point defines its own `modules/` directory with FX dependency injection modules (configuration, db, broker, strategy, signal, account, cache, metrics).
 

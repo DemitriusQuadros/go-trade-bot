@@ -51,6 +51,7 @@ func NewTestContext() (*TestContext, error) {
 		&entities.BacktestRun{},
 		&entities.OptimizationRun{},
 		&entities.StrategyPerformanceSnapshot{},
+		&entities.StrategyPerformance{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to automigrate: %w", err)
@@ -69,17 +70,7 @@ func NewTestContext() (*TestContext, error) {
 }
 
 func (tc *TestContext) WipeDatabase() error {
-	tables := []string{
-		"strategy_performance_snapshots",
-		"optimization_runs",
-		"orders",
-		"signals",
-		"strategy_executions",
-		"strategies",
-		"accounts",
-		"candles",
-		"backtest_runs",
-	}
+	tables := []string{"orders", "signals", "strategy_executions", "strategies", "accounts", "candles", "backtest_runs", "optimization_runs", "strategy_performance_snapshots"}
 	for _, t := range tables {
 		tc.DB.Exec(fmt.Sprintf("DELETE FROM %s", t))
 	}

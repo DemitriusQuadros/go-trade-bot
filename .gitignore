@@ -3,3 +3,9 @@ config.yml
 .DS_Store
 .tmpbin/
 reports/
+/api
+/worker
+web/node_modules/
+web/dist/
+cmd/api/webui/dist/*
+!cmd/api/webui/dist/.placeholder

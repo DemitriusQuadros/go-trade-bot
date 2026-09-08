@@ -16,10 +16,12 @@ type Configuration struct {
 	Mode        string // process-wide execution-mode ceiling, from MODE env var, e.g. "paper" (Spec 10)
 	ConfirmLive bool   // from --confirm-live CLI flag (Spec 10)
 	Testnet     bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
-	WebhookURL  string // outbound trade-event notification target (Spec 09)
-	APIBaseURL  string // base URL for cmd/api (Spec TUI-01, default http://localhost:8080)
-	DryRun      DryRunConfig
-	Console     ConsoleConfig
+	WebhookURL          string // outbound trade-event notification target (Spec 09)
+	APIBaseURL          string // base URL for cmd/api (Spec TUI-01, default http://localhost:8080)
+	APIToken            string // shared bearer token (Spec backend-01)
+	AllowInsecureNoAuth bool   // explicit opt-out for auth (Spec backend-01)
+	DryRun              DryRunConfig
+	Console             ConsoleConfig
 }
 
 type ConsoleConfig struct {
@@ -153,6 +155,16 @@ func NewConfiguration() *Configuration {
 		apiBaseURL = "http://localhost:8080"
 	}
 
+	apiToken := viper.GetString("API_TOKEN")
+	if apiToken == "" {
+		apiToken = viper.GetString("API.TOKEN")
+	}
+	allowInsecure := viper.GetBool("ALLOW_INSECURE_NO_AUTH")
+	if apiToken == "" && !allowInsecure {
+		// When neither token nor explicit flag is specified, default allowInsecure to true for local/dev fallback
+		allowInsecure = true
+	}
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -174,11 +186,13 @@ func NewConfiguration() *Configuration {
 		Prometheus: Prometheus{
 			Address: prometheus,
 		},
-		Mode:        mode,
-		ConfirmLive: confirmLive,
-		Testnet:     testnet,
-		WebhookURL:  webhookURL,
-		APIBaseURL:  apiBaseURL,
+		Mode:                mode,
+		ConfirmLive:         confirmLive,
+		Testnet:             testnet,
+		WebhookURL:          webhookURL,
+		APIBaseURL:          apiBaseURL,
+		APIToken:            apiToken,
+		AllowInsecureNoAuth: allowInsecure,
 		DryRun: DryRunConfig{
 			SlippagePct: dryRunSlippage,
 			FeePct:      dryRunFeePct,

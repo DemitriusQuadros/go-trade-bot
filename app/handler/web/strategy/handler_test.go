@@ -94,6 +94,7 @@ func TestStrategyHandler_GetAll(t *testing.T) {
 		{
 			Name:             "Test Strategy 1",
 			Description:      "Test Description 1",
+			StrategyName:     "grid",
 			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 			Algorithm:        "grid",
 			StrategyConfiguration: entities.StrategyConfiguration{
@@ -112,12 +113,24 @@ func TestStrategyHandler_GetAll(t *testing.T) {
 	h.GetAll(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var response []entities.Strategy
+	var response []handler.StrategyResponseDTO
 	err = json.Unmarshal(rec.Body.Bytes(), &response)
 	assert.NoError(t, err)
-	assert.Equal(t, strategies, response)
+	assert.Equal(t, handler.ToStrategyResponseList(strategies), response)
+
+	// Verify snake_case keys and no algorithm field in raw JSON
+	var rawMaps []map[string]any
+	err = json.Unmarshal(rec.Body.Bytes(), &rawMaps)
+	assert.NoError(t, err)
+	assert.Len(t, rawMaps, 1)
+	assert.Contains(t, rawMaps[0], "strategy_name")
+	assert.NotContains(t, rawMaps[0], "algorithm")
+	assert.NotContains(t, rawMaps[0], "Algorithm")
+	assert.NotContains(t, rawMaps[0], "StrategyName")
+
 	mockUseCase.AssertExpectations(t)
 }
+
 func TestStrategyHandler_GetAll_Error(t *testing.T) {
 	mockUseCase := new(mocks.UseCase)
 	h := handler.NewStrategyHandler(mockUseCase)
@@ -132,6 +145,7 @@ func TestStrategyHandler_GetAll_Error(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	mockUseCase.AssertExpectations(t)
 }
+
 func TestStrategyHandler_GetAll_EmptyResponse(t *testing.T) {
 	mockUseCase := new(mocks.UseCase)
 	h := handler.NewStrategyHandler(mockUseCase)
@@ -145,7 +159,7 @@ func TestStrategyHandler_GetAll_EmptyResponse(t *testing.T) {
 	h.GetAll(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var response []entities.Strategy
+	var response []handler.StrategyResponseDTO
 	err = json.Unmarshal(rec.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Empty(t, response)
@@ -194,10 +208,10 @@ func TestStrategyHandler_PatchStatus(t *testing.T) {
 	h.PatchStatus(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp entities.Strategy
+	var resp handler.StrategyResponseDTO
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, entities.Disabled, resp.Status)
+	assert.Equal(t, string(entities.Disabled), resp.Status)
 	mockUseCase.AssertExpectations(t)
 }
 
@@ -218,7 +232,7 @@ func TestStrategyHandler_PatchMode(t *testing.T) {
 	h.PatchMode(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp entities.Strategy
+	var resp handler.StrategyResponseDTO
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, "paper", resp.Mode)

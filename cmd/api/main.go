@@ -9,6 +9,7 @@ import (
 	broker "go-trade-bot/app/handler/web/broker"
 	optimize "go-trade-bot/app/handler/web/optimize"
 	performancehistory "go-trade-bot/app/handler/web/performancehistory"
+	realtime "go-trade-bot/app/handler/web/realtime"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
 	_ "go-trade-bot/app/strategies/bollinger"
@@ -16,6 +17,7 @@ import (
 	_ "go-trade-bot/app/strategies/mlgrpc"
 	_ "go-trade-bot/app/strategies/scalping"
 	"go-trade-bot/cmd/api/modules"
+	"go-trade-bot/cmd/api/webui"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/handler"
 	"go-trade-bot/internal/metrics"
@@ -48,6 +50,7 @@ func main() {
 		modules.BacktestModule,
 		modules.OptimizeModule,
 		modules.PerformanceHistoryModule,
+		modules.RealtimeModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
@@ -57,9 +60,10 @@ func main() {
 			AsRoute(backtest.NewBacktestHandler),
 			AsRoute(optimize.NewOptimizeHandler),
 			AsRoute(performancehistory.NewHandler),
+			AsRoute(realtime.NewRealtimeHandler),
 			fx.Annotate(
 				NewServeMux,
-				fx.ParamTags(`group:"routes"`),
+				fx.ParamTags(`group:"routes"`, ``),
 			),
 		),
 		fx.Invoke(func(db *gorm.DB) {
@@ -97,15 +101,16 @@ func NewHTTPServer(
 	return srv
 }
 
-func NewServeMux(routes []Route) *mux.Router {
+func NewServeMux(routes []Route, cfg *config.Configuration) *mux.Router {
 	router := mux.NewRouter()
 	for _, route := range routes {
-		for _, handler := range route.Handlers() {
-			router.HandleFunc(handler.Pattern, handler.Action).Methods(handler.Method)
+		for _, h := range route.Handlers() {
+			router.HandleFunc(h.Pattern, middleware.RequireAuth(cfg, h.Action)).Methods(h.Method)
 		}
 	}
 
 	router.Handle("/metrics", promhttp.Handler())
+	router.PathPrefix("/").Handler(webui.Handler())
 	return router
 }
 

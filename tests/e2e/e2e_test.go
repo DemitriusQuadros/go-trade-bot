@@ -24,6 +24,8 @@ func TestFeatures(t *testing.T) {
 			steps.RegisterNotificationSteps(sc, tc)
 			steps.RegisterCandleSteps(sc, tc)
 			steps.RegisterBacktestSteps(sc, tc)
+			steps.RegisterPhase3Steps(sc, tc)
+			steps.RegisterPhase4Steps(sc, tc)
 			steps.RegisterOptimizationSteps(sc, tc)
 			steps.RegisterMonteCarloSteps(sc, tc)
 			steps.RegisterPerformanceHistorySteps(sc, tc)
