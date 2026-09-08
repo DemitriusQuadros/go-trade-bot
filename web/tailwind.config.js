@@ -7,8 +7,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
-        sans: ['"JetBrains Mono"', '"Fira Code"', 'monospace'], // Hacker theme: everything is monospace
+        mono: ['"Fira Code"', '"Fira Code"', 'monospace'],
+        sans: ['"Fira Code"', '"Fira Code"', 'monospace'], // Hacker theme: everything is monospace
       },
       colors: {
         border: "hsl(var(--border))",
