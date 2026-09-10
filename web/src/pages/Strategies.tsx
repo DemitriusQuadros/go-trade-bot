@@ -1,9 +1,9 @@
-import { useStrategies } from '@/hooks/queries';
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useStrategies } from '@/hooks/queries';
 import { api } from '@/api/client';
-import { Strategy, StrategyCreateRequest, StrategyMode, StrategyStatus } from '@/api/types';
+import { Strategy, StrategyMode, StrategyStatus } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { ModeBadge } from '@/components/ui/ModeBadge';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LoadingScreen } from '@/components/ui/Spinner';
@@ -13,24 +13,28 @@ import {
   Pause,
   Edit2,
   RefreshCw,
-  Sliders,
   Send,
-  Check,
   X,
-  AlertCircle,
 } from 'lucide-react';
 
-export function Strategies() {
-  
+function ruleSummaryFor(strat: Strategy): string {
+  if (strat.script_source) {
+    const firstLine = strat.script_source
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0 && !l.startsWith('--'));
+    if (firstLine) return firstLine;
+  }
+  if (strat.rule_summary) return strat.rule_summary;
+  return strat.description?.trim() || '(no script summary)';
+}
 
+export function Strategies() {
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const { data: strategies = [], refetch: refetchStrategies, isLoading: isStrategiesLoading } = useStrategies();
   const [modeFilter, setModeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -59,6 +63,7 @@ export function Strategies() {
         searchQuery === '' ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.strategy_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.rule_summary && s.rule_summary.toLowerCase().includes(searchQuery.toLowerCase())) ||
         s.monitored_symbols.some((sym) => sym.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchStatus && matchMode && matchSearch;
     });
@@ -139,10 +144,8 @@ export function Strategies() {
           </button>
 
           <button
-            onClick={() => {
-              setEditingStrategy(null);
-              setIsModalOpen(true);
-            }}
+            data-walkthrough="new-strategy-btn"
+            onClick={() => navigate('/strategies/new')}
             className="btn btn-primary text-xs flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
@@ -173,7 +176,7 @@ export function Strategies() {
           <div className="flex-1 max-w-sm">
             <input
               type="text"
-              placeholder="Search by name, algorithm, symbol..."
+              placeholder="Search by name, algorithm, symbol, rules..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input text-xs"
@@ -224,7 +227,14 @@ export function Strategies() {
           subtitle={`Displaying ${filteredStrategies.length} of ${strategies?.length || 0} registered bots`}
         />
 
-        {filteredStrategies.length === 0 ? (
+        {strategies.length === 0 ? (
+          <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg space-y-3">
+            <p>No strategies configured.</p>
+            <button onClick={() => navigate('/strategies/new')} className="btn btn-primary text-xs">
+              + New Strategy
+            </button>
+          </div>
+        ) : filteredStrategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg">
             No strategies found matching filter criteria.
           </div>
@@ -237,6 +247,7 @@ export function Strategies() {
                   <th>Name</th>
                   <th>Algorithm</th>
                   <th>Monitored Symbols</th>
+                  <th>Rule Summary</th>
                   <th>Cycle</th>
                   <th>Status</th>
                   <th>Mode</th>
@@ -262,6 +273,11 @@ export function Strategies() {
                       {strat.monitored_symbols?.length > 0
                         ? strat.monitored_symbols.join(', ')
                         : '—'}
+                    </td>
+                    <td className="text-xs text-green-600 max-w-xs">
+                      <span className="line-clamp-2" title={ruleSummaryFor(strat)}>
+                        {ruleSummaryFor(strat)}
+                      </span>
                     </td>
                     <td className="text-xs text-green-700">{strat.cycle} min</td>
                     <td>
@@ -304,12 +320,9 @@ export function Strategies() {
                         </button>
 
                         <button
-                          onClick={() => {
-                            setEditingStrategy(strat);
-                            setIsModalOpen(true);
-                          }}
+                          onClick={() => navigate(`/strategies/${strat.id}/edit`)}
                           className="btn btn-secondary text-xs py-1 px-2"
-                          title="Edit configuration"
+                          title="Edit strategy"
                         >
                           <Edit2 className="w-3 h-3 text-green-600" />
                         </button>
@@ -323,22 +336,6 @@ export function Strategies() {
         )}
       </Card>
 
-      {/* Create / Edit Strategy Modal */}
-      {isModalOpen && (
-        <StrategyFormModal
-          strategy={editingStrategy}
-          onClose={() => {
-            setIsModalOpen(false);
-            setEditingStrategy(null);
-          }}
-          onSaved={() => {
-            setIsModalOpen(false);
-            setEditingStrategy(null);
-            refetchStrategies();
-          }}
-        />
-      )}
-
       {/* Live confirmation dialog */}
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
@@ -349,218 +346,6 @@ export function Strategies() {
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />
-    </div>
-  );
-}
-
-function StrategyFormModal({
-  strategy,
-  onClose,
-  onSaved,
-}: {
-  strategy: Strategy | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const isEditing = !!strategy;
-
-  const [name, setName] = useState(strategy?.name || '');
-  const [description, setDescription] = useState(strategy?.description || '');
-  const [strategyName, setStrategyName] = useState(strategy?.strategy_name || 'grid');
-  const [status, setStatus] = useState<StrategyStatus>(strategy?.status || 'testing');
-  const [mode, setMode] = useState<StrategyMode>(strategy?.mode || 'dryrun');
-  const [symbols, setSymbols] = useState(strategy?.monitored_symbols?.join(', ') || 'BTCUSDT');
-  const [cycle, setCycle] = useState(strategy?.cycle || 5);
-  const [configJson, setConfigJson] = useState(
-    strategy?.configuration
-      ? JSON.stringify(strategy.configuration, null, 2)
-      : '{\n  "grid_levels": 10,\n  "grid_spacing_pct": 0.5\n}'
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    let parsedConfig: Record<string, unknown> = {};
-    try {
-      parsedConfig = JSON.parse(configJson);
-    } catch {
-      setError('Invalid JSON in Configuration field.');
-      return;
-    }
-
-    const monitoredSymbols = symbols
-      .split(',')
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
-
-    setSaving(true);
-    try {
-      if (isEditing && strategy) {
-        await api.updateStrategy(strategy.id, {
-          name,
-          description,
-          strategy_name: strategyName,
-          status,
-          mode,
-          monitored_symbols: monitoredSymbols,
-          cycle: Number(cycle),
-          configuration: parsedConfig,
-        });
-      } else {
-        await api.createStrategy({
-          name,
-          description,
-          strategy_name: strategyName,
-          status,
-          mode,
-          monitored_symbols: monitoredSymbols,
-          cycle: Number(cycle),
-          configuration: parsedConfig,
-        });
-      }
-      onSaved();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save strategy');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content max-w-xl">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-green-500">
-            {isEditing ? `Edit Strategy #${strategy?.id}` : 'Create New Strategy'}
-          </h2>
-          <button onClick={onClose} className="text-green-700 hover:text-green-400">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-950/60 border border-red-800 text-red-300 rounded text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="form-group mb-0">
-              <label className="form-label">Strategy Name</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. BTC Grid Scalper"
-                className="form-input text-xs"
-              />
-            </div>
-
-            <div className="form-group mb-0">
-              <label className="form-label">Algorithm Key</label>
-              <select
-                value={strategyName}
-                onChange={(e) => setStrategyName(e.target.value)}
-                className="form-select text-xs"
-              >
-                <option value="grid">Grid (grid)</option>
-                <option value="bollinger">Bollinger Bands (bollinger)</option>
-                <option value="scalping">Scalping (scalping)</option>
-                <option value="mlgrpc">ML gRPC (mlgrpc)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Description</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Strategy operational notes..."
-              className="form-input text-xs"
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="form-group mb-0">
-              <label className="form-label">Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as StrategyStatus)}
-                className="form-select text-xs"
-              >
-                <option value="productive">Productive</option>
-                <option value="testing">Testing</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
-
-            <div className="form-group mb-0">
-              <label className="form-label">Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as StrategyMode)}
-                className="form-select text-xs"
-              >
-                <option value="dryrun">Dry Run</option>
-                <option value="paper">Paper</option>
-                <option value="live">LIVE</option>
-                <option value="backtest">Backtest</option>
-              </select>
-            </div>
-
-            <div className="form-group mb-0">
-              <label className="form-label">Cycle (minutes)</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={cycle}
-                onChange={(e) => setCycle(Number(e.target.value))}
-                className="form-input text-xs font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Monitored Symbols (comma separated)</label>
-            <input
-              type="text"
-              required
-              value={symbols}
-              onChange={(e) => setSymbols(e.target.value)}
-              placeholder="BTCUSDT, ETHUSDT"
-              className="form-input text-xs font-mono"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">JSON Configuration</label>
-            <textarea
-              rows={6}
-              value={configJson}
-              onChange={(e) => setConfigJson(e.target.value)}
-              className="form-textarea font-mono text-xs"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn btn-primary">
-              {saving ? 'Saving...' : isEditing ? 'Update Strategy' : 'Create Strategy'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }

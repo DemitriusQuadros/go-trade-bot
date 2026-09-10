@@ -17,6 +17,8 @@ var RealtimeModule = fx.Module("realtime",
 		func(s strategyrepo.StrategyRepository) realtime.StrategyRepository { return s },
 		realtime.NewDashboardBroadcaster,
 		func(b *realtime.DashboardBroadcaster) realtimehandler.Broadcaster { return b },
+		realtime.NewPreviewBroadcaster,
+		func(b *realtime.PreviewBroadcaster) realtimehandler.PreviewBroadcaster { return b },
 		realtimehandler.NewRealtimeHandler,
 	),
 	fx.Invoke(func(lc fx.Lifecycle, b *realtime.DashboardBroadcaster) {

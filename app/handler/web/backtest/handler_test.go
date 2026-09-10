@@ -342,3 +342,23 @@ func TestBacktestHandler_GetByID_WithEquityCurve(t *testing.T) {
 	assert.Equal(t, 1050.0, resp.EquityCurve[1].Value)
 }
 
+
+// backend-07 AC#5: the execution_trace field is present only under the
+// opt-in flag, and absent otherwise.
+func TestToRunResponse_ExecutionTraceOptIn(t *testing.T) {
+	run := entities.BacktestRun{
+		ID:                 1,
+		Symbol:             "BTCUSDT",
+		ExecutionTraceJSON: datatypes.JSON(`[{"timestamp":"2024-01-01T00:00:00Z","candle":{"o":1,"h":2,"l":0,"c":1,"v":10,"t":1704067200},"indicators":[],"log":[]}]`),
+	}
+
+	// Opt-out: execution_trace must be absent from the JSON.
+	optedOut, err := json.Marshal(handler.ToRunResponse(run, false))
+	assert.NoError(t, err)
+	assert.NotContains(t, string(optedOut), "execution_trace")
+
+	// Opt-in: execution_trace must be present.
+	optedIn, err := json.Marshal(handler.ToRunResponse(run, true))
+	assert.NoError(t, err)
+	assert.Contains(t, string(optedIn), "execution_trace")
+}

@@ -50,6 +50,40 @@ services:
     depends_on:
       - prometheus
 
+  # worker runs the Asynq task processor that executes trading-strategy cycles,
+  # including the Lua scripting engine (backend-04). A runaway or leaking Lua
+  # VM is the motivating risk for a hard memory ceiling (backend-06).
+  #
+  # mem_limit (the legacy top-level key) is used rather than
+  # deploy.resources.limits.memory because this stack is driven by the
+  # Makefile's `docker-compose` (Compose v1 command) in non-Swarm mode, where
+  # mem_limit is the universally-honored knob and deploy.resources is ignored
+  # outside Swarm. If the deployment moves to `docker compose` v2 / Swarm,
+  # switch to deploy.resources.limits.memory.
+  #
+  # 512m is a PLACEHOLDER pending a real production baseline: spec backend-06
+  # Step 1 calls for a 24h steady-state RSS measurement (not performable in
+  # this environment) to size this properly. Revisit once that baseline exists;
+  # set it to roughly 2x observed steady-state RSS.
+  #
+  # restart: unless-stopped ensures the container is brought back after an
+  # OOM-kill - a memory-limited container with no restart policy is worse than
+  # no limit at all (a single leak permanently takes the worker down).
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET: worker
+    container_name: worker
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./config.yml:/root/config.yml:ro
+
 volumes:
   redis_data:
   prometheus_data:

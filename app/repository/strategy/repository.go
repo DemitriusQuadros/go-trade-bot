@@ -91,3 +91,13 @@ func (r StrategyRepository) GetPerformanceInRange(ctx context.Context, from, to 
 
 	return performances, err
 }
+
+func (r StrategyRepository) SaveScriptVersion(ctx context.Context, v entities.ScriptVersion) error {
+	return r.db.WithContext(ctx).Create(&v).Error
+}
+
+func (r StrategyRepository) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	var versions []entities.ScriptVersion
+	err := r.db.WithContext(ctx).Where("strategy_id = ?", strategyID).Order("created_at desc").Find(&versions).Error
+	return versions, err
+}

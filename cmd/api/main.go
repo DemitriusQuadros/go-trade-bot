@@ -7,15 +7,15 @@ import (
 	account "go-trade-bot/app/handler/web/account"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
+	candleimport "go-trade-bot/app/handler/web/candleimport"
 	optimize "go-trade-bot/app/handler/web/optimize"
 	performancehistory "go-trade-bot/app/handler/web/performancehistory"
 	realtime "go-trade-bot/app/handler/web/realtime"
+	scripthandler "go-trade-bot/app/handler/web/script"
+	settings "go-trade-bot/app/handler/web/settings"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
-	_ "go-trade-bot/app/strategies/bollinger"
-	_ "go-trade-bot/app/strategies/grid"
 	_ "go-trade-bot/app/strategies/mlgrpc"
-	_ "go-trade-bot/app/strategies/scalping"
 	"go-trade-bot/cmd/api/modules"
 	"go-trade-bot/cmd/api/webui"
 	config "go-trade-bot/internal/configuration"
@@ -51,6 +51,9 @@ func main() {
 		modules.OptimizeModule,
 		modules.PerformanceHistoryModule,
 		modules.RealtimeModule,
+		modules.CandleImportModule,
+		modules.SettingsModule,
+		modules.ScriptModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
@@ -61,6 +64,9 @@ func main() {
 			AsRoute(optimize.NewOptimizeHandler),
 			AsRoute(performancehistory.NewHandler),
 			AsRoute(realtime.NewRealtimeHandler),
+			AsRoute(candleimport.NewCandleImportHandler),
+			AsRoute(settings.NewSettingsHandler),
+			AsRoute(scripthandler.NewScriptHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`, ``),
@@ -133,22 +139,30 @@ func Migrate(db *gorm.DB) error {
 		&entities.BacktestRun{},
 		&entities.OptimizationRun{},
 		&entities.StrategyPerformanceSnapshot{},
+		&entities.Settings{},
+		&entities.ScriptVersion{},
+		&entities.ImportJob{},
+		&entities.ImportSchedule{},
+		&entities.ScriptState{},
 	); err != nil {
 		return err
 	}
 
-	// Spec 06 migration step 2: backfill StrategyName from the legacy
-	// Algorithm enum for every pre-existing row - additive, not destructive,
-	// since Algorithm is kept (not dropped) per Spec 06 migration step 5.
-	// Spec 10 AC#5: Mode itself is backfilled to "dryrun" via the column's
-	// `gorm:"default:'dryrun'"` tag, which Postgres applies to existing rows
-	// when the column is added - never left NULL, never "live".
-	if err := db.Exec(`
-		UPDATE strategies
-		SET strategy_name = algorithm
-		WHERE (strategy_name IS NULL OR strategy_name = '') AND algorithm IS NOT NULL AND algorithm <> ''
-	`).Error; err != nil {
-		return err
+	// Legacy backfill (Spec 06): older DBs may still carry rows that only set
+	// the now-removed `algorithm` column (backend-05 dropped the Strategy.
+	// Algorithm field/enum entirely). If that column still physically exists
+	// on this database (AutoMigrate never drops columns), backfill
+	// strategy_name from it once. On a fresh database the column was never
+	// created, so this step is skipped rather than failing on an unknown
+	// column reference.
+	if db.Migrator().HasColumn(&entities.Strategy{}, "algorithm") {
+		if err := db.Exec(`
+			UPDATE strategies
+			SET strategy_name = algorithm
+			WHERE (strategy_name IS NULL OR strategy_name = '') AND algorithm IS NOT NULL AND algorithm <> ''
+		`).Error; err != nil {
+			return err
+		}
 	}
 
 	return nil

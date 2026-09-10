@@ -17,6 +17,8 @@ type StrategyRepository interface {
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 	Update(ctx context.Context, strategy entities.Strategy) error
 	GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance
+	SaveScriptVersion(ctx context.Context, v entities.ScriptVersion) error
+	GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error)
 }
 
 type StrategyWorker interface {
@@ -50,6 +52,13 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
 		return err
 	}
+	if strategy.StrategyName == "script" {
+		u.Repository.SaveScriptVersion(ctx, entities.ScriptVersion{
+			StrategyID: strategy.ID,
+			Source:     strategy.ScriptSource,
+			CreatedAt:  time.Now(),
+		})
+	}
 	return nil
 }
 
@@ -63,7 +72,13 @@ func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy)
 	if err := u.Repository.Update(ctx, strategy); err != nil {
 		return err
 	}
-
+	if strategy.StrategyName == "script" {
+		u.Repository.SaveScriptVersion(ctx, entities.ScriptVersion{
+			StrategyID: strategy.ID,
+			Source:     strategy.ScriptSource,
+			CreatedAt:  time.Now(),
+		})
+	}
 	return nil
 }
 
@@ -184,8 +199,33 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 // entities.Strategy directly (bypassing the DTO), so validation behaves
 // consistently regardless of entry point during the deprecation window.
 func applyStrategyNameFallback(strategy entities.Strategy) entities.Strategy {
-	if strategy.StrategyName == "" && strategy.Algorithm != "" {
-		strategy.StrategyName = string(strategy.Algorithm)
-	}
 	return strategy
+}
+
+func (u StrategyUseCase) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	return u.Repository.GetScriptVersions(ctx, strategyID)
+}
+
+func (u StrategyUseCase) RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error {
+	versions, err := u.Repository.GetScriptVersions(ctx, strategyID)
+	if err != nil {
+		return err
+	}
+	var target *entities.ScriptVersion
+	for _, v := range versions {
+		if v.ID == versionID {
+			target = &v
+			break
+		}
+	}
+	if target == nil {
+		return customerror.New(http.StatusNotFound, "Version not found")
+	}
+
+	strat, err := u.GetByID(ctx, strategyID)
+	if err != nil {
+		return err
+	}
+	strat.ScriptSource = target.Source
+	return u.Update(ctx, strat)
 }

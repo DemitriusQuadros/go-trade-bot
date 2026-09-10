@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/notifier"
 
 	"go.uber.org/fx"
@@ -10,14 +9,16 @@ import (
 // NotifierModule provides the NotificationSender ACL (Spec 09) for the API
 // process - needed because SignalUseCase.Close (POST /signal/close/{id})
 // can now emit position.closed / strategy.error webhook events.
+//
+// Spec backend-05 (ADR-016): wrapped in *notifier.SwappableNotifier - see
+// cmd/worker/modules/notifier.go's comment for the full rationale.
 var NotifierModule = fx.Module("notifier",
-	fx.Provide(provideNotifier),
+	fx.Provide(
+		notifier.NewSwappableNotifier,
+		asNotificationSenderInterface,
+	),
 )
 
-func provideNotifier(cfg *configuration.Configuration) (notifier.NotificationSender, error) {
-	n, err := notifier.NewWebhookNotifier(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return n, nil
+func asNotificationSenderInterface(s *notifier.SwappableNotifier) notifier.NotificationSender {
+	return s
 }

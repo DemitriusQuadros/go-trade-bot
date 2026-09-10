@@ -287,7 +287,6 @@ func RegisterBacktestSteps(sc *godog.ScenarioContext, tc *TestContext) {
 			ID:               1,
 			Name:             symbol,
 			StrategyName:     "grid",
-			Algorithm:        entities.Grid,
 			Status:           entities.Testing,
 			MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
 		}

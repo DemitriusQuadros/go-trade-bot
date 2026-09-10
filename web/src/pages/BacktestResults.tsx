@@ -2,13 +2,15 @@ import { useBacktest } from '@/hooks/queries';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '@/api/client';
-import { BacktestRun, MonteCarloSummary, DrawdownPoint } from '@/api/types';
+import { BacktestRun, MonteCarloSummary, DrawdownPoint, TraceRecord } from '@/api/types';
 import { Card, CardHeader, MetricCard } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart';
 import { DrawdownChart } from '@/components/charts/DrawdownChart';
 import { MonteCarloDistribution } from '@/components/charts/MonteCarloDistribution';
+import { ExecutionTraceChart } from '@/components/charts/ExecutionTraceChart';
+import { TraceAnnotationPanel } from '@/components/charts/TraceAnnotationPanel';
 import {
   ArrowLeft,
   Download,
@@ -36,6 +38,9 @@ export function BacktestResults() {
   const [monteCarlo, setMonteCarlo] = useState<MonteCarloSummary | null>(null);
   const [mcLoading, setMcLoading] = useState(false);
   const [mcError, setMcError] = useState<string | null>(null);
+
+  // Execution Trace state (frontend-01)
+  const [selectedTraceRecord, setSelectedTraceRecord] = useState<TraceRecord | null>(null);
 
   // Tab: Charts & Analysis vs HTML Report iframe
   const [activeTab, setActiveTab] = useState<'analytics' | 'report'>('analytics');
@@ -251,6 +256,28 @@ export function BacktestResults() {
               <DrawdownChart points={drawdownPoints} height={260} />
             </Card>
           </div>
+
+          {/* Execution Trace Visualization (frontend-01) */}
+          <Card>
+            <CardHeader
+              title="Execution Trace & Signal Telemetry"
+              subtitle="Candlestick replay with buy/sell execution markers and indicator overlays"
+            />
+            {run.execution_trace && run.execution_trace.length > 0 ? (
+              <div className="space-y-3">
+                <ExecutionTraceChart
+                  trace={run.execution_trace}
+                  height={380}
+                  onScrub={setSelectedTraceRecord}
+                />
+                <TraceAnnotationPanel record={selectedTraceRecord} />
+              </div>
+            ) : (
+              <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg font-mono">
+                No candlestick execution trace recorded for this run.
+              </div>
+            )}
+          </Card>
 
           {/* Monte Carlo Section */}
           <Card>

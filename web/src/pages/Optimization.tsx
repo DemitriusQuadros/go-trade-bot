@@ -11,6 +11,7 @@ import { Card, CardHeader, MetricCard } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingScreen, Spinner } from '@/components/ui/Spinner';
 import { ParamHeatmap } from '@/components/charts/ParamHeatmap';
+import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import {
   Zap,
   Play,
@@ -237,7 +238,10 @@ export function Optimization() {
               {/* Parameter 1 */}
               <div className="p-3 bg-green-950/20/60 rounded-lg border border-green-900/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-green-500">Parameter 1 (X-Axis)</span>
+                  <span className="text-xs font-semibold text-green-500 flex items-center gap-1.5">
+                    Parameter 1 (X-Axis)
+                    <HelpTooltip>First hyperparameter dimension to sweep across (min, max, step increments)</HelpTooltip>
+                  </span>
                 </div>
                 <input
                   type="text"
@@ -287,7 +291,10 @@ export function Optimization() {
               {/* Parameter 2 */}
               <div className="p-3 bg-green-950/20/60 rounded-lg border border-green-900/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-purple-400">Parameter 2 (Y-Axis)</span>
+                  <span className="text-xs font-semibold text-purple-400 flex items-center gap-1.5">
+                    Parameter 2 (Y-Axis)
+                    <HelpTooltip>Second hyperparameter dimension to sweep across in grid combinations</HelpTooltip>
+                  </span>
                 </div>
                 <input
                   type="text"

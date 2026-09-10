@@ -12,6 +12,7 @@ import (
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/candle"
 	"go-trade-bot/app/strategies"
+	"go-trade-bot/app/strategies/script"
 	signal_usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/feed"
 	"go-trade-bot/internal/indicators"
@@ -148,7 +149,8 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 	}
 	strategyName = strat.Name
 
-	tradeLog, err := u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, req.StartDate, req.EndDate, req.InitialCapital, req.FillPolicy)
+	var executionTrace []script.TraceRecord
+	tradeLog, err := u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, req.StartDate, req.EndDate, req.InitialCapital, req.FillPolicy, &executionTrace)
 	if err != nil {
 		return entities.BacktestRun{}, fmt.Errorf("backtest execution failed: %w", err)
 	}
@@ -181,6 +183,15 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 	// Marshal full metrics
 	metricsBytes, _ := json.Marshal(metrics)
 
+	// Persist the per-cycle execution trace (backend-07) when the strategy
+	// produced one (script strategies only; nil/empty for native Go strategies).
+	var executionTraceBytes datatypes.JSON
+	if len(executionTrace) > 0 {
+		if b, mErr := json.Marshal(executionTrace); mErr == nil {
+			executionTraceBytes = datatypes.JSON(b)
+		}
+	}
+
 	// Safe Profit Factor for DB
 	dbProfitFactor := metrics.ProfitFactor
 	if math.IsInf(dbProfitFactor, 1) || dbProfitFactor > 1e15 {
@@ -199,12 +210,13 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		ProfitFactor:   dbProfitFactor,
 		TotalTrades:    metrics.TotalTrades,
 		TotalReturnPct: metrics.TotalReturnPct,
-		Passed:         passed,
-		HTMLReportPath: htmlPath,
-		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
-		MetricsJSON:    datatypes.JSON(metricsBytes),
-		InitialCapital: req.InitialCapital,
-		CreatedAt:      time.Now().UTC(),
+		Passed:             passed,
+		HTMLReportPath:     htmlPath,
+		TradeLogJSON:       datatypes.JSON(tradeLogBytes),
+		MetricsJSON:        datatypes.JSON(metricsBytes),
+		ExecutionTraceJSON: executionTraceBytes,
+		InitialCapital:     req.InitialCapital,
+		CreatedAt:          time.Now().UTC(),
 	}
 
 	if err := u.backtestRepo.Create(ctx, &run); err != nil {
@@ -267,7 +279,9 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 
 	var allOOSTrades []metrics_provider.TradeLogEntry
 	runner := func(ctx context.Context, from, to time.Time) ([]metrics_provider.TradeLogEntry, error) {
-		return u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, from, to, req.InitialCapital, req.FillPolicy)
+		// Walk-forward runs deliberately do not persist an execution trace
+		// (backend-07): pass a nil collector so no sink is wired.
+		return u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, from, to, req.InitialCapital, req.FillPolicy, nil)
 	}
 
 	wfResult, err := engine.RunWalkForward(ctx, wfConfig, runner, u.metricsProvider, req.InitialCapital, periodsPerYear)
@@ -363,7 +377,7 @@ func (u *BacktestUseCase) RunEphemeral(
 		initialCapital = 1000.0
 	}
 
-	tradeLog, err := u.executeReplay(ctx, baseStrategy, symbol, timeframe, from, to, initialCapital, fillPolicy)
+	tradeLog, err := u.executeReplay(ctx, baseStrategy, symbol, timeframe, from, to, initialCapital, fillPolicy, nil)
 	if err != nil {
 		return metrics_provider.BacktestMetrics{}, fmt.Errorf("ephemeral backtest execution failed: %w", err)
 	}
@@ -494,6 +508,10 @@ func extractTradeLog(run entities.BacktestRun) ([]metrics_provider.TradeLogEntry
 	return trades, nil
 }
 
+// executeReplay runs one replay backtest. When traceCollector is non-nil and
+// the resolved strategy implements script.TraceableStrategy (backend-07), a
+// per-cycle execution trace is accumulated into *traceCollector. Walk-forward
+// callers pass nil to opt out (no trace is wired or persisted for those runs).
 func (u *BacktestUseCase) executeReplay(
 	ctx context.Context,
 	strat entities.Strategy,
@@ -501,6 +519,7 @@ func (u *BacktestUseCase) executeReplay(
 	from, to time.Time,
 	initialCapital float64,
 	fillPolicy engine.FillPolicy,
+	traceCollector *[]script.TraceRecord,
 ) ([]metrics_provider.TradeLogEntry, error) {
 	replayFeed, err := feed.NewReplayFeed(ctx, u.candleRepo, symbol, timeframe, from, to)
 	if err != nil {
@@ -516,9 +535,17 @@ func (u *BacktestUseCase) executeReplay(
 	cache := memcache.NewInMemoryCache()
 
 	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache, nil)
-	stratImpl, ok := strategies.Get(strat.StrategyName)
+	stratImpl, ok := strategies.Get(strat.StrategyName, strat)
 	if !ok {
 		return nil, fmt.Errorf("strategy %q not registered", strat.StrategyName)
+	}
+
+	if traceCollector != nil {
+		if traceable, ok := stratImpl.(script.TraceableStrategy); ok {
+			traceable.SetTraceSink(func(rec script.TraceRecord) {
+				*traceCollector = append(*traceCollector, rec)
+			})
+		}
 	}
 
 	driver := engine.NewReplayDriver(replayFeed, simExchange, eng, stratImpl, strat, symbol, strategies.ModeBacktest, signalRepo)

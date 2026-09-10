@@ -73,6 +73,18 @@ var Phase3Metrics = []metrics.MetricConfig{
 	},
 }
 
+// ScriptingMetrics are the strategy-scripting initiative's own metrics
+// (docs/specs/strategy-scripting/backend-01-lua-runtime-sandbox.md). Emitted
+// from app/strategies/script's Runner/CallHook.
+var ScriptingMetrics = []metrics.MetricConfig{
+	{
+		Name:       "script_runtime_errors_total",
+		Help:       "Total count of Lua script runtime errors (timeout, lua_error, panic), by strategy and reason.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"strategy", "reason"},
+	},
+}
+
 var MetricsModule = fx.Module("metrics",
 	fx.Provide(func() *metrics.MetricsCollector {
 		cfgs := []metrics.MetricConfig{
@@ -119,6 +131,7 @@ var MetricsModule = fx.Module("metrics",
 		cfgs = append(cfgs, Phase1Metrics...)
 		cfgs = append(cfgs, Phase2Metrics...)
 		cfgs = append(cfgs, Phase3Metrics...)
+		cfgs = append(cfgs, ScriptingMetrics...)
 		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

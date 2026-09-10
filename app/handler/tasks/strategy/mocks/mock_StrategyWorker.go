@@ -4,6 +4,7 @@ package mocks
 
 import (
 	entities "go-trade-bot/app/entities"
+	time "time"
 
 	mock "github.com/stretchr/testify/mock"
 )
@@ -15,6 +16,11 @@ type StrategyWorker struct {
 
 func (_m *StrategyWorker) EnqueueStrategyTask(strategy entities.Strategy) error {
 	ret := _m.Called(strategy)
+	return ret.Error(0)
+}
+
+func (_m *StrategyWorker) EnqueueStrategyTaskWithDelay(strategy entities.Strategy, delay time.Duration) error {
+	ret := _m.Called(strategy, delay)
 	return ret.Error(0)
 }
 

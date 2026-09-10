@@ -13,10 +13,10 @@ import (
 	"go-trade-bot/app/entities"
 	backtest_repo "go-trade-bot/app/repository/backtest"
 	candle_repo "go-trade-bot/app/repository/candle"
+	scriptstate_repo "go-trade-bot/app/repository/scriptstate"
 	strategy_repo "go-trade-bot/app/repository/strategy"
-	_ "go-trade-bot/app/strategies/bollinger"
-	_ "go-trade-bot/app/strategies/grid"
-	_ "go-trade-bot/app/strategies/scalping"
+	"go-trade-bot/app/strategies"
+	"go-trade-bot/app/strategies/script"
 	usecase "go-trade-bot/app/usecase/backtest"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/db"
@@ -70,9 +70,18 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := database.AutoMigrate(&entities.Candle{}, &entities.BacktestRun{}); err != nil {
+	if err := database.AutoMigrate(&entities.Candle{}, &entities.BacktestRun{}, &entities.ScriptState{}); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
+
+	// Register the "script" strategy manually (cmd/backtest does not use fx):
+	// its factory closes over a DB-backed ScriptStateStore and a Runner, both
+	// constructed here by hand, mirroring cmd/worker's fx.Invoke registration.
+	scriptStore := script.NewScriptStateStore(scriptstate_repo.NewRepository(database))
+	scriptRunner := script.NewRunner(script.DefaultHookTimeout, nil)
+	strategies.Register("script", func(dbStrategy entities.Strategy) strategies.Strategy {
+		return script.NewScriptStrategy(dbStrategy, scriptStore, scriptRunner)
+	})
 
 	candleRepo := candle_repo.NewCandleRepository(database)
 	backtestRepo := backtest_repo.NewBacktestRepository(database)

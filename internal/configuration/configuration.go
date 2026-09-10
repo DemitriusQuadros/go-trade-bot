@@ -9,19 +9,34 @@ import (
 )
 
 type Configuration struct {
-	Broker      Broker
-	DB          DB
-	Redis       Redis
-	Prometheus  Prometheus
-	Mode        string // process-wide execution-mode ceiling, from MODE env var, e.g. "paper" (Spec 10)
-	ConfirmLive bool   // from --confirm-live CLI flag (Spec 10)
-	Testnet     bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
+	Broker              Broker
+	DB                  DB
+	Redis               Redis
+	Prometheus          Prometheus
+	Mode                string // process-wide execution-mode ceiling, from MODE env var, e.g. "paper" (Spec 10)
+	ConfirmLive         bool   // from --confirm-live CLI flag (Spec 10)
+	Testnet             bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
 	WebhookURL          string // outbound trade-event notification target (Spec 09)
 	APIBaseURL          string // base URL for cmd/api (Spec TUI-01, default http://localhost:8080)
 	APIToken            string // shared bearer token (Spec backend-01)
 	AllowInsecureNoAuth bool   // explicit opt-out for auth (Spec backend-01)
-	DryRun              DryRunConfig
-	Console             ConsoleConfig
+	// InternalBridgeAddr is the address cmd/worker's host-internal
+	// settings-apply listener binds to (Spec backend-05) - loopback-only by
+	// default (127.0.0.1), deliberately never the wildcard/all-interfaces
+	// address cmd/worker's public :9191 monitoring server uses. cmd/api's
+	// settings usecase dials this same address to forward a validated
+	// PUT /settings call into cmd/worker's process-local drain-then-swap.
+	InternalBridgeAddr string
+	// InternalBridgeSecret, if set, must be sent by cmd/api on every call to
+	// the internal settings-apply endpoint (as a header - see
+	// internal/settingsbridge) and is checked by cmd/worker before
+	// processing the request. Defense-in-depth on top of the loopback bind,
+	// for deployments where cmd/api and cmd/worker might not share a host.
+	// Empty is accepted (with a startup warning) for backward compatibility
+	// with existing config.yml files that predate this field.
+	InternalBridgeSecret string
+	DryRun               DryRunConfig
+	Console              ConsoleConfig
 }
 
 type ConsoleConfig struct {
@@ -165,6 +180,15 @@ func NewConfiguration() *Configuration {
 		allowInsecure = true
 	}
 
+	internalBridgeAddr := viper.GetString("INTERNAL_BRIDGE_ADDR")
+	if internalBridgeAddr == "" {
+		// Loopback-only default (Spec backend-05) - deliberately distinct
+		// from cmd/worker's public :9191 monitoring server, which binds all
+		// interfaces. Never default this to a wildcard address.
+		internalBridgeAddr = "127.0.0.1:9193"
+	}
+	internalBridgeSecret := viper.GetString("INTERNAL_BRIDGE_SECRET")
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -186,13 +210,15 @@ func NewConfiguration() *Configuration {
 		Prometheus: Prometheus{
 			Address: prometheus,
 		},
-		Mode:                mode,
-		ConfirmLive:         confirmLive,
-		Testnet:             testnet,
-		WebhookURL:          webhookURL,
-		APIBaseURL:          apiBaseURL,
-		APIToken:            apiToken,
-		AllowInsecureNoAuth: allowInsecure,
+		Mode:                 mode,
+		ConfirmLive:          confirmLive,
+		Testnet:              testnet,
+		WebhookURL:           webhookURL,
+		APIBaseURL:           apiBaseURL,
+		APIToken:             apiToken,
+		AllowInsecureNoAuth:  allowInsecure,
+		InternalBridgeAddr:   internalBridgeAddr,
+		InternalBridgeSecret: internalBridgeSecret,
 		DryRun: DryRunConfig{
 			SlippagePct: dryRunSlippage,
 			FeePct:      dryRunFeePct,

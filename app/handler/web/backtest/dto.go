@@ -78,7 +78,11 @@ type BacktestRunResponse struct {
 	HTMLReportPath string                        `json:"html_report_path"`
 	EquityCurve    []metrics_provider.EquityPoint `json:"equity_curve"`
 	TradeLog       any                           `json:"trade_log,omitempty"`
-	CreatedAt      time.Time                     `json:"created_at"`
+	// ExecutionTrace is the per-cycle script execution trace (backend-07),
+	// included only under the same opt-in flag as TradeLog and only when the
+	// run actually persisted one (script strategies).
+	ExecutionTrace any       `json:"execution_trace,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunResponse {
@@ -119,6 +123,13 @@ func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunRe
 		var parsed any
 		if err := json.Unmarshal(run.TradeLogJSON, &parsed); err == nil {
 			res.TradeLog = parsed
+		}
+	}
+
+	if includeTradeLog && len(run.ExecutionTraceJSON) > 0 {
+		var parsedTrace any
+		if err := json.Unmarshal(run.ExecutionTraceJSON, &parsedTrace); err == nil {
+			res.ExecutionTrace = parsedTrace
 		}
 	}
 

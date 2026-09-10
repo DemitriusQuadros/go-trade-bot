@@ -10,9 +10,7 @@ import (
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/candle"
 	"go-trade-bot/app/strategies"
-	_ "go-trade-bot/app/strategies/bollinger"
-	_ "go-trade-bot/app/strategies/grid"
-	_ "go-trade-bot/app/strategies/scalping"
+	"go-trade-bot/app/strategies/script"
 	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/feed"
@@ -195,16 +193,60 @@ func generateSyntheticCandles(count int) []entities.Candle {
 	return candles
 }
 
-func TestSimulatorParity_Bollinger(t *testing.T) {
+// parityNopStore is a no-op ScriptStateStore for the parity test's script
+// strategy (which does not use persistent state).
+type parityNopStore struct{}
+
+func (parityNopStore) Load(context.Context, uint, string) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+func (parityNopStore) Save(context.Context, uint, string, map[string]interface{}) error { return nil }
+
+func init() {
+	runner := script.NewRunner(script.DefaultHookTimeout, nil)
+	strategies.Register("script", func(db entities.Strategy) strategies.Strategy {
+		return script.NewScriptStrategy(db, parityNopStore{}, runner)
+	})
+}
+
+// parityScriptSource ports the retired template's RSI<45 entry / 1%
+// take-profit exit to an equivalent Lua script, so the feed/driver parity
+// test keeps its original trading behavior without the deleted template pkg.
+const parityScriptSource = `
+function should_long(ctx)
+  local rsi = ind.rsi(14)
+  return rsi < 45
+end
+function go_long(ctx)
+  return {buy = {price = ctx.price}}
+end
+function update_position(ctx)
+  local entry = ctx.position.entry_price
+  local pnl = (ctx.price - entry) / entry * 100
+  if pnl >= 1.0 then
+    return {sell = {price = ctx.price}}
+  end
+  return nil
+end
+`
+
+func TestSimulatorParity_Template(t *testing.T) {
 	candles := generateSyntheticCandles(300)
 	symbol := "BTCUSDT"
 	timeframe := "1m"
 
-	stratConfigJSON := datatypes.JSON(`{"take_profit_pct": 1.0, "stop_loss_pct": 1.0}`)
+	stratConfigJSON := datatypes.JSON(`{
+		"stop_loss_pct": 1.0,
+		"position_sizing": {
+			"type": "pct_capital",
+			"value": 10
+		}
+	}`)
 	dbStrat := entities.Strategy{
 		ID:               1,
-		Name:             "bollinger",
-		StrategyName:     "bollinger",
+		Name:             "script_rsi",
+		StrategyName:     "script",
+		ScriptSource:     parityScriptSource,
 		MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle:         entities.OneMinute,
@@ -233,7 +275,7 @@ func TestSimulatorParity_Bollinger(t *testing.T) {
 	cacheA := memcache.NewInMemoryCache()
 
 	engineA := engine.NewEngine(simExchangeA, indicatorProviderA, signalUCA, accountUCA, nil, cacheA, nil)
-	stratA, _ := strategies.Get("bollinger")
+	stratA, _ := strategies.Get("script", dbStrat)
 	driverA := engine.NewReplayDriver(replayFeedA, simExchangeA, engineA, stratA, dbStrat, symbol, strategies.ModeBacktest, signalRepoA)
 
 	tradesA, err := driverA.Run(context.Background())
@@ -282,7 +324,7 @@ func TestSimulatorParity_Bollinger(t *testing.T) {
 	cacheB := memcache.NewInMemoryCache()
 
 	engineB := engine.NewEngine(simExchangeB, indicatorProviderB, signalUCA_B, accountUCB, nil, cacheB, nil)
-	stratB, _ := strategies.Get("bollinger")
+	stratB, _ := strategies.Get("script", dbStratB(dbStrat))
 	driverB := engine.NewReplayDriver(countedLiveFeedB, simExchangeB, engineB, stratB, dbStratB(dbStrat), symbol, strategies.ModeBacktest, signalRepoB)
 
 	tradesB, err := driverB.Run(context.Background())
@@ -317,114 +359,4 @@ func TestSimulatorParity_Bollinger(t *testing.T) {
 func dbStratB(s entities.Strategy) entities.Strategy {
 	s.ID = 2
 	return s
-}
-
-func TestSimulatorParity_Grid_And_Scalping(t *testing.T) {
-	candles := generateSyntheticCandles(300)
-	symbol := "BTCUSDT"
-	timeframe := "1m"
-
-	// 1. Grid Strategy Parity
-	gridConfigJSON := datatypes.JSON(`{
-		"grid_levels": 6,
-		"grid_spacing_pct": 0.5,
-		"take_profit_pct": 0.5,
-		"stop_loss_pct": 1.0,
-		"volume_filter": 0,
-		"rsi_period": 14,
-		"rsi_buy_threshold": 40,
-		"rsi_sell_threshold": 60
-	}`)
-
-	dbStratGrid := entities.Strategy{
-		ID:               2,
-		Name:             "grid",
-		StrategyName:     "grid",
-		MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
-		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle:         entities.OneMinute,
-			Configuration: gridConfigJSON,
-		},
-	}
-
-	dbA, err := gorm.Open(sqlite.Open("file:"+t.Name()+"_grid_A?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, dbA.AutoMigrate(&entities.Candle{}))
-	repoA := candle.NewCandleRepository(dbA)
-	require.NoError(t, repoA.Upsert(context.Background(), candles))
-
-	replayFeedA, err := feed.NewReplayFeed(context.Background(), repoA, symbol, timeframe, candles[0].OpenTime, candles[len(candles)-1].OpenTime.Add(time.Minute))
-	require.NoError(t, err)
-
-	simExchangeA := engine.NewSimulatedFillExchange(engine.NewCandleRepoMarketDataSource(repoA), engine.FillPolicy{})
-	signalRepoA := &memorySignalRepo{}
-	accountUCA := &memoryAccountUseCase{amount: 1000.0}
-	engineA := engine.NewEngine(simExchangeA, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoA, accountUCA, simExchangeA, nil, nil, nil), accountUCA, nil, memcache.NewInMemoryCache(), nil)
-	stratGridA, _ := strategies.Get("grid")
-	driverA := engine.NewReplayDriver(replayFeedA, simExchangeA, engineA, stratGridA, dbStratGrid, symbol, strategies.ModeBacktest, signalRepoA)
-
-	tradesA, err := driverA.Run(context.Background())
-	require.NoError(t, err)
-
-	// Replay with LiveFeed
-	var exchangeCandles []exchange.Candle
-	for _, c := range candles {
-		exchangeCandles = append(exchangeCandles, exchange.Candle{
-			Symbol:    c.Symbol,
-			Timeframe: c.Timeframe,
-			OpenTime:  c.OpenTime,
-			Open:      c.Open,
-			High:      c.High,
-			Low:       c.Low,
-			Close:     c.Close,
-			Volume:    c.Volume,
-		})
-	}
-	dbB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"_grid_B?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, dbB.AutoMigrate(&entities.Candle{}))
-	repoB := candle.NewCandleRepository(dbB)
-	require.NoError(t, repoB.Upsert(context.Background(), candles))
-
-	simExchangeB := engine.NewSimulatedFillExchange(engine.NewCandleRepoMarketDataSource(repoB), engine.FillPolicy{})
-	fixedEx := &fixedSequenceExchange{
-		candles: exchangeCandles,
-		client:  simExchangeB,
-	}
-
-	liveFeedB, err := feed.NewLiveFeed(fixedEx, symbol, timeframe, nil)
-	require.NoError(t, err)
-	defer liveFeedB.Close()
-
-	countedLiveFeedB := &countedFeed{Feed: liveFeedB, max: len(exchangeCandles)}
-
-	signalRepoB := &memorySignalRepo{}
-	accountUCB := &memoryAccountUseCase{amount: 1000.0}
-	engineB := engine.NewEngine(simExchangeB, indicators.NewTalibAdapter(), usecase.NewSignalUseCase(signalRepoB, accountUCB, simExchangeB, nil, nil, nil), accountUCB, nil, memcache.NewInMemoryCache(), nil)
-	stratGridB, _ := strategies.Get("grid")
-	dbStratGridB := dbStratGrid
-	dbStratGridB.ID = 20
-	driverB := engine.NewReplayDriver(countedLiveFeedB, simExchangeB, engineB, stratGridB, dbStratGridB, symbol, strategies.ModeBacktest, signalRepoB)
-
-	tradesB, err := driverB.Run(context.Background())
-	require.NoError(t, err)
-
-	require.Equal(t, len(tradesA), len(tradesB), "grid trade count mismatch")
-
-	// 2. Scalping Strategy Parity
-	scalpingConfigJSON := datatypes.JSON(`{"take_profit_pct": 0.5, "stop_loss_pct": 0.5}`)
-	dbStratScalp := entities.Strategy{
-		ID:               3,
-		Name:             "scalping",
-		StrategyName:     "scalping",
-		MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
-		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle:         entities.OneMinute,
-			Configuration: scalpingConfigJSON,
-		},
-	}
-
-	stratScalp, _ := strategies.Get("scalping")
-	driverScalpA := engine.NewReplayDriver(replayFeedA, simExchangeA, engineA, stratScalp, dbStratScalp, symbol, strategies.ModeBacktest, signalRepoA)
-	require.NotNil(t, driverScalpA)
 }

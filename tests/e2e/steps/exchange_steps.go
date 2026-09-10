@@ -45,7 +45,6 @@ func RegisterExchangeSteps(sc *godog.ScenarioContext, tc *TestContext) {
 		strat := entities.Strategy{
 			Name:             symbol,
 			StrategyName:     "grid",
-			Algorithm:        entities.Grid,
 			Status:           entities.Testing,
 			MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
 		}

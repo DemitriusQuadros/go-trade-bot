@@ -11,6 +11,7 @@ import (
 	signalmocks "go-trade-bot/app/usecase/signal/mocks"
 	"go-trade-bot/internal/notifier"
 	"testing"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ func (s *noopStrategy) Terminate(ctx strategies.Context)                        
 var registeredTestStrategy = &noopStrategy{}
 
 func init() {
-	strategies.Register("registered-test-strategy", func() strategies.Strategy {
+	strategies.Register("registered-test-strategy", func(_ entities.Strategy) strategies.Strategy {
 		return registeredTestStrategy
 	})
 }
@@ -328,4 +329,100 @@ func TestHandleStrategyTask_GetByIDFails_ReturnsNilAndDoesNothingElse(t *testing
 	assert.NoError(t, err)
 	worker.AssertNotCalled(t, "EnqueueStrategyTask", mock.Anything)
 	eng.AssertNotCalled(t, "Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestHandleStrategyTask_DrainAdmissionGate_HoldsCycle_NoExecutionRecorded
+// covers Spec backend-05 AC#4: a new cycle picked up while draining is held
+// (re-enqueued with the short fixed delay) and does not execute at all - no
+// repository lookup, no engine.Run, and critically no StrategyExecution row.
+func TestHandleStrategyTask_DrainAdmissionGate_HoldsCycle_NoExecutionRecorded(t *testing.T) {
+	repo := new(mocks.StrategyRepository)
+	worker := new(mocks.StrategyWorker)
+	eng := new(mocks.Engine)
+	notifySender := new(signalmocks.NotificationSender)
+
+	strategy := entities.Strategy{ID: 11, Name: "S11", StrategyName: "registered-test-strategy"}
+	payload, _ := json.Marshal(strategy)
+	// Round-trip through JSON so the expectation matches exactly what
+	// HandleStrategyTask re-marshals from the unmarshaled task payload
+	// (datatypes.JSON's zero value becomes literal "null" after a round trip).
+	var roundTripped entities.Strategy
+	_ = json.Unmarshal(payload, &roundTripped)
+	worker.On("EnqueueStrategyTaskWithDelay", roundTripped, 5*time.Second).Return(nil)
+
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor.SetDraining(true)
+
+	task := asynq.NewTask(handler.StrategyTask+"S11", payload)
+
+	err := processor.HandleStrategyTask(context.Background(), task)
+	assert.NoError(t, err)
+
+	repo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
+	eng.AssertNotCalled(t, "Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "SaveExecution", mock.Anything, mock.Anything)
+	worker.AssertExpectations(t)
+}
+
+func TestStrategyProcessor_SetCeilingAndTestnet_TakeEffectOnNextCycle(t *testing.T) {
+	// Spec backend-05 AC#6: a successful risk-bearing swap updates the
+	// processor's ceiling/testnet in place - the very next cycle observes the
+	// new values with zero code path needing to know a swap occurred.
+	repo := new(mocks.StrategyRepository)
+	worker := new(mocks.StrategyWorker)
+	eng := new(mocks.Engine)
+	notifySender := new(signalmocks.NotificationSender)
+
+	dbStrategy := entities.Strategy{
+		ID: 12, Name: "S12", StrategyName: "registered-test-strategy", Status: entities.Productive, Mode: "live",
+		MonitoredSymbols: []string{"BTCUSDT"},
+	}
+	repo.On("GetByID", mock.Anything, uint(12)).Return(dbStrategy, nil)
+	eng.On("Run", mock.Anything, mock.Anything, mock.Anything, "BTCUSDT", strategies.ModeLive).Return(nil)
+	worker.On("EnqueueStrategyTask", dbStrategy).Return(nil)
+	repo.On("SaveExecution", mock.Anything, mock.Anything).Return(nil)
+
+	// Starts at ModeDryRun ceiling - a "live" strategy would normally be
+	// refused. After SetCeiling(ModeLive), the same strategy is admitted.
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, false)
+	processor.SetCeiling(strategies.ModeLive)
+	processor.SetTestnet(false)
+
+	payload, _ := json.Marshal(entities.Strategy{ID: 12, Name: "S12"})
+	task := asynq.NewTask(handler.StrategyTask+"S12", payload)
+
+	err := processor.HandleStrategyTask(context.Background(), task)
+	assert.NoError(t, err)
+	eng.AssertExpectations(t)
+}
+
+func TestStrategyProcessor_InFlightCount_TracksEngineRunLifecycle(t *testing.T) {
+	repo := new(mocks.StrategyRepository)
+	worker := new(mocks.StrategyWorker)
+	eng := new(mocks.Engine)
+	notifySender := new(signalmocks.NotificationSender)
+
+	dbStrategy := entities.Strategy{
+		ID: 13, Name: "S13", StrategyName: "registered-test-strategy", Status: entities.Productive, Mode: "dryrun",
+		MonitoredSymbols: []string{"BTCUSDT"},
+	}
+	repo.On("GetByID", mock.Anything, uint(13)).Return(dbStrategy, nil)
+	worker.On("EnqueueStrategyTask", dbStrategy).Return(nil)
+	repo.On("SaveExecution", mock.Anything, mock.Anything).Return(nil)
+
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+
+	var observedInFlight int64
+	eng.On("Run", mock.Anything, mock.Anything, mock.Anything, "BTCUSDT", strategies.ModeDryRun).
+		Run(func(args mock.Arguments) {
+			observedInFlight = processor.InFlightCount()
+		}).Return(nil)
+
+	payload, _ := json.Marshal(entities.Strategy{ID: 13, Name: "S13"})
+	task := asynq.NewTask(handler.StrategyTask+"S13", payload)
+
+	err := processor.HandleStrategyTask(context.Background(), task)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), observedInFlight, "in-flight counter must be incremented while engine.Run executes")
+	assert.Equal(t, int64(0), processor.InFlightCount(), "in-flight counter must be decremented after engine.Run returns")
 }

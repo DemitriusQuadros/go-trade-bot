@@ -29,6 +29,10 @@ type BacktestRun struct {
 	MonteCarloJSON datatypes.JSON `json:"monte_carlo_json,omitempty" gorm:"type:jsonb"`
 	// MetricsJSON persists the full metrics_provider.BacktestMetrics computed
 	// for this run (including EquityCurve).
-	MetricsJSON    datatypes.JSON `json:"metrics_json,omitempty" gorm:"type:jsonb"`
-	CreatedAt      time.Time      `json:"created_at"`
+	MetricsJSON datatypes.JSON `json:"metrics_json,omitempty" gorm:"type:jsonb"`
+	// ExecutionTraceJSON persists the per-cycle []script.TraceRecord for a
+	// script strategy's run (backend-07). Empty for native Go strategies and
+	// for walk-forward runs (no aggregation).
+	ExecutionTraceJSON datatypes.JSON `json:"execution_trace_json,omitempty" gorm:"type:jsonb"`
+	CreatedAt          time.Time      `json:"created_at"`
 }

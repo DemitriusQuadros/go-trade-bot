@@ -9,10 +9,18 @@ import (
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/notifier"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/hibiken/asynq"
 )
+
+// drainAdmissionDelay is the short, fixed re-enqueue delay applied to a
+// strategy cycle held at the admission gate while a risk-bearing settings
+// swap is draining (Spec backend-05 SS3) - deliberately independent of the
+// strategy's own configured Cycle so a strategy on a long cycle isn't stuck
+// waiting for its normal interval to retry after a brief drain window.
+const drainAdmissionDelay = 5 * time.Second
 
 const (
 	StrategyTask        = "strategy:execute:"
@@ -27,6 +35,11 @@ type StrategyRepository interface {
 
 type StrategyWorker interface {
 	EnqueueStrategyTask(strategy entities.Strategy) error
+	// EnqueueStrategyTaskWithDelay is a small, additive sibling to
+	// EnqueueStrategyTask (Spec backend-05 SS3), used only to re-schedule a
+	// cycle held at the drain admission gate with a short fixed delay,
+	// distinct from the strategy's own Cycle-based re-enqueue interval.
+	EnqueueStrategyTaskWithDelay(strategy entities.Strategy, delay time.Duration) error
 }
 
 // Engine runs exactly one strategy cycle for one symbol (app/engine.Engine
@@ -38,14 +51,22 @@ type Engine interface {
 	Run(ctx context.Context, strategy strategies.Strategy, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode) error
 }
 
+// StrategyProcessor is an fx-provided singleton (Spec backend-05): its
+// ceiling/testnet/inFlight/draining fields need to be readable and mutable
+// from outside HandleStrategyTask (by the settings usecase's drain-then-swap
+// orchestration), so they're atomics rather than plain fields, and the type
+// itself is constructed once at wiring time rather than ad-hoc inside
+// cmd/worker/main.go's OnStart hook the way it was before this spec.
 type StrategyProcessor struct {
-	collector      *metrics.MetricsCollector
-	worker         StrategyWorker
-	repository     StrategyRepository
-	engine         Engine
-	notifier       notifier.NotificationSender
-	processCeiling strategies.ExecutionMode
-	testnet        bool
+	collector  *metrics.MetricsCollector
+	worker     StrategyWorker
+	repository StrategyRepository
+	engine     Engine
+	notifier   notifier.NotificationSender
+	ceiling    atomic.Int32 // strategies.ExecutionMode, process-wide MODE ceiling (Spec 10)
+	testnet    atomic.Bool
+	inFlight   atomic.Int64 // incremented/decremented around each engine.Run call
+	draining   atomic.Bool  // true while a risk-bearing settings swap is pending
 }
 
 // NewStrategyProcessor takes the process-wide MODE ceiling (Spec 10) as an
@@ -53,7 +74,9 @@ type StrategyProcessor struct {
 // rather than a raw *configuration.Configuration, so this package stays free
 // of any internal/configuration dependency - the caller (cmd/worker/main.go's
 // RegisterHandlers, which already receives *config.Configuration) derives
-// both once at wiring time.
+// both once at wiring time. Both are stored as atomics so a later risk-
+// bearing settings swap (Spec backend-05) can update them in place without
+// requiring any consumer to hold a fresh reference.
 func NewStrategyProcessor(
 	collector *metrics.MetricsCollector,
 	w StrategyWorker,
@@ -63,15 +86,41 @@ func NewStrategyProcessor(
 	processCeiling strategies.ExecutionMode,
 	testnet bool,
 ) *StrategyProcessor {
-	return &StrategyProcessor{
-		collector:      collector,
-		worker:         w,
-		repository:     r,
-		engine:         e,
-		notifier:       n,
-		processCeiling: processCeiling,
-		testnet:        testnet,
+	p := &StrategyProcessor{
+		collector:  collector,
+		worker:     w,
+		repository: r,
+		engine:     e,
+		notifier:   n,
 	}
+	p.ceiling.Store(int32(processCeiling))
+	p.testnet.Store(testnet)
+	return p
+}
+
+// SetDraining toggles the admission gate (Spec backend-05 SS3). While true,
+// HandleStrategyTask holds every newly-picked-up cycle at the door instead of
+// executing it.
+func (p *StrategyProcessor) SetDraining(draining bool) {
+	p.draining.Store(draining)
+}
+
+// InFlightCount reports how many engine.Run calls are currently executing.
+// The settings usecase polls this to zero during a risk-bearing drain.
+func (p *StrategyProcessor) InFlightCount() int64 {
+	return p.inFlight.Load()
+}
+
+// SetCeiling updates the process-wide MODE ceiling in place after a
+// successful risk-bearing settings swap.
+func (p *StrategyProcessor) SetCeiling(mode strategies.ExecutionMode) {
+	p.ceiling.Store(int32(mode))
+}
+
+// SetTestnet updates the process-wide Testnet flag in place after a
+// successful risk-bearing settings swap.
+func (p *StrategyProcessor) SetTestnet(testnet bool) {
+	p.testnet.Store(testnet)
 }
 
 func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Task) error {
@@ -79,6 +128,18 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 
 	if err := json.Unmarshal(t.Payload(), &strategy); err != nil {
 		return err
+	}
+
+	// Admission gate (Spec backend-05 SS3): held, not executed, while a
+	// risk-bearing settings swap is draining in-flight cycles. Re-enqueued
+	// with a short fixed delay distinct from the strategy's own Cycle so a
+	// strategy on a long cycle isn't stuck waiting for its normal interval.
+	// This cycle never actually ran, so no StrategyExecution row is created.
+	if p.draining.Load() {
+		if err := p.worker.EnqueueStrategyTaskWithDelay(strategy, drainAdmissionDelay); err != nil {
+			log.Printf("Error re-enqueuing held strategy task during drain: %v", err)
+		}
+		return nil
 	}
 
 	nStrategy, err := p.repository.GetByID(ctx, strategy.ID)
@@ -130,7 +191,7 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 // (Spec 06) and runs one engine cycle per monitored symbol. This is what
 // replaces the pre-Phase-1 hardcoded switch on entities.Algorithm.
 func (p *StrategyProcessor) processStrategy(ctx context.Context, nStrategy entities.Strategy) error {
-	strategyInstance, ok := strategies.Get(nStrategy.StrategyName)
+	strategyInstance, ok := strategies.Get(nStrategy.StrategyName, nStrategy)
 	if !ok {
 		msg := fmt.Sprintf("strategy %q not found in registry", nStrategy.StrategyName)
 		log.Print(msg)
@@ -148,7 +209,10 @@ func (p *StrategyProcessor) processStrategy(ctx context.Context, nStrategy entit
 
 	var firstErr error
 	for _, symbol := range nStrategy.MonitoredSymbols {
-		if err := p.engine.Run(ctx, strategyInstance, nStrategy, symbol, mode); err != nil {
+		p.inFlight.Add(1)
+		err := p.engine.Run(ctx, strategyInstance, nStrategy, symbol, mode)
+		p.inFlight.Add(-1)
+		if err != nil {
 			log.Printf("Error executing %s for symbol %s: %v", nStrategy.Name, symbol, err)
 			if firstErr == nil {
 				firstErr = err
@@ -180,15 +244,18 @@ func (p *StrategyProcessor) gateMode(nStrategy entities.Strategy) (mode strategi
 		return 0, false, fmt.Sprintf("unparseable Mode %q: %v", nStrategy.Mode, err)
 	}
 
+	ceiling := strategies.ExecutionMode(p.ceiling.Load())
+	testnet := p.testnet.Load()
+
 	effective := strategyMode
-	if strategyMode > p.processCeiling {
+	if strategyMode > ceiling {
 		if strategyMode == strategies.ModeLive {
-			return 0, false, fmt.Sprintf("configured for live mode but process MODE ceiling is %s", p.processCeiling)
+			return 0, false, fmt.Sprintf("configured for live mode but process MODE ceiling is %s", ceiling)
 		}
-		effective = p.processCeiling
+		effective = ceiling
 	}
 
-	if effective == strategies.ModePaper && !p.testnet {
+	if effective == strategies.ModePaper && !testnet {
 		return 0, false, "effective mode is paper but Testnet=false; Paper Trading must never resolve to the production exchange"
 	}
 
@@ -196,7 +263,7 @@ func (p *StrategyProcessor) gateMode(nStrategy entities.Strategy) (mode strategi
 }
 
 func (p *StrategyProcessor) terminateIfRegistered(nStrategy entities.Strategy) {
-	strategyInstance, ok := strategies.Get(nStrategy.StrategyName)
+	strategyInstance, ok := strategies.Get(nStrategy.StrategyName, nStrategy)
 	if !ok {
 		return
 	}

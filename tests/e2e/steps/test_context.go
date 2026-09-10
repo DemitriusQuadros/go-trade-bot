@@ -32,6 +32,7 @@ type TestContext struct {
 	ProcessMode         string
 	ConfirmLiveFlag     bool
 	TestnetConfig       bool
+	APIToken            string
 	CurrentStrategy     *entities.Strategy
 }
 
@@ -52,6 +53,10 @@ func NewTestContext() (*TestContext, error) {
 		&entities.OptimizationRun{},
 		&entities.StrategyPerformanceSnapshot{},
 		&entities.StrategyPerformance{},
+		&entities.ImportJob{},
+		&entities.ImportSchedule{},
+		&entities.Settings{},
+		&entities.ScriptState{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to automigrate: %w", err)
@@ -70,7 +75,7 @@ func NewTestContext() (*TestContext, error) {
 }
 
 func (tc *TestContext) WipeDatabase() error {
-	tables := []string{"orders", "signals", "strategy_executions", "strategies", "accounts", "candles", "backtest_runs", "optimization_runs", "strategy_performance_snapshots"}
+	tables := []string{"orders", "signals", "strategy_executions", "strategies", "accounts", "candles", "backtest_runs", "optimization_runs", "strategy_performance_snapshots", "import_jobs", "import_schedules", "settings"}
 	for _, t := range tables {
 		tc.DB.Exec(fmt.Sprintf("DELETE FROM %s", t))
 	}

@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"go-trade-bot/app/entities"
 )
 
-// StrategyFactory builds a fresh Strategy instance. Each ported strategy
-// package self-registers a factory from its init(), matching the PRD's
-// exact pattern (SS5).
-type StrategyFactory func() Strategy
+// StrategyFactory builds a fresh Strategy instance for a specific persisted
+// strategy row. The dbStrategy argument (backend-04) lets a factory read
+// per-strategy persisted fields it needs to construct the instance - the
+// script strategy reads dbStrategy.ScriptSource/ID/Name; native Go strategies
+// (grid/bollinger/scalping/mlgrpc) ignore it. Each ported strategy package
+// self-registers a factory from its init() (or, for factories needing
+// fx-constructed dependencies, via an explicit Register call at startup).
+type StrategyFactory func(dbStrategy entities.Strategy) Strategy
 
 var (
 	mu       sync.RWMutex
@@ -29,17 +35,18 @@ func Register(name string, factory StrategyFactory) {
 	registry[name] = factory
 }
 
-// Get resolves a strategy by name. Returns (nil, false) if not found -
-// callers (the engine, validation logic) must handle the false case
-// explicitly; Get never panics.
-func Get(name string) (Strategy, bool) {
+// Get resolves a strategy by name, constructing a fresh instance for the
+// given persisted strategy row. Returns (nil, false) if not found - callers
+// (the engine, validation logic) must handle the false case explicitly; Get
+// never panics.
+func Get(name string, dbStrategy entities.Strategy) (Strategy, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 	factory, ok := registry[name]
 	if !ok {
 		return nil, false
 	}
-	return factory(), true
+	return factory(dbStrategy), true
 }
 
 // Exists reports whether name is registered, without constructing an

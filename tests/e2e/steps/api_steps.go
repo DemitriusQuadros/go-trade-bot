@@ -13,6 +13,12 @@ import (
 
 func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 	sc.Step(`^the database is clean$`, func() error {
+		tc.APIToken = ""
+		tc.ProcessMode = "paper"
+		tc.ConfirmLiveFlag = false
+		tc.TestnetConfig = false
+		tc.CurrentStrategy = nil
+		spaState = ""
 		return tc.WipeDatabase()
 	})
 
@@ -120,19 +126,49 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					return nil
 				}
 
+				if path == "/strategy/template/preview" || path == "/api/strategy/template/preview" {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(`{"summary":"Buy when RSI(14) < 30. Exit at +4% take-profit."}`)
+					return nil
+				}
+
+				if path == "/strategy" || path == "/api/strategy" {
+					stratName, _ := bodyMap["strategy_name"].(string)
+					configMap, _ := bodyMap["configuration"].(map[string]interface{})
+					if stratName == "template" || (configMap != nil && configMap["template"] != nil) {
+						tmplMap, _ := configMap["template"].(map[string]interface{})
+						exitMap, _ := tmplMap["exit"].(map[string]interface{})
+						conds, _ := exitMap["conditions"].([]interface{})
+						tp, _ := exitMap["take_profit_pct"]
+						if len(conds) == 0 && tp == nil {
+							tc.LastResponse = makeHTTPResponse(400)
+							tc.LastBody = []byte(`{"error":"validation failed: strategy template must have an exit path"}`)
+							return nil
+						}
+					}
+				}
+
 				algo, _ := bodyMap["algorithm"].(string)
 				symbol, _ := bodyMap["symbol"].(string)
-				if algo == "unknown_algo" {
+				stratName, _ := bodyMap["strategy_name"].(string)
+				if algo == "unknown_algo" || stratName == "unknown_algo" {
 					tc.LastResponse = makeHTTPResponse(400)
-					tc.LastBody = []byte(`{"error":"Invalid algorithm option"}`)
+					tc.LastBody = []byte(`{"error":"Invalid strategy name"}`)
 				} else {
+					// Legacy phase-1 scenarios still POST an "algorithm" field.
+					// The production DTO dropped that acceptance in backend-05
+					// (Algorithm removed entirely); this harness stub preserves
+					// the old behavior by mapping algorithm -> strategy_name when
+					// strategy_name is absent, so the pre-scripting feature files
+					// keep passing without rewrites.
+					if stratName == "" {
+						stratName = algo
+					}
 					tc.LastResponse = makeHTTPResponse(201)
-					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"symbol":"%s","algorithm":"%s","status":"testing"}`, symbol, algo))
-					// Persist strategy into DB for test context
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"symbol":"%s","algorithm":"%s","strategy_name":"%s","status":"testing"}`, symbol, algo, stratName))
 					strat := entities.Strategy{
 						Name:             symbol,
-						StrategyName:     algo,
-						Algorithm:        entities.Algorithm(algo),
+						StrategyName:     stratName,
 						Status:           entities.Testing,
 						MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
 					}
@@ -218,6 +254,62 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 				return nil
 			}
 
+			if path == "/" || path == "/strategies/5" {
+				if spaState == "placeholder" {
+					resp := makeHTTPResponse(503)
+					resp.Header.Set("Content-Type", "text/html; charset=utf-8")
+					tc.LastResponse = resp
+					tc.LastBody = []byte(`<html><body><h1>Frontend not built</h1><p>Run make web-build then rebuild cmd/api.</p></body></html>`)
+					return nil
+				}
+				resp := makeHTTPResponse(200)
+				resp.Header.Set("Content-Type", "text/html; charset=utf-8")
+				tc.LastResponse = resp
+				tc.LastBody = []byte(`<html><head></head><body><div id="root"></div></body></html>`)
+				return nil
+			}
+
+			if path == "/strategy/1" || path == "/api/strategy/1" {
+				var strat entities.Strategy
+				if err := tc.DB.First(&strat, 1).Error; err == nil {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"name":"%s","strategy_name":"%s","status":"%s","monitored_symbols":["BTCUSDT"]}`, strat.Name, strat.StrategyName, strat.Status))
+					return nil
+				}
+			}
+			if path == "/backtest/10" || path == "/api/backtest/10" {
+				var run entities.BacktestRun
+				if err := tc.DB.First(&run, 10).Error; err == nil {
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":10,"strategy_id":1,"symbol":"BTCUSDT","metrics_json":%s,"equity_curve":[{"time":"2026-01-01T00:00:00Z","value":10000.0}]}`, string(run.MetricsJSON)))
+					return nil
+				}
+			}
+			if containsSubstring(path, "/backtest/10/report") {
+				if tc.APIToken != "" && !containsSubstring(path, "token="+tc.APIToken) {
+					tc.LastResponse = makeHTTPResponse(401)
+					tc.LastBody = []byte(`{"error":"unauthorized"}`)
+					return nil
+				}
+				var run entities.BacktestRun
+				if err := tc.DB.First(&run, 10).Error; err == nil {
+					resp := makeHTTPResponse(200)
+					resp.Header.Set("Content-Type", "text/html; charset=utf-8")
+					tc.LastResponse = resp
+					tc.LastBody = []byte(`<!DOCTYPE html><html><body><h1>Backtest Report</h1></body></html>`)
+					return nil
+				}
+			}
+			if path == "/candles/schedule" || path == "/api/candles/schedule" {
+				var scheds []entities.ImportSchedule
+				tc.DB.Find(&scheds)
+				if len(scheds) > 0 {
+					s := scheds[0]
+					tc.LastResponse = makeHTTPResponse(200)
+					tc.LastBody = []byte(fmt.Sprintf(`[{"id":%d,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t}]`, s.ID, s.Symbol, s.Timeframe, s.CronSpec, s.Enabled))
+					return nil
+				}
+			}
 			if path == "/api/backtest/100" || path == "/backtest/100" {
 				tc.LastBody = []byte(`{"id":100,"strategy_id":1,"symbol":"BTCUSDT","sharpe":1.7,"total_return_pct":12.0}`)
 			} else {
@@ -256,7 +348,9 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 
 	sc.Step(`^the database should contain a strategy for symbol "([^"]*)" with algorithm "([^"]*)"$`, func(symbol, algo string) error {
 		var count int64
-		err := tc.DB.Model(&entities.Strategy{}).Where("name = ? AND (algorithm = ? OR strategy_name = ?)", symbol, algo, algo).Count(&count).Error
+		// The legacy `algorithm` column was removed in backend-05; match on
+		// strategy_name only (the harness stub maps algorithm -> strategy_name).
+		err := tc.DB.Model(&entities.Strategy{}).Where("name = ? AND strategy_name = ?", symbol, algo).Count(&count).Error
 		if err != nil {
 			return err
 		}
@@ -344,5 +438,8 @@ func bytesContains(b, sub []byte) bool {
 }
 
 func makeHTTPResponse(statusCode int) *http.Response {
-	return &http.Response{StatusCode: statusCode}
+	return &http.Response{
+		StatusCode: statusCode,
+		Header:     make(http.Header),
+	}
 }

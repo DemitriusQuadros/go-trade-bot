@@ -21,6 +21,8 @@ type UseCase interface {
 	GetPerformance(ctx context.Context) ([]entities.StrategyPerformance, error)
 	UpdateStatus(ctx context.Context, id uint, status entities.StrategyStatus) (entities.Strategy, error)
 	UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error)
+	GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error)
+	RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error
 }
 type StrategyHandler struct {
 	UseCase UseCase
@@ -34,6 +36,17 @@ func NewStrategyHandler(u UseCase) *StrategyHandler {
 
 func (h *StrategyHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
+		{
+			Pattern: "/strategy/{id}/versions",
+			Action:  h.GetVersions,
+			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/strategy/{id}/versions/{versionId}/revert",
+			Action:  h.RevertVersion,
+			Method:  http.MethodPost,
+		},
+
 		{
 			Pattern: "/strategy",
 			Action:  h.Post,
@@ -240,4 +253,38 @@ func (h *StrategyHandler) PatchMode(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ToStrategyResponse(strat))
+}
+
+func (h *StrategyHandler) GetVersions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	versions, err := h.UseCase.GetScriptVersions(r.Context(), uint(id))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(versions)
+}
+
+func (h *StrategyHandler) RevertVersion(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	versionId, err := strconv.Atoi(mux.Vars(r)["versionId"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.UseCase.RevertScriptVersion(r.Context(), uint(id), uint(versionId)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Version reverted"})
 }

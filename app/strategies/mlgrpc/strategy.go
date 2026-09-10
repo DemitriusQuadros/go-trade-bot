@@ -15,6 +15,7 @@ import (
 	"os"
 	"time"
 
+	"go-trade-bot/app/entities"
 	"go-trade-bot/app/strategies"
 	pb "go-trade-bot/internal/grpc/strategypb"
 
@@ -69,7 +70,7 @@ func NewMLGrpcStrategy(client pb.MLStrategyClient, timeout time.Duration) *MLGrp
 // design (see MLGrpcStrategy's doc comment) expects: an unreachable server
 // panics on the first hook call, not at registration/startup time.
 func init() {
-	strategies.Register("mlgrpc_dummy", func() strategies.Strategy {
+	strategies.Register("mlgrpc_dummy", func(_ entities.Strategy) strategies.Strategy {
 		addr := os.Getenv("MLGRPC_DUMMY_ADDR")
 		if addr == "" {
 			addr = defaultDummyAddr

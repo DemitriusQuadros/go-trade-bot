@@ -77,7 +77,6 @@ func RegisterPhase3Steps(sc *godog.ScenarioContext, tc *TestContext) {
 			ID:               id,
 			Name:             "BTCUSDT",
 			StrategyName:     "grid",
-			Algorithm:        entities.Grid,
 			Status:           entities.Testing,
 			MonitoredSymbols: datatypes.JSONSlice[string]{"BTCUSDT"},
 		}

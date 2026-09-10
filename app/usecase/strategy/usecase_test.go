@@ -21,7 +21,57 @@ import (
 // registry-backed validation path (Spec 06) with the same "grid" name the
 // fixtures below use via entities.Grid.
 func init() {
-	strategies.Register("grid", func() strategies.Strategy { return nil })
+	strategies.Register("grid", func(_ entities.Strategy) strategies.Strategy { return nil })
+	// "script" is registered as a stand-in (nil factory - validateStrategy
+	// never constructs, only checks Exists + ScriptSource) so the script
+	// empty-source validation branch (backend-04) can be exercised here.
+	strategies.Register("script", func(_ entities.Strategy) strategies.Strategy { return nil })
+}
+
+func TestStrategyUseCase_Save_ScriptEmptySourceRejected(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+
+	strat := entities.Strategy{
+		Name:             "My Script",
+		Description:      "A scripted strategy",
+		MonitoredSymbols: []string{"BTCUSDT"},
+		StrategyName:     "script",
+		ScriptSource:     "   ",
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: 10,
+		},
+	}
+
+	err := strategyUC.Save(context.Background(), strat)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Script source cannot be empty")
+	mockRepo.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+}
+
+func TestStrategyUseCase_Save_ScriptWithSourceAccepted(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	mockWorker := new(mocks.StrategyWorker)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, mockWorker)
+
+	strat := entities.Strategy{
+		Name:             "My Script",
+		Description:      "A scripted strategy",
+		MonitoredSymbols: []string{"BTCUSDT"},
+		StrategyName:     "script",
+		ScriptSource:     "function should_long(ctx) return false end",
+		StrategyConfiguration: entities.StrategyConfiguration{
+			Cycle: 10,
+		},
+	}
+
+	mockRepo.On("Save", mock.Anything, mock.Anything).Return(nil).Once()
+	mockWorker.On("EnqueueStrategyTask", mock.Anything).Return(nil).Once()
+
+	err := strategyUC.Save(context.Background(), strat)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockWorker.AssertExpectations(t)
 }
 
 func TestStrategyUseCase_GetAll(t *testing.T) {
@@ -35,7 +85,7 @@ func TestStrategyUseCase_GetAll(t *testing.T) {
 			Name:             "Test Strategy",
 			Description:      "A test strategy",
 			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-			Algorithm:        entities.Grid,
+			StrategyName:     "grid",
 			StrategyConfiguration: entities.StrategyConfiguration{
 				Cycle: 10,
 			},
@@ -77,7 +127,7 @@ func TestStrategyUseCase_Enqueue(t *testing.T) {
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Grid,
+		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
@@ -116,7 +166,7 @@ func TestStrategyUseCase_Save(t *testing.T) {
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Grid,
+		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
@@ -176,7 +226,7 @@ func TestStrategyUseCase_GetByID(t *testing.T) {
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Grid,
+		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
@@ -216,7 +266,7 @@ func TestStrategyUseCase_Update(t *testing.T) {
 		Name:             "Test Strategy",
 		Description:      "A test strategy",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        entities.Grid,
+		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
 			Cycle: 10,
 		},
@@ -259,7 +309,7 @@ func TestStrategyUseCase_UpdateStatus(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("should update status successfully", func(t *testing.T) {
-		current := entities.Strategy{ID: 1, Name: "Test", Status: entities.Productive}
+		current := entities.Strategy{ID: 1, Name: "Test", StrategyName: "grid", Status: entities.Productive}
 		mockRepo.On("GetByID", ctx, uint(1)).Return(current, nil).Once()
 		mockRepo.On("Update", ctx, mock.MatchedBy(func(s entities.Strategy) bool {
 			return s.ID == 1 && s.Status == entities.Disabled
@@ -281,6 +331,22 @@ func TestStrategyUseCase_UpdateStatus(t *testing.T) {
 		_, err := strategyUC.UpdateStatus(ctx, 99, entities.Disabled)
 		assert.Error(t, err)
 		mockRepo.AssertExpectations(t)
+	})
+
+	// Fix 3 (registry-existence check): UpdateStatus was bypassing the same
+	// StrategyName registry check Save/Update enforce - a strategy persisted
+	// under a StrategyName that's no longer registered (e.g. deleted from
+	// the codebase) must not be allowed to silently transition status.
+	t.Run("should return error when strategy_name is no longer registered", func(t *testing.T) {
+		freshRepo := new(mocks.StrategyRepository)
+		freshUC := usecase.NewStrategyUseCase(freshRepo, nil)
+		current := entities.Strategy{ID: 2, Name: "Stale", StrategyName: "no-longer-registered", Status: entities.Productive}
+		freshRepo.On("GetByID", ctx, uint(2)).Return(current, nil).Once()
+
+		_, err := freshUC.UpdateStatus(ctx, 2, entities.Disabled)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "must be one of:")
+		freshRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 	})
 }
 

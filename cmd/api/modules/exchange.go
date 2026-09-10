@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"fmt"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/exchange"
 
@@ -12,21 +11,25 @@ import (
 // the API process (Spec 01). cmd/api needs a real ExchangeClient because
 // SignalUseCase.Close (POST /signal/close/{id}) now places a real market
 // sell order (Spec 02), not just a DB write.
+//
+// Spec backend-05 (ADR-016): wrapped in *exchange.SwappableExchangeClient for
+// the same reason as cmd/worker/modules/exchange.go - see that file's comment
+// for the full rationale.
 var ExchangeModule = fx.Module("exchange",
-	fx.Provide(NewExchangeClient),
+	fx.Provide(
+		NewSwappableExchangeClient,
+		asExchangeClientInterface,
+	),
 )
 
-func NewExchangeClient(cfg *configuration.Configuration) (exchange.ExchangeClient, error) {
-	if cfg.Testnet {
-		adapter, err := exchange.NewBinanceTestnetAdapter(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("exchange module: %w", err)
-		}
-		return adapter, nil
-	}
-	adapter, err := exchange.NewBinanceAdapter(cfg)
+func NewSwappableExchangeClient(cfg *configuration.Configuration) (*exchange.SwappableExchangeClient, error) {
+	initial, err := exchange.NewExchangeClientFromConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("exchange module: %w", err)
+		return nil, err
 	}
-	return adapter, nil
+	return exchange.NewSwappableExchangeClient(initial), nil
+}
+
+func asExchangeClientInterface(s *exchange.SwappableExchangeClient) exchange.ExchangeClient {
+	return s
 }

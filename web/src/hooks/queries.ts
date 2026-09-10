@@ -5,7 +5,14 @@ import {
   StrategyUpdateRequest, 
   RunBacktestRequest, 
   WalkForwardRequest,
-  CreateOptimizationRequest 
+  CreateOptimizationRequest,
+  PlatformSettingsUpdateRequest,
+  CandleImportRequest,
+  CandleImportJobStatus,
+  ImportScheduleCreateRequest,
+  ImportSchedule,
+  FastRerunRequest,
+  ReplRequest,
 } from '@/api/types';
 
 export const QUERY_KEYS = {
@@ -21,6 +28,9 @@ export const QUERY_KEYS = {
   montecarlo: (id: number) => ['montecarlo', id],
   optimizationStatus: (id: number) => ['optimization', 'status', id],
   optimizationResults: (id: number) => ['optimization', 'results', id],
+  settings: ['settings'],
+  candleImportJob: (jobId: string | null) => ['candleImportJob', jobId],
+  importSchedules: ['importSchedules'],
 };
 
 export function useAccount() {
@@ -136,3 +146,124 @@ export function useTickerPrices(symbol?: string) {
     queryFn: ({ signal }) => api.getTickerPrices(symbol, { signal }),
   });
 }
+
+// Strategy Template
+export function useRuleSummaryPreview(ruleDefinition: unknown, enabled: boolean) {
+  return useQuery({
+    queryKey: ['ruleSummaryPreview', ruleDefinition],
+    queryFn: () => api.previewRuleSummary(ruleDefinition),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+// Platform Settings
+export function usePlatformSettings() {
+  return useQuery({
+    queryKey: QUERY_KEYS.settings,
+    queryFn: ({ signal }) => api.getSettings({ signal }),
+  });
+}
+
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: PlatformSettingsUpdateRequest) => api.updateSettings(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.settings });
+    },
+  });
+}
+
+// Candle Import & Scheduling
+const TERMINAL_IMPORT_STATUSES: CandleImportJobStatus[] = ['completed', 'failed'];
+
+export function useStartCandleImport() {
+  return useMutation({
+    mutationFn: (req: CandleImportRequest) => api.startCandleImport(req),
+  });
+}
+
+export function useCandleImportJob(jobId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.candleImportJob(jobId),
+    queryFn: ({ signal }) => api.getCandleImportJob(jobId as string, { signal }),
+    enabled: jobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && TERMINAL_IMPORT_STATUSES.includes(status) ? false : 2000;
+    },
+  });
+}
+
+export function useImportSchedules() {
+  return useQuery({
+    queryKey: QUERY_KEYS.importSchedules,
+    queryFn: ({ signal }) => api.listImportSchedules({ signal }),
+  });
+}
+
+export function useCreateImportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ImportScheduleCreateRequest) => api.createImportSchedule(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
+    },
+  });
+}
+
+export function usePatchImportSchedule(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<Pick<ImportSchedule, 'enabled' | 'cron_spec'>>) =>
+      api.patchImportSchedule(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
+    },
+  });
+}
+
+export function useDeleteImportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteImportSchedule(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
+    },
+  });
+}
+
+// Strategy Scripting & REPL (frontend-02)
+export function useFastRerun() {
+  return useMutation({
+    mutationFn: (req: FastRerunRequest) => api.fastRerun(req),
+  });
+}
+
+export function useRepl() {
+  return useMutation({
+    mutationFn: (req: ReplRequest) => api.repl(req),
+  });
+}
+
+
+export const useScriptVersions = (id: number) => {
+  return useQuery({
+    queryKey: ['strategies', id, 'versions'],
+    queryFn: ({ signal }) => api.getScriptVersions(id, { signal }),
+    enabled: !!id,
+  });
+};
+
+export const useRevertScriptVersion = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, versionId }: { id: number; versionId: number }) =>
+      api.revertScriptVersion(id, versionId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['strategies', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['strategies', variables.id, 'versions'] });
+    },
+  });
+};

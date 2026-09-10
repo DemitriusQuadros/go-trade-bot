@@ -24,7 +24,7 @@ func TestStrategyHandler_Post(t *testing.T) {
 		Name:             "Test Strategy",
 		Description:      "Test Description",
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-		Algorithm:        "grid",
+		StrategyName:     "grid",
 		Cycle:            5,
 		Configuration:    json.RawMessage(`{"param1":"value1","param2":"value2"}`),
 	}
@@ -96,7 +96,6 @@ func TestStrategyHandler_GetAll(t *testing.T) {
 			Description:      "Test Description 1",
 			StrategyName:     "grid",
 			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
-			Algorithm:        "grid",
 			StrategyConfiguration: entities.StrategyConfiguration{
 				Cycle:         entities.Cycle(5),
 				Configuration: datatypes.JSON([]byte(`{"param1":"value1","param2":"value2"}`)),

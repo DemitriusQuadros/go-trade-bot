@@ -12,22 +12,16 @@ type StrategyDto struct {
 	Description      string   `json:"description"`
 	MonitoredSymbols []string `json:"monitored_symbols"`
 	Status           string   `json:"status" only:"productive,testing,disabled"`
-	// Algorithm is deprecated (Spec 06) - kept accepted for exactly one
-	// deprecation window so existing API clients / docs/strategy-examples/*.json
-	// configs don't break. Mapped to StrategyName when StrategyName is empty.
-	Algorithm     string          `json:"algorithm"`
-	StrategyName  string          `json:"strategy_name"`
+	StrategyName     string   `json:"strategy_name"`
+	// ScriptSource carries the Lua source for a "script" StrategyName
+	// (backend-04/05). Ignored for native Go strategies.
+	ScriptSource  string          `json:"script_source"`
 	Mode          string          `json:"mode"`
 	Cycle         int             `json:"cycle"`
 	Configuration json.RawMessage `json:"configuration"`
 }
 
 func (s StrategyDto) ToModel() entities.Strategy {
-	strategyName := s.StrategyName
-	if strategyName == "" && s.Algorithm != "" {
-		strategyName = s.Algorithm
-	}
-
 	mode := s.Mode
 	if mode == "" {
 		mode = "dryrun" // safe default (Spec 10) - never defaults to "live"
@@ -37,8 +31,8 @@ func (s StrategyDto) ToModel() entities.Strategy {
 		Name:             s.Name,
 		Description:      s.Description,
 		MonitoredSymbols: s.MonitoredSymbols,
-		Algorithm:        entities.Algorithm(s.Algorithm),
-		StrategyName:     strategyName,
+		StrategyName:     s.StrategyName,
+		ScriptSource:     s.ScriptSource,
 		Mode:             mode,
 		Status:           entities.StrategyStatus(s.Status),
 		StrategyConfiguration: entities.StrategyConfiguration{

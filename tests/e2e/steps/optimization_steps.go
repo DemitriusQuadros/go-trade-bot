@@ -18,7 +18,6 @@ func RegisterOptimizationSteps(sc *godog.ScenarioContext, tc *TestContext) {
 			ID:               id,
 			Name:             symbol,
 			StrategyName:     "grid",
-			Algorithm:        entities.Grid,
 			Status:           entities.Testing,
 			MonitoredSymbols: datatypes.JSONSlice[string]{symbol},
 		}

@@ -24,6 +24,8 @@ export interface Strategy {
   monitored_symbols: string[];
   cycle: number;             // minutes
   configuration: Record<string, unknown> | null; // raw JSONB, algorithm-specific
+  rule_summary?: string;     // present only for template strategies
+  script_source?: string;    // Lua source code for script strategies
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +39,7 @@ export interface StrategyCreateRequest {
   monitored_symbols: string[];
   cycle: number;
   configuration: Record<string, unknown>;
+  script_source?: string;
 }
 
 export interface StrategyUpdateRequest {
@@ -48,6 +51,7 @@ export interface StrategyUpdateRequest {
   monitored_symbols: string[];
   cycle: number;
   configuration: Record<string, unknown>;
+  script_source?: string;
 }
 
 // --- Signal / Order (Positions) ------------------------------------------
@@ -160,6 +164,7 @@ export interface BacktestRun {
   passed: boolean;
   html_report_path: string;
   equity_curve: EquityPoint[];
+  execution_trace?: TraceRecord[];
   trade_log?: Array<{
     timestamp: string;
     action: string;
@@ -274,4 +279,201 @@ export interface RealtimePositionEvent {
 
 export interface RealtimeHeartbeatEvent {
   timestamp: string;
+}
+
+// --- Strategy Template & Conditions ----------------------------------------
+// Note: 'volume_filter' and 'price_change_pct' are documented in the original
+// spec (docs/specs/platform-self-service/frontend-02-condition-builder.md) but
+// are not implemented by app/strategies/template on the backend, which rejects
+// them at save time. They are intentionally omitted here so the builder can
+// never construct a condition the API will reject.
+export type ConditionType = 'indicator_threshold' | 'indicator_crossing' | 'price_level';
+
+export type Comparator = '>' | '<' | '>=' | '<=' | 'crosses_above' | 'crosses_below';
+
+export type IndicatorKey =
+  | 'rsi' | 'ema' | 'sma' | 'atr'
+  | 'bollinger_upper' | 'bollinger_middle' | 'bollinger_lower'
+  | 'macd' | 'macd_signal' | 'macd_histogram'
+  | 'price';
+
+export interface ConditionRef {
+  indicator: IndicatorKey;
+  params?: Record<string, number>;
+}
+
+export interface Condition {
+  type: ConditionType;
+  indicator?: IndicatorKey;
+  params?: Record<string, number>;
+  comparator: Comparator;
+  value?: number | null;
+  reference?: ConditionRef | null;
+  field?: 'price';
+}
+
+export interface ConditionGroup {
+  conditions: Condition[];
+  combinator: 'AND' | 'OR';
+}
+
+// --- Platform Settings (Hot-swap & Safety) ---------------------------------
+export interface DryRunSettings {
+  slippage_pct: number;
+  fee_pct: number;
+  fill_delay_ms: number;
+}
+
+export interface PlatformSettings {
+  broker_api_key: string;
+  broker_api_secret: string;
+  broker_testnet_api_key: string;
+  broker_testnet_api_secret: string;
+  mode: 'backtest' | 'dryrun' | 'paper' | 'live';
+  testnet: boolean;
+  webhook_url: string;
+  dry_run: DryRunSettings;
+  prometheus_url: string;
+  grafana_url: string;
+}
+
+export interface PlatformSettingsUpdateRequest {
+  broker_api_key?: string;
+  broker_api_secret?: string;
+  broker_testnet_api_key?: string;
+  broker_testnet_api_secret?: string;
+  mode: PlatformSettings['mode'];
+  confirm_live?: boolean;
+  testnet: boolean;
+  webhook_url: string;
+  dry_run: DryRunSettings;
+  prometheus_url: string;
+  grafana_url: string;
+}
+
+export interface PlatformSettingsUpdateResponse {
+  settings: PlatformSettings;
+  applied: true;
+}
+
+export interface DrainTimeoutErrorBody {
+  error: 'drain_timeout';
+  message: string;
+}
+
+// --- Candle Import & Scheduling --------------------------------------------
+export type CandleImportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface CandleImportRequest {
+  symbols: string[];
+  timeframes: string[];
+  from: string;   // RFC3339
+  to: string;     // RFC3339
+}
+
+export interface CandleImportPairResult {
+  symbol: string;
+  timeframe: string;
+  candles_imported: number;
+  gaps_detected: number;
+  error: string;
+}
+
+export interface CandleImportResult {
+  per_pair: CandleImportPairResult[];
+}
+
+export interface CandleImportJob {
+  job_id: string;
+  status: CandleImportJobStatus;
+  result: CandleImportResult | null;
+  error: string | null;
+}
+
+export interface ImportSchedule {
+  id: number;
+  symbol: string;
+  timeframe: string;
+  cron_spec: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  created_at: string;
+}
+
+export interface ImportScheduleCreateRequest {
+  symbol: string;
+  timeframe: string;
+  cron_spec: string;
+}
+
+// --- Strategy Scripting & Trace (frontend-01, frontend-02) -----------------
+export interface TraceCandle {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+  t: number;
+}
+
+export interface TraceIndicatorCall {
+  name: string;
+  params: Record<string, number>;
+  value: number;
+}
+
+export interface TraceLogEntry {
+  label: string;
+  value: unknown;
+}
+
+export interface TraceSignal {
+  buy?: { qty: number; price: number };
+  sell?: { qty: number; price: number };
+  stop_loss?: { qty: number; price: number };
+  take_profit?: { qty: number; price: number };
+}
+
+export interface TraceRecord {
+  timestamp: string;
+  candle?: TraceCandle;
+  indicators: TraceIndicatorCall[];
+  signal?: TraceSignal;
+  log: TraceLogEntry[];
+}
+
+export interface FastRerunRequest {
+  strategy_id?: number;
+  source: string;
+  symbol: string;
+  timeframe?: string;
+  end_time?: string | null;
+  window_candles?: number;
+}
+
+export interface FastRerunResponse {
+  trace: TraceRecord[];
+  error?: string;
+}
+
+export interface ReplRequest {
+  source: string;
+  symbol: string;
+  timeframe?: string;
+  end_time?: string | null;
+  window_candles?: number;
+}
+
+export interface ReplResponse {
+  result: unknown;
+  trace: TraceRecord[];
+  error?: string;
+}
+
+
+export interface ScriptVersion {
+  id: number;
+  strategy_id: number;
+  source: string;
+  created_at: string;
 }

@@ -1,38 +1,48 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useStrategies, useBacktests } from '@/hooks/queries';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingScreen } from '@/components/ui/Spinner';
+import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import {
   Play,
   Calendar,
-  DollarSign,
-  Clock,
-  Layers,
-  Sliders,
-  History,
   AlertCircle,
-  ExternalLink,
 } from 'lucide-react';
 
 export function BacktestLauncher() {
   const navigate = useNavigate();
-
-  
-  
-
-  
-  
+  const [searchParams] = useSearchParams();
+  const queryStrategyId = searchParams.get('strategy_id');
 
   const { data: strategies = [] } = useStrategies();
-  const { data: recentRuns = [], refetch: refetchRecentRuns } = useBacktests();
+  const { data: recentRuns = [] } = useBacktests();
+
   // Form State
-  const [selectedStrategyId, setSelectedStrategyId] = useState<number>(strategies[0]?.id || 1);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<number>(1);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [initialCapital, setInitialCapital] = useState(10000);
+
+  // Sync query parameter strategy_id if present
+  useEffect(() => {
+    if (queryStrategyId) {
+      const parsed = parseInt(queryStrategyId, 10);
+      if (!isNaN(parsed)) {
+        setSelectedStrategyId(parsed);
+        const match = strategies.find((s: any) => s.id === parsed);
+        if (match && match.monitored_symbols?.length > 0) {
+          setSymbol(match.monitored_symbols[0]);
+        }
+      }
+    } else if (strategies.length > 0 && selectedStrategyId === 1) {
+      setSelectedStrategyId(strategies[0].id);
+      if (strategies[0].monitored_symbols?.length > 0) {
+        setSymbol(strategies[0].monitored_symbols[0]);
+      }
+    }
+  }, [queryStrategyId, strategies]);
 
   // Dates (defaults: last 3 months)
   const [startDate, setStartDate] = useState(() => {
@@ -151,7 +161,10 @@ export function BacktestLauncher() {
               {/* Strategy & Symbol */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="form-group mb-0">
-                  <label className="form-label">Select Strategy</label>
+                  <label className="form-label flex items-center gap-1.5">
+                    Select Strategy
+                    <HelpTooltip>The registered strategy algorithm to test against historical candles</HelpTooltip>
+                  </label>
                   <select
                     value={selectedStrategyId}
                     onChange={(e) => handleStrategyChange(Number(e.target.value))}
@@ -181,7 +194,10 @@ export function BacktestLauncher() {
               {/* Timeframe & Capital */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="form-group mb-0">
-                  <label className="form-label">Candle Timeframe</label>
+                  <label className="form-label flex items-center gap-1.5">
+                    Candle Timeframe
+                    <HelpTooltip>Resolution of candles evaluated for signals</HelpTooltip>
+                  </label>
                   <select
                     value={timeframe}
                     onChange={(e) => setTimeframe(e.target.value)}
@@ -197,7 +213,10 @@ export function BacktestLauncher() {
                 </div>
 
                 <div className="form-group mb-0">
-                  <label className="form-label">Initial Capital (USD)</label>
+                  <label className="form-label flex items-center gap-1.5">
+                    Initial Capital (USD)
+                    <HelpTooltip>Starting simulation account balance</HelpTooltip>
+                  </label>
                   <input
                     type="number"
                     min="100"
@@ -277,7 +296,10 @@ export function BacktestLauncher() {
               {/* Slippage & Fees */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group mb-0">
-                  <label className="form-label">Slippage (%)</label>
+                  <label className="form-label flex items-center gap-1.5">
+                    Slippage (%)
+                    <HelpTooltip>Adverse slippage percentage applied to simulated order executions</HelpTooltip>
+                  </label>
                   <input
                     type="number"
                     step="0.01"
@@ -288,7 +310,10 @@ export function BacktestLauncher() {
                   />
                 </div>
                 <div className="form-group mb-0">
-                  <label className="form-label">Fee Rate (%)</label>
+                  <label className="form-label flex items-center gap-1.5">
+                    Fee Rate (%)
+                    <HelpTooltip>Simulated broker commission fee rate per executed trade</HelpTooltip>
+                  </label>
                   <input
                     type="number"
                     step="0.005"
@@ -304,8 +329,11 @@ export function BacktestLauncher() {
               <div className="p-3 bg-black/50 rounded-lg border border-green-900/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-semibold text-green-400">
+                    <span className="text-xs font-semibold text-green-400 flex items-center gap-1.5">
                       Walk-Forward Out-of-Sample Validation
+                      <HelpTooltip>
+                        Sequentially rolls train and test windows forward through time to test out-of-sample robustness
+                      </HelpTooltip>
                     </span>
                     <p className="text-[11px] text-green-700">
                       Sequentially roll train/test windows to detect overfitting
@@ -376,16 +404,13 @@ export function BacktestLauncher() {
               subtitle="Recently completed simulations"
             />
 
-            {(false) && !recentRuns ? (
-              <LoadingScreen message="Loading history..." />
-            ) : recentRuns.length === 0 ? (
+            {recentRuns.length === 0 ? (
               <div className="p-6 text-center text-xs text-green-800 bg-black/40 rounded-lg">
                 No previous backtests found.
               </div>
             ) : (
               <div className="space-y-2.5">
                 {recentRuns.slice(0, 8).map((run: any) => {
-                  const runDate = new Date(run.created_at);
                   const isPositive = run.total_return_pct >= 0;
 
                   return (
