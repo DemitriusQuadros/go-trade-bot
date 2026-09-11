@@ -95,6 +95,16 @@ func (u StrategyUseCase) UpdateStatus(ctx context.Context, id uint, status entit
 		return entities.Strategy{}, customerror.New(http.StatusNotFound, "Strategy not found")
 	}
 
+	// Fix 3 (registry-existence check): a strategy persisted under a
+	// StrategyName that's no longer registered (e.g. deleted from the
+	// codebase, such as the retired `template` package) must not be allowed
+	// to silently transition status - the same guard Save/Update enforce.
+	if !strategies.Exists(strat.StrategyName) {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, fmt.Sprintf(
+			"Invalid strategy name %q, must be one of: %s", strat.StrategyName, strings.Join(strategies.Names(), ", "),
+		))
+	}
+
 	strat.Status = status
 	strat.UpdatedAt = time.Now()
 
@@ -190,6 +200,10 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 
 	if !entities.IsValidCycle(int(strategy.StrategyConfiguration.Cycle)) {
 		return customerror.New(http.StatusBadRequest, "Invalid cycle option")
+	}
+
+	if strategy.StrategyName == "script" && strings.TrimSpace(strategy.ScriptSource) == "" {
+		return customerror.New(http.StatusBadRequest, "Script source cannot be empty")
 	}
 	return nil
 }

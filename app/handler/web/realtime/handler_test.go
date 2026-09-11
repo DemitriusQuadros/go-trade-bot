@@ -24,10 +24,19 @@ func (m *mockBroadcaster) Subscribe() (<-chan usecase.Event, func()) {
 	return m.subCh, func() {}
 }
 
+type mockPreviewBroadcaster struct {
+	subCh chan usecase.Event
+}
+
+func (m *mockPreviewBroadcaster) Subscribe(strategyID uint) (<-chan usecase.Event, func()) {
+	return m.subCh, func() {}
+}
+
 func TestRealtimeHandler_StreamDashboard(t *testing.T) {
 	subCh := make(chan usecase.Event, 10)
 	mb := &mockBroadcaster{subCh: subCh}
-	h := handler.NewRealtimeHandler(mb)
+	mpb := &mockPreviewBroadcaster{subCh: make(chan usecase.Event, 10)}
+	h := handler.NewRealtimeHandler(mb, mpb)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/stream/dashboard", nil).WithContext(ctx)

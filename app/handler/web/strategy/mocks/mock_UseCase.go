@@ -14,6 +14,54 @@ type UseCase struct {
 	mock.Mock
 }
 
+// GetScriptVersions provides a mock function with given fields: ctx, strategyID
+func (_m *UseCase) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	ret := _m.Called(ctx, strategyID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetScriptVersions")
+	}
+
+	var r0 []entities.ScriptVersion
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]entities.ScriptVersion, error)); ok {
+		return rf(ctx, strategyID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []entities.ScriptVersion); ok {
+		r0 = rf(ctx, strategyID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.ScriptVersion)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, strategyID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// RevertScriptVersion provides a mock function with given fields: ctx, strategyID, versionID
+func (_m *UseCase) RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error {
+	ret := _m.Called(ctx, strategyID, versionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RevertScriptVersion")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) error); ok {
+		r0 = rf(ctx, strategyID, versionID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // Enqueue provides a mock function with given fields: ctx
 func (_m *UseCase) Enqueue(ctx context.Context) error {
 	ret := _m.Called(ctx)

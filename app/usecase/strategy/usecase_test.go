@@ -67,6 +67,7 @@ func TestStrategyUseCase_Save_ScriptWithSourceAccepted(t *testing.T) {
 
 	mockRepo.On("Save", mock.Anything, mock.Anything).Return(nil).Once()
 	mockWorker.On("EnqueueStrategyTask", mock.Anything).Return(nil).Once()
+	mockRepo.On("SaveScriptVersion", mock.Anything, mock.Anything).Return(nil).Once()
 
 	err := strategyUC.Save(context.Background(), strat)
 	assert.NoError(t, err)

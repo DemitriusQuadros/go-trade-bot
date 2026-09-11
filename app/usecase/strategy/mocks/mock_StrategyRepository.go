@@ -72,6 +72,36 @@ func (_m *StrategyRepository) GetByID(ctx context.Context, id uint) (entities.St
 	return r0, r1
 }
 
+// GetScriptVersions provides a mock function with given fields: ctx, strategyID
+func (_m *StrategyRepository) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	ret := _m.Called(ctx, strategyID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetScriptVersions")
+	}
+
+	var r0 []entities.ScriptVersion
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]entities.ScriptVersion, error)); ok {
+		return rf(ctx, strategyID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []entities.ScriptVersion); ok {
+		r0 = rf(ctx, strategyID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.ScriptVersion)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, strategyID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // Save provides a mock function with given fields: ctx, strategy
 func (_m *StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) error {
 	ret := _m.Called(ctx, strategy)
@@ -101,6 +131,24 @@ func (_m *StrategyRepository) Update(ctx context.Context, strategy entities.Stra
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) error); ok {
 		r0 = rf(ctx, strategy)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// SaveScriptVersion provides a mock function with given fields: ctx, v
+func (_m *StrategyRepository) SaveScriptVersion(ctx context.Context, v entities.ScriptVersion) error {
+	ret := _m.Called(ctx, v)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SaveScriptVersion")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.ScriptVersion) error); ok {
+		r0 = rf(ctx, v)
 	} else {
 		r0 = ret.Error(0)
 	}
