@@ -15,6 +15,7 @@ import {
   BarChart3,
   LineChart,
   Terminal,
+  ListChecks,
 } from 'lucide-react';
 import { usePlatformSettings } from '@/hooks/queries';
 
@@ -85,7 +86,7 @@ export function MiniSidebar() {
         />
 
         {/* Monitoring External Links */}
-        {(settings?.prometheus_url || settings?.grafana_url) && (
+        {(settings?.prometheus_url || settings?.grafana_url || settings?.asynqmon_url) && (
           <div className="mt-2 pt-2 border-t border-slate-800 flex flex-col gap-1">
             {settings?.prometheus_url && (
               <ExternalNavItem
@@ -100,6 +101,14 @@ export function MiniSidebar() {
                 href={settings.grafana_url}
                 icon={<LineChart className="w-5 h-5" />}
                 label="Grafana"
+                expanded={expanded}
+              />
+            )}
+            {settings?.asynqmon_url && (
+              <ExternalNavItem
+                href={settings.asynqmon_url}
+                icon={<ListChecks className="w-5 h-5" />}
+                label="Asynqmon"
                 expanded={expanded}
               />
             )}

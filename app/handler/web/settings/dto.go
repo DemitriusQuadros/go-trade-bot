@@ -19,6 +19,7 @@ type PlatformSettingsUpdateRequestDTO struct {
 	DryRun                 DryRunSettingsDTO `json:"dry_run"`
 	PrometheusURL          string            `json:"prometheus_url"`
 	GrafanaURL             string            `json:"grafana_url"`
+	AsynqmonURL            string            `json:"asynqmon_url"`
 }
 
 // resolveSecret implements the "omitted/empty/masked-placeholder means keep
@@ -51,5 +52,6 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		BrokerTestnetApiSecret: resolveSecret(r.BrokerTestnetApiSecret, existing.BrokerTestnetApiSecret),
 		PrometheusURL:          r.PrometheusURL,
 		GrafanaURL:             r.GrafanaURL,
+		AsynqmonURL:            r.AsynqmonURL,
 	}
 }

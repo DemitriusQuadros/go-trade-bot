@@ -103,21 +103,31 @@ func (_m *StrategyRepository) GetScriptVersions(ctx context.Context, strategyID 
 }
 
 // Save provides a mock function with given fields: ctx, strategy
-func (_m *StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) error {
+func (_m *StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error) {
 	ret := _m.Called(ctx, strategy)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Save")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) error); ok {
+	var r0 entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) (entities.Strategy, error)); ok {
+		return rf(ctx, strategy)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) entities.Strategy); ok {
 		r0 = rf(ctx, strategy)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(entities.Strategy)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(context.Context, entities.Strategy) error); ok {
+		r1 = rf(ctx, strategy)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // Update provides a mock function with given fields: ctx, strategy

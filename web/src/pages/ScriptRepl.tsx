@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
+import { luaAutocompletion } from '@/lib/luaCompletions';
 import { useRepl } from '@/hooks/queries';
 import { TraceRecord } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -26,6 +28,7 @@ interface ReplHistoryEntry {
   result: unknown;
   trace: TraceRecord[];
   error?: string;
+  noData?: boolean;
   timestamp: string;
 }
 
@@ -45,6 +48,7 @@ export function ScriptRepl() {
   const [activeResult, setActiveResult] = useState<unknown | null>(null);
   const [activeTrace, setActiveTrace] = useState<TraceRecord[]>([]);
   const [activeError, setActiveError] = useState<string | null>(null);
+  const [activeNoData, setActiveNoData] = useState<boolean>(false);
   const [selectedTraceRecord, setSelectedTraceRecord] = useState<TraceRecord | null>(null);
 
   // Client-side execution history
@@ -55,6 +59,7 @@ export function ScriptRepl() {
 
   const handleEvaluate = async () => {
     setActiveError(null);
+    setActiveNoData(false);
     setSelectedTraceRecord(null);
 
     try {
@@ -66,6 +71,7 @@ export function ScriptRepl() {
       });
 
       const entryId = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const isNoData = res.data_available === false;
       const newEntry: ReplHistoryEntry = {
         id: entryId,
         source,
@@ -74,6 +80,7 @@ export function ScriptRepl() {
         result: res.result,
         trace: res.trace || [],
         error: res.error,
+        noData: isNoData,
         timestamp: new Date().toLocaleTimeString(),
       };
 
@@ -82,10 +89,12 @@ export function ScriptRepl() {
       setActiveResult(res.result);
       setActiveTrace(res.trace || []);
       setActiveError(res.error || null);
+      setActiveNoData(isNoData);
     } catch (err: any) {
       setActiveError(err.message || 'Failed to evaluate snippet');
       setActiveTrace([]);
       setActiveResult(null);
+      setActiveNoData(false);
     }
   };
 
@@ -97,6 +106,7 @@ export function ScriptRepl() {
     setActiveResult(entry.result);
     setActiveTrace(entry.trace);
     setActiveError(entry.error || null);
+    setActiveNoData(!!entry.noData);
     setSelectedTraceRecord(null);
   };
 
@@ -220,7 +230,7 @@ export function ScriptRepl() {
                 value={source}
                 height="220px"
                 theme="dark"
-                extensions={[StreamLanguage.define(lua)]}
+                extensions={[StreamLanguage.define(lua), luaEditorDarkTheme, luaAutocompletion]}
                 onChange={(val) => setSource(val)}
                 className="font-mono text-xs"
                 basicSetup={{
@@ -261,6 +271,8 @@ export function ScriptRepl() {
                       <div className="flex items-center gap-2 overflow-hidden">
                         {isErr ? (
                           <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        ) : entry.noData ? (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                         ) : (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                         )}
@@ -290,7 +302,12 @@ export function ScriptRepl() {
               subtitle="Direct expression output from Runner.Eval"
             />
             <div className="p-3 bg-black/90 rounded border border-green-950/60 text-xs min-h-[70px] overflow-x-auto">
-              {activeResult !== null && activeResult !== undefined ? (
+              {activeNoData ? (
+                <div className="text-amber-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>No candle data available for {symbol} / {timeframe}.</span>
+                </div>
+              ) : activeResult !== null && activeResult !== undefined ? (
                 <pre className="text-emerald-400 font-mono text-xs">
                   {typeof activeResult === 'object'
                     ? JSON.stringify(activeResult, null, 2)

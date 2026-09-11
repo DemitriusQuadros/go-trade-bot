@@ -11,23 +11,11 @@ import {
   Plus,
   Play,
   Pause,
-  Edit2,
   RefreshCw,
   Send,
   X,
+  Code2,
 } from 'lucide-react';
-
-function ruleSummaryFor(strat: Strategy): string {
-  if (strat.script_source) {
-    const firstLine = strat.script_source
-      .split('\n')
-      .map((l) => l.trim())
-      .find((l) => l.length > 0 && !l.startsWith('--'));
-    if (firstLine) return firstLine;
-  }
-  if (strat.rule_summary) return strat.rule_summary;
-  return strat.description?.trim() || '(no script summary)';
-}
 
 export function Strategies() {
   const navigate = useNavigate();
@@ -63,7 +51,6 @@ export function Strategies() {
         searchQuery === '' ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.strategy_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.rule_summary && s.rule_summary.toLowerCase().includes(searchQuery.toLowerCase())) ||
         s.monitored_symbols.some((sym) => sym.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchStatus && matchMode && matchSearch;
     });
@@ -239,26 +226,25 @@ export function Strategies() {
             No strategies found matching filter criteria.
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
+          <div className="overflow-x-auto rounded-lg border border-green-900/30">
+            <table className="w-full table-fixed border-collapse">
               <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Algorithm</th>
-                  <th>Monitored Symbols</th>
-                  <th>Rule Summary</th>
-                  <th>Cycle</th>
-                  <th>Status</th>
-                  <th>Mode</th>
-                  <th>Actions</th>
+                <tr className="border-b border-green-900/40 bg-green-950/20">
+                  <th className="w-[6%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">ID</th>
+                  <th className="w-[17%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Name</th>
+                  <th className="w-[12%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Algorithm</th>
+                  <th className="w-[21%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Monitored Symbols</th>
+                  <th className="w-[8%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Cycle</th>
+                  <th className="w-[10%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Status</th>
+                  <th className="w-[12%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Mode</th>
+                  <th className="w-[14%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredStrategies.map((strat) => (
-                  <tr key={strat.id}>
-                    <td className="font-mono text-green-800">#{strat.id}</td>
-                    <td>
+                  <tr key={strat.id} className="border-b border-green-900/20 last:border-b-0 hover:bg-green-950/10">
+                    <td className="px-4 py-3 align-top font-mono text-xs text-green-800">#{strat.id}</td>
+                    <td className="px-4 py-3 align-top">
                       <div>
                         <div className="font-semibold text-green-400">{strat.name}</div>
                         {strat.description && (
@@ -268,26 +254,39 @@ export function Strategies() {
                         )}
                       </div>
                     </td>
-                    <td className="font-mono text-xs text-green-600">{strat.strategy_name}</td>
-                    <td className="font-mono text-xs text-green-600">
-                      {strat.monitored_symbols?.length > 0
-                        ? strat.monitored_symbols.join(', ')
-                        : '—'}
+                    <td className="px-4 py-3 align-top">
+                      <span className="font-semibold text-sm text-green-400">{strat.strategy_name}</span>
                     </td>
-                    <td className="text-xs text-green-600 max-w-xs">
-                      <span className="line-clamp-2" title={ruleSummaryFor(strat)}>
-                        {ruleSummaryFor(strat)}
+                    <td className="px-4 py-3 align-top">
+                      {strat.monitored_symbols?.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {strat.monitored_symbols.map((sym) => (
+                            <span
+                              key={sym}
+                              className="px-1.5 py-0.5 rounded bg-green-950/50 border border-green-900/50 text-[11px] font-mono text-green-500"
+                            >
+                              {sym}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-green-900 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <span className="text-xs text-green-700 font-mono">
+                        {strat.cycle}
+                        <span className="text-green-900"> min</span>
                       </span>
                     </td>
-                    <td className="text-xs text-green-700">{strat.cycle} min</td>
-                    <td>
+                    <td className="px-4 py-3 align-top">
                       <StatusBadge status={strat.status} />
                     </td>
-                    <td>
+                    <td className="px-4 py-3 align-top">
                       <select
                         value={strat.mode}
                         onChange={(e) => handleModeChange(strat, e.target.value as StrategyMode)}
-                        className="bg-green-950/20 border border-slate-700 text-xs rounded px-2 py-1 text-green-400 focus:outline-none focus:border-blue-500 font-medium"
+                        className="w-full bg-green-950/20 border border-slate-700 text-xs rounded px-2 py-1 text-green-400 focus:outline-none focus:border-blue-500 font-medium"
                       >
                         <option value="dryrun">Dry Run</option>
                         <option value="paper">Paper</option>
@@ -295,11 +294,20 @@ export function Strategies() {
                         <option value="backtest">Backtest</option>
                       </select>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex flex-col items-start gap-1.5">
+                        <button
+                          onClick={() => navigate(`/strategies/${strat.id}/edit`)}
+                          className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
+                          title="View or edit this strategy's Lua script"
+                        >
+                          <Code2 className="w-3.5 h-3.5 text-green-600" />
+                          <span>View/Edit Script</span>
+                        </button>
+
                         <button
                           onClick={() => handleToggleStatus(strat)}
-                          className={`btn text-xs py-1 px-2.5 ${
+                          className={`btn text-xs py-1 px-2.5 whitespace-nowrap ${
                             strat.status === 'disabled'
                               ? 'btn-success'
                               : 'btn-secondary text-green-600'
@@ -317,14 +325,6 @@ export function Strategies() {
                               <span>Disable</span>
                             </>
                           )}
-                        </button>
-
-                        <button
-                          onClick={() => navigate(`/strategies/${strat.id}/edit`)}
-                          className="btn btn-secondary text-xs py-1 px-2"
-                          title="Edit strategy"
-                        >
-                          <Edit2 className="w-3 h-3 text-green-600" />
                         </button>
                       </div>
                     </td>

@@ -43,6 +43,7 @@ func TestMergeInto_NonSecretFieldsAlwaysTakeRequestValue(t *testing.T) {
 		WebhookURL:    "https://new",
 		PrometheusURL: "http://prom",
 		GrafanaURL:    "http://grafana",
+		AsynqmonURL:   "http://localhost:9191/tasks/monitoring",
 		DryRun:        DryRunSettingsDTO{SlippagePct: 1, FeePct: 2, FillDelayMs: 3},
 	}
 
@@ -52,6 +53,7 @@ func TestMergeInto_NonSecretFieldsAlwaysTakeRequestValue(t *testing.T) {
 	assert.Equal(t, "https://new", merged.WebhookURL)
 	assert.Equal(t, "http://prom", merged.PrometheusURL)
 	assert.Equal(t, "http://grafana", merged.GrafanaURL)
+	assert.Equal(t, "http://localhost:9191/tasks/monitoring", merged.AsynqmonURL)
 	assert.Equal(t, 1.0, merged.DryRunSlippagePct)
 	assert.Equal(t, 2.0, merged.DryRunFeePct)
 	assert.Equal(t, 3, merged.DryRunFillDelayMs)

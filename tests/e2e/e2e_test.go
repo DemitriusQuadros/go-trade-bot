@@ -33,6 +33,7 @@ func TestFeatures(t *testing.T) {
 			steps.RegisterPlatformSelfServiceSteps(sc, tc)
 			steps.RegisterWebFrontendBackendSteps(sc, tc)
 			steps.RegisterScriptingSteps(sc, tc)
+			steps.RegisterFirstRunFixesSteps(sc, tc)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",

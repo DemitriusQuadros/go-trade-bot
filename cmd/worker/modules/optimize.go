@@ -1,6 +1,8 @@
 package modules
 
 import (
+	candle_repo "go-trade-bot/app/repository/candle"
+
 	tasks "go-trade-bot/app/handler/tasks/optimize"
 	optimize_repo "go-trade-bot/app/repository/optimize"
 	strategy_repo "go-trade-bot/app/repository/strategy"
@@ -26,12 +28,8 @@ var OptimizeModule = fx.Module("optimize",
 		func(bt *backtest_usecase.BacktestUseCase) usecase.BacktestRunner {
 			return bt
 		},
-		func(
-			bt usecase.BacktestRunner,
-			stratRepo usecase.StrategyRepository,
-			optimizeRepo usecase.OptimizationRepository,
-		) *usecase.OptimizeUseCase {
-			return usecase.NewOptimizeUseCase(bt, stratRepo, optimizeRepo, usecase.DefaultMaxCombinations)
+		func(bt usecase.BacktestRunner, stratRepo usecase.StrategyRepository, optimizeRepo usecase.OptimizationRepository, c candle_repo.Repository) *usecase.OptimizeUseCase {
+			return usecase.NewOptimizeUseCase(bt, stratRepo, optimizeRepo, c, usecase.DefaultMaxCombinations)
 		},
 		func(u *usecase.OptimizeUseCase) tasks.OptimizeUseCase { return u },
 		tasks.NewOptimizeProcessor,

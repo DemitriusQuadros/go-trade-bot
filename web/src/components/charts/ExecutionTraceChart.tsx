@@ -17,6 +17,21 @@ interface ExecutionTraceChartProps {
   onScrub?: (record: TraceRecord | null) => void;
 }
 
+// r.candle.t is already Unix SECONDS (backend: exchange.Candle.OpenTime.Unix()) -
+// lightweight-charts' Time type also wants Unix seconds, so it must be used
+// as-is. Only the r.timestamp fallback (a JS Date-parsed ISO string) is in
+// milliseconds and needs dividing. Dividing candle.t by 1000 a second time
+// (the previous bug here) collapses ~1000s windows into one integer,
+// producing duplicate/non-ascending times that crash lightweight-charts'
+// internal ordering assertion and take down the whole page (no error
+// boundary wraps this component).
+function toChartTimeSeconds(r: TraceRecord): number {
+  if (typeof r.candle?.t === 'number') {
+    return Math.floor(r.candle.t);
+  }
+  return Math.floor(new Date(r.timestamp).getTime() / 1000);
+}
+
 // Visual distinct neon colors for continuous indicator overlays
 const INDICATOR_COLORS = [
   '#38bdf8', // light blue
@@ -41,21 +56,14 @@ export function ExecutionTraceChart({
     if (!trace || trace.length === 0) return [];
     return trace
       .filter((r) => r.candle && typeof r.candle.c === 'number')
-      .sort((a, b) => {
-        const timeA = a.candle?.t ? a.candle.t : new Date(a.timestamp).getTime();
-        const timeB = b.candle?.t ? b.candle.t : new Date(b.timestamp).getTime();
-        return timeA - timeB;
-      });
+      .sort((a, b) => toChartTimeSeconds(a) - toChartTimeSeconds(b));
   }, [trace]);
 
   // Build time -> TraceRecord lookup map for scrubbing interaction
   const timeToRecordMap = useMemo(() => {
     const map = new Map<number, TraceRecord>();
     recordsWithCandle.forEach((rec) => {
-      const sec = Math.floor(
-        (rec.candle?.t ? rec.candle.t : new Date(rec.timestamp).getTime()) / 1000
-      );
-      map.set(sec, rec);
+      map.set(toChartTimeSeconds(rec), rec);
     });
     return map;
   }, [recordsWithCandle]);
@@ -108,9 +116,7 @@ export function ExecutionTraceChart({
 
     const candleData = recordsWithCandle.map((r) => {
       const c = r.candle!;
-      const timeSec = Math.floor(
-        (c.t ? c.t : new Date(r.timestamp).getTime()) / 1000
-      ) as Time;
+      const timeSec = toChartTimeSeconds(r) as Time;
       return {
         time: timeSec,
         open: c.o,
@@ -125,9 +131,7 @@ export function ExecutionTraceChart({
     // 2. Buy/Sell/StopLoss/TakeProfit markers
     const markers: SeriesMarker<Time>[] = [];
     recordsWithCandle.forEach((r) => {
-      const timeSec = Math.floor(
-        (r.candle?.t ? r.candle.t : new Date(r.timestamp).getTime()) / 1000
-      ) as Time;
+      const timeSec = toChartTimeSeconds(r) as Time;
 
       if (r.signal?.buy) {
         markers.push({
@@ -214,10 +218,7 @@ export function ExecutionTraceChart({
         });
 
         if (matchingInd && typeof matchingInd.value === 'number') {
-          const timeSec = Math.floor(
-            (r.candle?.t ? r.candle.t : new Date(r.timestamp).getTime()) / 1000
-          ) as Time;
-          lineData.push({ time: timeSec, value: matchingInd.value });
+          lineData.push({ time: toChartTimeSeconds(r) as Time, value: matchingInd.value });
         }
       });
 

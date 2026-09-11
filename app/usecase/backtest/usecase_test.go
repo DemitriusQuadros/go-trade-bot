@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	backtesthandler "go-trade-bot/app/handler/web/backtest"
 	"go-trade-bot/app/entities"
+	backtesthandler "go-trade-bot/app/handler/web/backtest"
 	"go-trade-bot/app/strategies"
 	"go-trade-bot/app/strategies/script"
 	"go-trade-bot/app/usecase/backtest"
@@ -104,6 +104,16 @@ func (m *mockCandleRepo) LatestOpenTime(ctx context.Context, symbol, timeframe s
 
 func (m *mockCandleRepo) Count(ctx context.Context, symbol, timeframe string) (int64, error) {
 	return int64(len(m.candles)), nil
+}
+
+func (m *mockCandleRepo) CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error) {
+	count := int64(0)
+	for _, c := range m.candles {
+		if !c.OpenTime.Before(from) && c.OpenTime.Before(to) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 type mockStrategyRepo struct {
@@ -605,15 +615,15 @@ end
 // script.TraceableStrategy (AC#4).
 type noTraceStrategy struct{}
 
-func (noTraceStrategy) Name() string                                { return "notrace" }
-func (noTraceStrategy) Before(strategies.Context)                   {}
-func (noTraceStrategy) ShouldLong(strategies.Context) bool          { return false }
-func (noTraceStrategy) GoLong(strategies.Context) strategies.Signal { return strategies.Signal{} }
-func (noTraceStrategy) ShouldShort(strategies.Context) bool         { return false }
-func (noTraceStrategy) GoShort(strategies.Context) strategies.Signal { return strategies.Signal{} }
+func (noTraceStrategy) Name() string                                         { return "notrace" }
+func (noTraceStrategy) Before(strategies.Context)                            {}
+func (noTraceStrategy) ShouldLong(strategies.Context) bool                   { return false }
+func (noTraceStrategy) GoLong(strategies.Context) strategies.Signal          { return strategies.Signal{} }
+func (noTraceStrategy) ShouldShort(strategies.Context) bool                  { return false }
+func (noTraceStrategy) GoShort(strategies.Context) strategies.Signal         { return strategies.Signal{} }
 func (noTraceStrategy) UpdatePosition(strategies.Context) *strategies.Signal { return nil }
-func (noTraceStrategy) After(strategies.Context)                    {}
-func (noTraceStrategy) Terminate(strategies.Context)                {}
+func (noTraceStrategy) After(strategies.Context)                             {}
+func (noTraceStrategy) Terminate(strategies.Context)                         {}
 
 func init() {
 	strategies.Register("notrace", func(_ entities.Strategy) strategies.Strategy { return noTraceStrategy{} })

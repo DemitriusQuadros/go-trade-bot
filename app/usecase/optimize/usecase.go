@@ -26,6 +26,7 @@ const DefaultMaxCombinations = 500
 
 var (
 	ErrMissingStrategyID = errors.New("strategy_id is required")
+	ErrNoCandleData      = errors.New("no candle data available for the requested symbol/timeframe/date range")
 	ErrMissingSymbol     = errors.New("symbol is required")
 	ErrEmptyParamGrid    = errors.New("param_grid must contain at least one parameter")
 	ErrInvalidStep       = errors.New("param_grid step must be greater than zero")
@@ -70,6 +71,10 @@ type CreateRequest struct {
 	ParamGrid      ParamGrid
 }
 
+type CandleAvailabilityChecker interface {
+	CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error)
+}
+
 type StrategyRepository interface {
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 }
@@ -101,12 +106,14 @@ type OptimizeUseCase struct {
 	strategyRepo    StrategyRepository
 	optimizeRepo    OptimizationRepository
 	maxCombinations int
+	candleChecker   CandleAvailabilityChecker
 }
 
 func NewOptimizeUseCase(
 	backtestRunner BacktestRunner,
 	strategyRepo StrategyRepository,
 	optimizeRepo OptimizationRepository,
+	candleChecker CandleAvailabilityChecker,
 	maxCombinations int,
 ) *OptimizeUseCase {
 	if maxCombinations <= 0 {
@@ -116,6 +123,7 @@ func NewOptimizeUseCase(
 		backtestRunner:  backtestRunner,
 		strategyRepo:    strategyRepo,
 		optimizeRepo:    optimizeRepo,
+		candleChecker:   candleChecker,
 		maxCombinations: maxCombinations,
 	}
 }
@@ -226,6 +234,14 @@ func (u *OptimizeUseCase) Create(ctx context.Context, req CreateRequest) (entiti
 	}
 	if total > u.maxCombinations {
 		return entities.OptimizationRun{}, fmt.Errorf("%w: %d combinations requested, max is %d", ErrGridTooLarge, total, u.maxCombinations)
+	}
+
+	candleCount, err := u.candleChecker.CountInRange(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate)
+	if err != nil {
+		return entities.OptimizationRun{}, fmt.Errorf("failed to check candle data availability: %w", err)
+	}
+	if candleCount == 0 {
+		return entities.OptimizationRun{}, fmt.Errorf("%w: %s/%s between %s and %s", ErrNoCandleData, req.Symbol, req.Timeframe, req.StartDate.Format(time.RFC3339), req.EndDate.Format(time.RFC3339))
 	}
 
 	gridBytes, err := json.Marshal(req.ParamGrid)

@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
-import { EditorView } from '@codemirror/view';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
+import { luaAutocompletion } from '@/lib/luaCompletions';
 import {
   useStrategy,
   useCreateStrategy,
@@ -35,27 +36,6 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-const customDarkTheme = EditorView.theme({
-  "&": {
-    backgroundColor: "#050505 !important",
-    color: "#e2e8f0"
-  },
-  ".cm-content": {
-    caretColor: "#10b981"
-  },
-  "&.cm-focused .cm-cursor": {
-    borderLeftColor: "#10b981"
-  },
-  "&.cm-focused .cm-selectionBackground, ::selection": {
-    backgroundColor: "#166534 !important"
-  },
-  ".cm-gutters": {
-    backgroundColor: "#000000",
-    color: "#475569",
-    border: "none"
-  }
-}, { dark: true });
-
 export const CYCLE_OPTIONS = [1, 5, 10, 15, 30, 60] as const;
 export type CycleMinutes = (typeof CYCLE_OPTIONS)[number];
 
@@ -76,6 +56,22 @@ const DEFAULT_LUA_TEMPLATE = `-- Lua Strategy Script (gopher-lua sandboxed)
 -- Hooks called by the execution loop:
 -- before(ctx), should_long(ctx), go_long(ctx), should_short(ctx), go_short(ctx),
 -- update_position(ctx), after(ctx), terminate(ctx)
+--
+-- ind.rsi(period) RAISES a Lua error (not nil) when there isn't yet enough
+-- candle history - always read it through pcall so an early-cycle "not
+-- enough data" doesn't surface as a hard error every cycle.
+--
+-- go_long/go_short must return a table shaped {buy={qty=...}} / {sell={qty=...}}
+-- - the field is \`qty\`, not \`quantity\`. (\`quantity\` is what an OPEN
+-- position's size is called when reading ctx.position - a different field.)
+
+local function safe_rsi(period)
+  local ok, val = pcall(ind.rsi, period)
+  if ok then
+    return val
+  end
+  return nil
+end
 
 function before(ctx)
   -- Called at cycle initialization
@@ -83,7 +79,7 @@ end
 
 function should_long(ctx)
   -- Example: buy when RSI(14) is below 30 (oversold)
-  local rsi_val = ind.rsi(14)
+  local rsi_val = safe_rsi(14)
   if rsi_val and rsi_val < 30 then
     debug.log("rsi_oversold", rsi_val)
     return true
@@ -94,12 +90,12 @@ end
 function go_long(ctx)
   -- Return entry signal
   return {
-    quantity = 0.01,
+    buy = { qty = 0.01, price = ctx.price },
   }
 end
 
 function should_short(ctx)
-  local rsi_val = ind.rsi(14)
+  local rsi_val = safe_rsi(14)
   if rsi_val and rsi_val > 70 then
     debug.log("rsi_overbought", rsi_val)
     return true
@@ -109,8 +105,21 @@ end
 
 function go_short(ctx)
   return {
-    quantity = 0.01,
+    sell = { qty = 0.01, price = ctx.price },
   }
+end
+
+function update_position(ctx)
+  -- Without this hook, a position opened above never closes except via an
+  -- exchange-level stop-loss. Example: close the long on RSI reversion.
+  local rsi_val = safe_rsi(14)
+  if not rsi_val or not ctx.position then
+    return nil
+  end
+  if rsi_val >= 50 then
+    return { sell = { qty = ctx.position.quantity, price = ctx.price } }
+  end
+  return nil
 end
 `;
 
@@ -239,12 +248,18 @@ export function ScriptEditor({ mode }: ScriptEditorProps) {
       if (res.error) {
         setPreviewError(res.error);
         setPreviewTrace([]);
+      } else if (res.data_available === false) {
+        setPreviewTrace([]);
+        setActionMessage({
+          type: 'error',
+          text: `No candle data available for ${targetSymbol} / ${form.cycleMinutes}m. Check the symbol is valid and the live feed is connected, or import historical candles for this pair.`,
+        });
       } else {
         setPreviewTrace(res.trace || []);
         if (!res.trace || res.trace.length === 0) {
           setActionMessage({
             type: 'success',
-            text: 'Preview evaluated cleanly (no signals or candles returned for window).',
+            text: 'Preview evaluated cleanly (no signals over this window).',
           });
         }
       }
@@ -607,7 +622,7 @@ export function ScriptEditor({ mode }: ScriptEditorProps) {
                 value={form.source}
                 height="500px"
                 theme="dark"
-                extensions={[StreamLanguage.define(lua), customDarkTheme]}
+                extensions={[StreamLanguage.define(lua), luaEditorDarkTheme, luaAutocompletion]}
                 onChange={(val) => setForm((prev) => ({ ...prev, source: val }))}
                 className="font-mono text-xs"
                 basicSetup={{

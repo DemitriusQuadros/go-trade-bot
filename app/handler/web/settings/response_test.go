@@ -36,6 +36,7 @@ func TestToSettingsResponse_NeverLeaksRawSecrets(t *testing.T) {
 		DryRunFillDelayMs:      500,
 		PrometheusURL:          "http://localhost:9090",
 		GrafanaURL:             "http://localhost:3000",
+		AsynqmonURL:            "http://localhost:9191/tasks/monitoring",
 	}
 
 	resp := ToSettingsResponse(s)
@@ -51,4 +52,5 @@ func TestToSettingsResponse_NeverLeaksRawSecrets(t *testing.T) {
 	assert.Equal(t, DryRunSettingsDTO{SlippagePct: 0.1, FeePct: 0.2, FillDelayMs: 500}, resp.DryRun)
 	assert.Equal(t, "http://localhost:9090", resp.PrometheusURL)
 	assert.Equal(t, "http://localhost:3000", resp.GrafanaURL)
+	assert.Equal(t, "http://localhost:9191/tasks/monitoring", resp.AsynqmonURL)
 }

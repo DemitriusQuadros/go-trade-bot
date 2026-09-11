@@ -50,10 +50,11 @@ type EvalRequest struct {
 }
 
 type EvalResponse struct {
-	Result    any                          `json:"result"`
-	Trace     []strategyscript.TraceRecord `json:"trace"`
-	Error     string                       `json:"error,omitempty"`
-	ErrorLine *int                         `json:"error_line,omitempty"`
+	Result        any                          `json:"result"`
+	Trace         []strategyscript.TraceRecord `json:"trace"`
+	Error         string                       `json:"error,omitempty"`
+	ErrorLine     *int                         `json:"error_line,omitempty"`
+	DataAvailable bool                         `json:"data_available"`
 }
 
 // FastRerunRequest / FastRerunResponse back POST /api/script/fast-rerun.
@@ -67,9 +68,10 @@ type FastRerunRequest struct {
 }
 
 type FastRerunResponse struct {
-	Trace     []strategyscript.TraceRecord `json:"trace"`
-	Error     string                       `json:"error,omitempty"`
-	ErrorLine *int                         `json:"error_line,omitempty"`
+	Trace         []strategyscript.TraceRecord `json:"trace"`
+	Error         string                       `json:"error,omitempty"`
+	ErrorLine     *int                         `json:"error_line,omitempty"`
+	DataAvailable bool                         `json:"data_available"`
 }
 
 // UseCase orchestrates the REPL and fast-rerun flows. It never holds a
@@ -109,6 +111,7 @@ func (u *UseCase) Eval(ctx context.Context, req EvalRequest) (EvalResponse, erro
 		return EvalResponse{}, fmt.Errorf("failed to fetch live candles for %s: %w", req.Symbol, err)
 	}
 
+	dataAvailable := len(candles) > 0
 	cctx := u.buildContext(req.Symbol, tf, candles, nil)
 
 	var trace *strategyscript.TraceRecorder
@@ -122,10 +125,10 @@ func (u *UseCase) Eval(ctx context.Context, req EvalRequest) (EvalResponse, erro
 	result, evalErr := u.runner.EvalREPL(replStrategyName, cctx, req.Source, trace)
 	if evalErr != nil {
 		// Script-level error: report via .Error, empty result/trace (AC#3).
-		return EvalResponse{Result: nil, Trace: []strategyscript.TraceRecord{}, Error: evalErr.Error()}, nil
+		return EvalResponse{Result: nil, Trace: []strategyscript.TraceRecord{}, Error: evalErr.Error(), DataAvailable: dataAvailable}, nil
 	}
 
-	return EvalResponse{Result: result, Trace: []strategyscript.TraceRecord{trace.Record()}}, nil
+	return EvalResponse{Result: result, Trace: []strategyscript.TraceRecord{trace.Record()}, DataAvailable: dataAvailable}, nil
 }
 
 // FastRerun replays an unsaved script over a candle window (live if EndTime is
@@ -154,10 +157,17 @@ func (u *UseCase) FastRerun(ctx context.Context, req FastRerunRequest) (FastReru
 	if err != nil {
 		return FastRerunResponse{}, fmt.Errorf("failed to fetch candles for %s: %w", req.Symbol, err)
 	}
+	dataAvailable := len(candles) > 0
 
-	dbStrat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
-	if err != nil {
-		return FastRerunResponse{}, fmt.Errorf("strategy %d not found: %w", req.StrategyID, err)
+	var dbStrat entities.Strategy
+	if req.StrategyID != 0 {
+		var err error
+		dbStrat, err = u.strategyRepo.GetByID(ctx, req.StrategyID)
+		if err != nil {
+			return FastRerunResponse{}, fmt.Errorf("strategy %d not found: %w", req.StrategyID, err)
+		}
+	} else {
+		dbStrat = entities.Strategy{Name: "unsaved-preview"}
 	}
 	// Preserve the persisted row's Configuration but override the source with
 	// the editor's unsaved text.
@@ -167,7 +177,7 @@ func (u *UseCase) FastRerun(ctx context.Context, req FastRerunRequest) (FastReru
 	// per-hook runtime errors are failed-closed by ScriptStrategy and do not
 	// surface here.
 	if verr := u.runner.Validate(req.Source); verr != nil {
-		return FastRerunResponse{Trace: []strategyscript.TraceRecord{}, Error: verr.Error()}, nil
+		return FastRerunResponse{Trace: []strategyscript.TraceRecord{}, Error: verr.Error(), DataAvailable: dataAvailable}, nil
 	}
 
 	strat := strategyscript.NewScriptStrategy(dbStrat, newInMemoryStateStore(), u.runner)
@@ -208,7 +218,7 @@ func (u *UseCase) FastRerun(ctx context.Context, req FastRerunRequest) (FastReru
 		strat.After(cctx)
 	}
 
-	return FastRerunResponse{Trace: traces}, nil
+	return FastRerunResponse{Trace: traces, DataAvailable: dataAvailable}, nil
 }
 
 // buildContext builds a synthetic Context over the full candle slice (REPL).

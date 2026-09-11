@@ -1,6 +1,8 @@
 package optimize_test
 
 import (
+	"time"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +19,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 )
+
+type mockCandleChecker struct {
+	count int64
+	err   error
+}
+
+func (m *mockCandleChecker) CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error) {
+	return m.count, m.err
+}
 
 // ---- ExpandGrid / CountCombinations (backend-01 AC#1, AC#2; backend-02 combination generation) ----
 
@@ -66,7 +77,7 @@ func TestCountCombinations_MatchesExpandGridLength(t *testing.T) {
 // ---- Create (backend-01 AC#1, AC#2, AC#3) ----
 
 func TestOptimizeUseCase_Create_MissingStrategyID(t *testing.T) {
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), mocks.NewOptimizationRepository(t), 0)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), mocks.NewOptimizationRepository(t), &mockCandleChecker{count: 1}, 0)
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		Symbol:    "BTCUSDT",
 		ParamGrid: usecase.ParamGrid{"x": {Min: 1, Max: 2, Step: 1}},
@@ -75,7 +86,7 @@ func TestOptimizeUseCase_Create_MissingStrategyID(t *testing.T) {
 }
 
 func TestOptimizeUseCase_Create_MissingSymbol(t *testing.T) {
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), mocks.NewOptimizationRepository(t), 0)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), mocks.NewOptimizationRepository(t), &mockCandleChecker{count: 1}, 0)
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
 		ParamGrid:  usecase.ParamGrid{"x": {Min: 1, Max: 2, Step: 1}},
@@ -85,7 +96,7 @@ func TestOptimizeUseCase_Create_MissingSymbol(t *testing.T) {
 
 func TestOptimizeUseCase_Create_ZeroStepRejectedBeforePersist(t *testing.T) {
 	optimizeRepo := mocks.NewOptimizationRepository(t)
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
 		Symbol:     "BTCUSDT",
@@ -101,7 +112,7 @@ func TestOptimizeUseCase_Create_ZeroStepRejectedBeforePersist(t *testing.T) {
 // enqueued.
 func TestOptimizeUseCase_Create_GridTooLarge_RejectsBeforePersist(t *testing.T) {
 	optimizeRepo := mocks.NewOptimizationRepository(t)
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, 10)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 1}, 10)
 
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
@@ -114,6 +125,45 @@ func TestOptimizeUseCase_Create_GridTooLarge_RejectsBeforePersist(t *testing.T) 
 	optimizeRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
+// TestOptimizeUseCase_Create_NoCandleData_RejectsBeforePersist covers backend-02
+// AC#1: a symbol/timeframe/date-range combination with zero stored candles
+// must be rejected with ErrNoCandleData BEFORE any row is created.
+func TestOptimizeUseCase_Create_NoCandleData_RejectsBeforePersist(t *testing.T) {
+	optimizeRepo := mocks.NewOptimizationRepository(t)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 0}, 0)
+
+	_, err := u.Create(context.Background(), usecase.CreateRequest{
+		StrategyID: 1,
+		Symbol:     "EMPTY_SYMBOL",
+		Timeframe:  "1m",
+		StartDate:  time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+		ParamGrid:  usecase.ParamGrid{"x": {Min: 1, Max: 2, Step: 1}},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, usecase.ErrNoCandleData)
+	optimizeRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+// TestOptimizeUseCase_Create_CandleCheckError_PropagatesAsError covers the
+// candleChecker.CountInRange infra-failure path (distinct from a genuine
+// zero-count rejection).
+func TestOptimizeUseCase_Create_CandleCheckError_PropagatesAsError(t *testing.T) {
+	optimizeRepo := mocks.NewOptimizationRepository(t)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{err: errors.New("db unavailable")}, 0)
+
+	_, err := u.Create(context.Background(), usecase.CreateRequest{
+		StrategyID: 1,
+		Symbol:     "BTCUSDT",
+		ParamGrid:  usecase.ParamGrid{"x": {Min: 1, Max: 2, Step: 1}},
+	})
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, usecase.ErrNoCandleData)
+	optimizeRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
 func TestOptimizeUseCase_Create_Success_PersistsPendingRunWithTotalCombinations(t *testing.T) {
 	optimizeRepo := mocks.NewOptimizationRepository(t)
 	optimizeRepo.On("Create", mock.Anything, mock.MatchedBy(func(run *entities.OptimizationRun) bool {
@@ -123,7 +173,7 @@ func TestOptimizeUseCase_Create_Success_PersistsPendingRunWithTotalCombinations(
 		run.ID = 42
 	})
 
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 1}, 0)
 
 	run, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
@@ -199,7 +249,7 @@ func TestOptimizeUseCase_Run_SequentialProgressAndBestSelection(t *testing.T) {
 	backtestRunner.On("RunEphemeral", mock.Anything, mock.Anything, "BTCUSDT", "1m", mock.Anything, mock.Anything, 1000.0, engine.FillPolicy{}).
 		Return(metrics_provider.BacktestMetrics{SharpeRatio: 1.0, MaxDrawdownPct: 5}, nil).Once()
 
-	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	err := u.Run(context.Background(), 7)
 	require.NoError(t, err)
 
@@ -245,7 +295,7 @@ func TestOptimizeUseCase_Run_OneCombinationFails_ContinuesSearch(t *testing.T) {
 	backtestRunner.On("RunEphemeral", mock.Anything, mock.Anything, "BTCUSDT", "1m", mock.Anything, mock.Anything, 1000.0, engine.FillPolicy{}).
 		Return(metrics_provider.BacktestMetrics{SharpeRatio: 0.9, MaxDrawdownPct: 3}, nil).Once()
 
-	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	err := u.Run(context.Background(), 8)
 	require.NoError(t, err, "one failed combination must not abort the run")
 
@@ -284,7 +334,7 @@ func TestOptimizeUseCase_Run_AllCombinationsFail_MarksFailed(t *testing.T) {
 	backtestRunner.On("RunEphemeral", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(metrics_provider.BacktestMetrics{}, errors.New("boom"))
 
-	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	err := u.Run(context.Background(), 9)
 	require.Error(t, err)
 
@@ -316,7 +366,7 @@ func TestOptimizeUseCase_Run_NeverInvokesFullBacktestPersistence(t *testing.T) {
 	backtestRunner.On("RunEphemeral", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(metrics_provider.BacktestMetrics{SharpeRatio: 1}, nil)
 
-	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(backtestRunner, strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	require.NoError(t, u.Run(context.Background(), 10))
 
 	// BacktestRunner only exposes RunEphemeral - assert that's the only
@@ -343,7 +393,7 @@ func TestOptimizeUseCase_Run_StrategyLoadFailure_MarksFailed(t *testing.T) {
 	optimizeRepo.On("GetByID", mock.Anything, uint(11)).Return(run, nil).Once()
 	optimizeRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
 
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, 0)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 	err := u.Run(context.Background(), 11)
 	require.Error(t, err)
 

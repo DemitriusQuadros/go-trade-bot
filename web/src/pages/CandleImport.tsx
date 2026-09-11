@@ -27,7 +27,11 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
 
-const TIMEFRAME_OPTIONS = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const TIMEFRAME_OPTIONS = [
+  '1m', '3m', '5m', '15m', '30m',
+  '1h', '2h', '4h', '6h', '8h', '12h',
+  '1d', '3d', '1w',
+];
 
 function toISODate(d: Date): string {
   return d.toISOString().split('T')[0];
@@ -40,7 +44,10 @@ function getDefaultDates() {
   return { from: toISODate(from), to: toISODate(to) };
 }
 
-function describeCronSpec(cron: string): string {
+function describeCronSpec(cron?: string | null): string {
+  if (!cron || typeof cron !== 'string' || !cron.trim()) {
+    return '—';
+  }
   const parts = cron.trim().split(/\s+/);
   if (parts.length === 5) {
     const [min, hour, dom, mon, dow] = parts;

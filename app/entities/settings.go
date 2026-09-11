@@ -28,6 +28,7 @@ type Settings struct {
 	// external links (Spec backend-05 SS1's risk tier table).
 	PrometheusURL string
 	GrafanaURL    string
+	AsynqmonURL   string
 	UpdatedAt     time.Time
 }
 

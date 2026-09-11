@@ -51,7 +51,7 @@ function humanizeSettingsError(err: unknown): string {
 }
 
 export function Settings() {
-  const { data: loadedSettings, isLoading } = usePlatformSettings();
+  const { data: loadedSettings, isLoading, isError, error: loadError } = usePlatformSettings();
   const updateSettingsMutation = useUpdateSettings();
 
   const [formState, setFormState] = useState<PlatformSettingsUpdateRequest>({
@@ -61,6 +61,7 @@ export function Settings() {
     dry_run: { slippage_pct: 0.1, fee_pct: 0.1, fill_delay_ms: 50 },
     prometheus_url: '',
     grafana_url: '',
+    asynqmon_url: '',
   });
 
   const [dirtySecrets, setDirtySecrets] = useState<Record<string, string>>({});
@@ -82,6 +83,7 @@ export function Settings() {
         dry_run: loadedSettings.dry_run || { slippage_pct: 0.1, fee_pct: 0.1, fill_delay_ms: 50 },
         prometheus_url: loadedSettings.prometheus_url || '',
         grafana_url: loadedSettings.grafana_url || '',
+        asynqmon_url: loadedSettings.asynqmon_url || '',
       });
       setDirtySecrets({});
     }
@@ -166,6 +168,17 @@ export function Settings() {
       setFormState((prev) => ({ ...prev, mode: loadedSettings.mode }));
     }
   };
+
+  if (isError) {
+    return (
+      <div className="flex items-center gap-2 p-12 text-red-400">
+        <AlertCircle className="w-6 h-6 shrink-0" />
+        <span>
+          Failed to load platform configuration: {humanizeSettingsError(loadError)}
+        </span>
+      </div>
+    );
+  }
 
   if (isLoading || !loadedSettings) {
     return (
@@ -388,7 +401,7 @@ export function Settings() {
           title="Monitoring & Observability Endpoints"
           subtitle="External dashboards linked in the application navigation"
         />
-        <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-300">Prometheus URL</label>
             <input
@@ -407,6 +420,17 @@ export function Settings() {
               value={formState.grafana_url}
               placeholder="http://localhost:3000"
               onChange={(e) => setFormState({ ...formState, grafana_url: e.target.value })}
+              className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-300">Asynqmon URL</label>
+            <input
+              type="url"
+              value={formState.asynqmon_url}
+              placeholder="http://localhost:9191/tasks/monitoring"
+              onChange={(e) => setFormState({ ...formState, asynqmon_url: e.target.value })}
               className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
             />
           </div>

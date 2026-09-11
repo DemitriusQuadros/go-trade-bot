@@ -1,9 +1,12 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { MiniSidebar } from './MiniSidebar';
 import { LogOut } from 'lucide-react';
 import { clearToken } from '@/api/client';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   const handleLogout = () => {
     clearToken();
     window.location.reload();
@@ -26,7 +29,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main className="flex-1 p-6 overflow-auto">
-          {children}
+          <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>
         </main>
       </div>
     </div>

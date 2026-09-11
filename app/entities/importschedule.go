@@ -41,11 +41,11 @@ type ImportJob struct {
 }
 
 type ImportSchedule struct {
-	ID         uint `gorm:"primaryKey"`
-	Symbol     string
-	Timeframe  string
-	CronSpec   string // e.g. "0 1 * * *"
-	Enabled    bool
-	LastRunAt  *time.Time
-	CreatedAt  time.Time
+	ID        uint       `gorm:"primaryKey" json:"id"`
+	Symbol    string     `json:"symbol"`
+	Timeframe string     `json:"timeframe"`
+	CronSpec  string     `json:"cron_spec"` // e.g. "0 1 * * *"
+	Enabled   bool       `json:"enabled"`
+	LastRunAt *time.Time `json:"last_run_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }

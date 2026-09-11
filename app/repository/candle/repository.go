@@ -18,6 +18,7 @@ type Repository interface {
 	Range(ctx context.Context, symbol, timeframe string, from, to time.Time) ([]exchange.Candle, error)
 	LatestOpenTime(ctx context.Context, symbol, timeframe string) (time.Time, error)
 	Count(ctx context.Context, symbol, timeframe string) (int64, error)
+	CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error)
 }
 
 type CandleRepository struct {
@@ -125,4 +126,13 @@ func toExchangeCandles(rows []entities.Candle) []exchange.Candle {
 		}
 	}
 	return result
+}
+
+func (r CandleRepository) CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&entities.Candle{}).
+		Where("symbol = ? AND timeframe = ? AND open_time >= ? AND open_time < ?", symbol, timeframe, from, to).
+		Count(&count).Error
+	return count, err
 }

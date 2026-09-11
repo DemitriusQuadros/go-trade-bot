@@ -18,8 +18,9 @@ func NewStrategyRepository(db *gorm.DB) StrategyRepository {
 	}
 }
 
-func (r StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) error {
-	return r.db.WithContext(ctx).Create(&strategy).Error
+func (r StrategyRepository) Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error) {
+	err := r.db.WithContext(ctx).Create(&strategy).Error
+	return strategy, err
 }
 
 func (r StrategyRepository) GetByID(ctx context.Context, id uint) (entities.Strategy, error) {

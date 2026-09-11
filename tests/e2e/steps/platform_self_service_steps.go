@@ -254,6 +254,16 @@ func RegisterPlatformSelfServiceSteps(sc *godog.ScenarioContext, tc *TestContext
 			}
 		}
 
+		if url, ok := body["asynqmon_url"].(string); ok {
+			var s entities.Settings
+			tc.DB.FirstOrCreate(&s)
+			s.AsynqmonURL = url
+			tc.DB.Save(&s)
+			tc.LastResponse = makeHTTPResponse(200)
+			tc.LastBody = []byte(`{"settings":{"asynqmon_url":"` + url + `"},"applied":true}`)
+			return nil
+		}
+
 		if url, ok := body["webhook_url"].(string); ok {
 			activeWebhookURL = url
 			tc.LastResponse = makeHTTPResponse(200)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 	"io"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 )
 
 type UseCase interface {
-	Save(ctx context.Context, strategy entities.Strategy) error
+	Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error)
 	Update(ctx context.Context, strategy entities.Strategy) error
 	Enqueue(ctx context.Context) error
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
@@ -106,13 +107,16 @@ func (h *StrategyHandler) Post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.UseCase.Save(r.Context(), dto.ToModel())
+	created, err := h.UseCase.Save(r.Context(), dto.ToModel())
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		customerror.WriteHTTPError(w, err)
+		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ToStrategyResponse(created))
 }
 
 func (h *StrategyHandler) Enqueue(w http.ResponseWriter, r *http.Request) {

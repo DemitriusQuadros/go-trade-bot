@@ -100,7 +100,7 @@ func writeCreateError(w http.ResponseWriter, err error) {
 	case errors.Is(err, usecase.ErrMissingStrategyID),
 		errors.Is(err, usecase.ErrMissingSymbol),
 		errors.Is(err, usecase.ErrEmptyParamGrid),
-		errors.Is(err, usecase.ErrInvalidStep):
+		errors.Is(err, usecase.ErrInvalidStep) || errors.Is(err, usecase.ErrNoCandleData):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -335,6 +335,7 @@ export interface PlatformSettings {
   dry_run: DryRunSettings;
   prometheus_url: string;
   grafana_url: string;
+  asynqmon_url?: string;
 }
 
 export interface PlatformSettingsUpdateRequest {
@@ -349,6 +350,7 @@ export interface PlatformSettingsUpdateRequest {
   dry_run: DryRunSettings;
   prometheus_url: string;
   grafana_url: string;
+  asynqmon_url?: string;
 }
 
 export interface PlatformSettingsUpdateResponse {
@@ -454,6 +456,8 @@ export interface FastRerunRequest {
 export interface FastRerunResponse {
   trace: TraceRecord[];
   error?: string;
+  error_line?: number;
+  data_available?: boolean;
 }
 
 export interface ReplRequest {
@@ -468,6 +472,8 @@ export interface ReplResponse {
   result: unknown;
   trace: TraceRecord[];
   error?: string;
+  error_line?: number;
+  data_available?: boolean;
 }
 
 

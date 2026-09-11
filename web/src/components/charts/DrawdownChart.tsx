@@ -58,11 +58,21 @@ export function DrawdownChart({
     });
 
     const sortedData = [...points].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    
-    areaSeries.setData(sortedData.map(p => ({
-      time: Math.floor(new Date(p.time).getTime() / 1000) as any,
-      value: p.drawdownPct,
-    })));
+
+    // See EquityCurveChart.tsx for why same-second dedup is needed: trade
+    // timestamps currently derive from DB insert wall-clock time, not
+    // simulated candle time, so a fast backtest can produce several points
+    // within the same wall-clock second.
+    const bySecond = new Map<number, number>();
+    for (const p of sortedData) {
+      const sec = Math.floor(new Date(p.time).getTime() / 1000);
+      bySecond.set(sec, p.drawdownPct);
+    }
+    const dedupedData = Array.from(bySecond.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([time, value]) => ({ time: time as any, value }));
+
+    areaSeries.setData(dedupedData);
 
     const handleResize = () => {
       if (chartContainerRef.current) {

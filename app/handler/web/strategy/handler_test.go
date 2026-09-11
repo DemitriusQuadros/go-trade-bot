@@ -37,7 +37,7 @@ func TestStrategyHandler_Post(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()
-	mockUseCase.On("Save", mock.Anything, dto.ToModel()).Return(nil)
+	mockUseCase.On("Save", mock.Anything, dto.ToModel()).Return(entities.Strategy{ID: 1}, nil)
 
 	h.Post(rec, req)
 	assert.Equal(t, http.StatusCreated, rec.Code)

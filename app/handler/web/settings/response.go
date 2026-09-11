@@ -56,6 +56,7 @@ type SettingsResponseDTO struct {
 	DryRun                 DryRunSettingsDTO `json:"dry_run"`
 	PrometheusURL          string            `json:"prometheus_url"`
 	GrafanaURL             string            `json:"grafana_url"`
+	AsynqmonURL            string            `json:"asynqmon_url"`
 }
 
 func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
@@ -74,6 +75,7 @@ func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
 		},
 		PrometheusURL: s.PrometheusURL,
 		GrafanaURL:    s.GrafanaURL,
+		AsynqmonURL:   s.AsynqmonURL,
 	}
 }
 

@@ -24,8 +24,9 @@ func TestStrategyRepository_Save(t *testing.T) {
 	repo := repository.NewStrategyRepository(db)
 
 	strategy := entities.Strategy{Name: "Test Strategy"}
-	err = repo.Save(context.Background(), strategy)
+	saved, err := repo.Save(context.Background(), strategy)
 	assert.NoError(t, err)
+	assert.NotZero(t, saved.ID)
 
 	var result entities.Strategy
 	err = db.First(&result, "name = ?", "Test Strategy").Error

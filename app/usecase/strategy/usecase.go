@@ -12,7 +12,7 @@ import (
 )
 
 type StrategyRepository interface {
-	Save(ctx context.Context, strategy entities.Strategy) error
+	Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error)
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 	Update(ctx context.Context, strategy entities.Strategy) error
@@ -37,20 +37,26 @@ func NewStrategyUseCase(repository StrategyRepository, worker StrategyWorker) St
 	}
 }
 
-func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) error {
+func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error) {
 	strategy = applyStrategyNameFallback(strategy)
 	if err := u.validateStrategy(strategy); err != nil {
-		return err
+		return entities.Strategy{}, err
 	}
 	strategy.CreatedAt = time.Now()
 	strategy.UpdatedAt = time.Now()
 
-	if err := u.Repository.Save(ctx, strategy); err != nil {
-		return err
+	saved, err := u.Repository.Save(ctx, strategy)
+	if err != nil {
+		return entities.Strategy{}, err
 	}
+	// Only take the DB-populated ID from the repository's return, rather than
+	// overwriting the whole struct - keeps this correct even against a test
+	// double that stubs a partial return value, and avoids depending on the
+	// repository echoing back every field it was given.
+	strategy.ID = saved.ID
 
 	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
-		return err
+		return entities.Strategy{}, err
 	}
 	if strategy.StrategyName == "script" {
 		u.Repository.SaveScriptVersion(ctx, entities.ScriptVersion{
@@ -59,7 +65,7 @@ func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) e
 			CreatedAt:  time.Now(),
 		})
 	}
-	return nil
+	return strategy, nil
 }
 
 func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy) error {

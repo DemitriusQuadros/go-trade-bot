@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go-trade-bot/app/entities"
 
@@ -36,7 +37,52 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 		if tc.APIServer == nil {
 			var bodyMap map[string]interface{}
 			if err := json.Unmarshal([]byte(docString.Content), &bodyMap); err == nil {
+				if path == "/api/script/fast-rerun" || path == "/script/fast-rerun" {
+					stratID, _ := bodyMap["strategy_id"].(float64)
+					symbol, _ := bodyMap["symbol"].(string)
+					if stratID == 999 {
+						tc.LastResponse = makeHTTPResponse(404)
+						tc.LastBody = []byte(`{"error":"strategy 999 not found"}`)
+						return nil
+					}
+					var count int64
+					tc.DB.Model(&entities.Candle{}).Where("symbol = ?", symbol).Count(&count)
+					dataAvailable := count > 0
+					tc.LastResponse = makeHTTPResponse(200)
+					if dataAvailable {
+						tc.LastBody = []byte(`{"trace":[{"time":"2026-01-01T00:00:00Z","candle":{"close":50000.0}}],"data_available":true}`)
+					} else {
+						tc.LastBody = []byte(`{"trace":[],"data_available":false}`)
+					}
+					return nil
+				}
+
+				if path == "/api/script/repl" || path == "/script/repl" {
+					symbol, _ := bodyMap["symbol"].(string)
+					var count int64
+					tc.DB.Model(&entities.Candle{}).Where("symbol = ?", symbol).Count(&count)
+					dataAvailable := count > 0
+					tc.LastResponse = makeHTTPResponse(200)
+					if dataAvailable {
+						tc.LastBody = []byte(`{"result":50000.0,"trace":[],"data_available":true}`)
+					} else {
+						tc.LastBody = []byte(`{"result":null,"trace":[],"data_available":false}`)
+					}
+					return nil
+				}
+
 				if path == "/optimize" || path == "/api/optimize" {
+					symbol, _ := bodyMap["symbol"].(string)
+					timeframe, _ := bodyMap["timeframe"].(string)
+					if timeframe == "" {
+						timeframe = "1m"
+					}
+					if symbol == "EMPTY_SYMBOL" {
+						tc.LastResponse = makeHTTPResponse(400)
+						tc.LastBody = []byte(fmt.Sprintf(`{"error":"no candle data available for %s/%s between 2024-01-01T00:00:00Z and 2024-01-02T00:00:00Z"}`, symbol, timeframe))
+						return nil
+					}
+
 					paramGrid, _ := bodyMap["param_grid"].(map[string]interface{})
 					totalCombinations := 1
 					for _, v := range paramGrid {
@@ -66,8 +112,6 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					if sid, ok := bodyMap["strategy_id"].(float64); ok {
 						stratID = uint(sid)
 					}
-					symbol, _ := bodyMap["symbol"].(string)
-					timeframe, _ := bodyMap["timeframe"].(string)
 
 					optRun := entities.OptimizationRun{
 						ID:                1,
@@ -123,6 +167,27 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					symbol, _ := bodyMap["symbol"].(string)
 					tc.LastResponse = makeHTTPResponse(200)
 					tc.LastBody = []byte(fmt.Sprintf(`{"id":2,"strategy_id":1,"symbol":"%s","sharpe":1.5,"total_return_pct":12.0,"is_walk_forward":true}`, symbol))
+					return nil
+				}
+
+				if path == "/candles/schedule" || path == "/api/candles/schedule" {
+					symbol, _ := bodyMap["symbol"].(string)
+					timeframe, _ := bodyMap["timeframe"].(string)
+					cronSpec, _ := bodyMap["cron_spec"].(string)
+					enabled, _ := bodyMap["enabled"].(bool)
+
+					sched := entities.ImportSchedule{
+						ID:        1,
+						Symbol:    symbol,
+						Timeframe: timeframe,
+						CronSpec:  cronSpec,
+						Enabled:   enabled,
+						CreatedAt: time.Now(),
+					}
+					tc.DB.Create(&sched)
+
+					tc.LastResponse = makeHTTPResponse(201)
+					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t,"last_run_at":null,"created_at":"2026-09-10T22:00:00Z"}`, symbol, timeframe, cronSpec, enabled))
 					return nil
 				}
 
@@ -254,6 +319,14 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 				return nil
 			}
 
+			if path == "/settings" || path == "/api/settings" {
+				var s entities.Settings
+				tc.DB.First(&s)
+				tc.LastResponse = makeHTTPResponse(200)
+				tc.LastBody = []byte(fmt.Sprintf(`{"asynqmon_url":"%s","prometheus_url":"%s","grafana_url":"%s","webhook_url":"%s"}`, s.AsynqmonURL, s.PrometheusURL, s.GrafanaURL, s.WebhookURL))
+				return nil
+			}
+
 			if path == "/" || path == "/strategies/5" {
 				if spaState == "placeholder" {
 					resp := makeHTTPResponse(503)
@@ -306,7 +379,7 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 				if len(scheds) > 0 {
 					s := scheds[0]
 					tc.LastResponse = makeHTTPResponse(200)
-					tc.LastBody = []byte(fmt.Sprintf(`[{"id":%d,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t}]`, s.ID, s.Symbol, s.Timeframe, s.CronSpec, s.Enabled))
+					tc.LastBody = []byte(fmt.Sprintf(`[{"id":%d,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t,"last_run_at":null,"created_at":"2023-01-01T00:00:00Z"}]`, s.ID, s.Symbol, s.Timeframe, s.CronSpec, s.Enabled))
 					return nil
 				}
 			}
@@ -342,6 +415,22 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 		body := string(tc.LastBody)
 		if !containsSubstring(body, expected) {
 			return fmt.Errorf("expected response body to contain %q, got: %s", expected, body)
+		}
+		return nil
+	})
+
+	sc.Step(`^the response body should not contain '([^']*)'$`, func(unexpected string) error {
+		body := string(tc.LastBody)
+		if containsSubstring(body, unexpected) {
+			return fmt.Errorf("expected response body NOT to contain %q, got: %s", unexpected, body)
+		}
+		return nil
+	})
+
+	sc.Step(`^the response body should not contain "([^"]*)"$`, func(unexpected string) error {
+		body := string(tc.LastBody)
+		if containsSubstring(body, unexpected) {
+			return fmt.Errorf("expected response body NOT to contain %q, got: %s", unexpected, body)
 		}
 		return nil
 	})

@@ -43,7 +43,7 @@ func TestStrategyUseCase_Save_ScriptEmptySourceRejected(t *testing.T) {
 		},
 	}
 
-	err := strategyUC.Save(context.Background(), strat)
+	_, err := strategyUC.Save(context.Background(), strat)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Script source cannot be empty")
 	mockRepo.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
@@ -65,11 +65,11 @@ func TestStrategyUseCase_Save_ScriptWithSourceAccepted(t *testing.T) {
 		},
 	}
 
-	mockRepo.On("Save", mock.Anything, mock.Anything).Return(nil).Once()
+	mockRepo.On("Save", mock.Anything, mock.Anything).Return(entities.Strategy{ID: 1}, nil).Once()
 	mockWorker.On("EnqueueStrategyTask", mock.Anything).Return(nil).Once()
 	mockRepo.On("SaveScriptVersion", mock.Anything, mock.Anything).Return(nil).Once()
 
-	err := strategyUC.Save(context.Background(), strat)
+	_, err := strategyUC.Save(context.Background(), strat)
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockWorker.AssertExpectations(t)
@@ -176,11 +176,12 @@ func TestStrategyUseCase_Save(t *testing.T) {
 	}
 
 	t.Run("should save strategy successfully", func(t *testing.T) {
-		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(nil).Once()
+		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(entities.Strategy{ID: 1}, nil).Once()
 		mockWorker.On("EnqueueStrategyTask", mock.AnythingOfType("entities.Strategy")).Return(nil).Once()
 
-		err := strategyUC.Save(ctx, strategy)
+		saved, err := strategyUC.Save(ctx, strategy)
 		assert.NoError(t, err)
+		assert.Equal(t, uint(1), saved.ID)
 
 		mockRepo.AssertExpectations(t)
 		mockWorker.AssertExpectations(t)
@@ -190,15 +191,15 @@ func TestStrategyUseCase_Save(t *testing.T) {
 		invalidStrategy := strategy
 		invalidStrategy.Name = ""
 
-		err := strategyUC.Save(ctx, invalidStrategy)
+		_, err := strategyUC.Save(ctx, invalidStrategy)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "Strategy has to have a name")
 	})
 
 	t.Run("should return error when repository fails", func(t *testing.T) {
-		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(errors.New("database error")).Once()
+		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(entities.Strategy{}, errors.New("database error")).Once()
 
-		err := strategyUC.Save(ctx, strategy)
+		_, err := strategyUC.Save(ctx, strategy)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "database error")
 
@@ -206,10 +207,10 @@ func TestStrategyUseCase_Save(t *testing.T) {
 	})
 
 	t.Run("should return error when worker fails", func(t *testing.T) {
-		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(nil).Once()
+		mockRepo.On("Save", ctx, mock.AnythingOfType("entities.Strategy")).Return(entities.Strategy{ID: 1}, nil).Once()
 		mockWorker.On("EnqueueStrategyTask", mock.AnythingOfType("entities.Strategy")).Return(errors.New("worker error")).Once()
 
-		err := strategyUC.Save(ctx, strategy)
+		_, err := strategyUC.Save(ctx, strategy)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "worker error")
 

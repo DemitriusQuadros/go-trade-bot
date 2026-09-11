@@ -12,6 +12,7 @@ import (
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/backtest"
+	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
 	"github.com/gorilla/mux"
@@ -91,7 +92,7 @@ func (h *BacktestHandler) RunBacktest(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.useCase.Run(r.Context(), req.ToUseCase())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		customerror.WriteHTTPError(w, err)
 		return
 	}
 
@@ -116,7 +117,7 @@ func (h *BacktestHandler) RunWalkForward(w http.ResponseWriter, r *http.Request)
 
 	run, err := h.useCase.RunWalkForward(r.Context(), req.ToUseCase())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		customerror.WriteHTTPError(w, err)
 		return
 	}
 

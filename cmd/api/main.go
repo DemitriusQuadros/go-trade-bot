@@ -15,7 +15,9 @@ import (
 	settings "go-trade-bot/app/handler/web/settings"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
+	"go-trade-bot/app/strategies"
 	_ "go-trade-bot/app/strategies/mlgrpc"
+	strategyscript "go-trade-bot/app/strategies/script"
 	"go-trade-bot/cmd/api/modules"
 	"go-trade-bot/cmd/api/webui"
 	config "go-trade-bot/internal/configuration"
@@ -77,8 +79,21 @@ func main() {
 				log.Fatalf("failed to migrate database: %v", err)
 			}
 		}),
+		fx.Invoke(RegisterScriptStrategy),
 		fx.Invoke(func(*http.Server) {}),
 	).Run()
+}
+
+// RegisterScriptStrategy wires the "script" strategy into the global registry
+// (backend-04), mirroring cmd/worker/main.go's function of the same name.
+// The API process never executes a strategy cycle, but app/usecase/strategy's
+// Save/UpdateStatus validation calls strategies.Exists("script") - without
+// this, saving or enabling any script-type strategy fails validation here
+// even though the worker (which does register it) could run it fine.
+func RegisterScriptStrategy(runner *strategyscript.Runner, store strategyscript.ScriptStateStore) {
+	strategies.Register("script", func(dbStrategy entities.Strategy) strategies.Strategy {
+		return strategyscript.NewScriptStrategy(dbStrategy, store, runner)
+	})
 }
 
 func NewHTTPServer(
