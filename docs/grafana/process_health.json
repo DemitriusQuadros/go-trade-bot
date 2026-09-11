@@ -1,0 +1,154 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Process Health and Diagnostics for Go Trade Bot (Phase 2)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Process Up State",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "up{job=~\"go-app|go-worker\"}",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "title": "WebSocket Connection Status",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "websocket_connected",
+          "legendFormat": "{{symbol}}"
+        }
+      ]
+    },
+    {
+      "title": "Feed Candle Delay",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "feed_candle_delay_seconds",
+          "legendFormat": "{{symbol}} ({{feed_type}})"
+        }
+      ]
+    },
+    {
+      "title": "Candle Import Lag",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "candle_import_lag_seconds",
+          "legendFormat": "{{symbol}} ({{timeframe}})"
+        }
+      ]
+    },
+    {
+      "title": "Goroutines per Process",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "go_goroutines{job=~\"go-app|go-worker\"}",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "title": "Memory Allocation per Process",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "go_memstats_alloc_bytes{job=~\"go-app|go-worker\"}",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "title": "Order Execution Errors Total",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "rate(order_execution_errors_total[5m])",
+          "legendFormat": "{{strategy}} - {{reason}}"
+        }
+      ]
+    },
+    {
+      "title": "Order Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(order_execution_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(order_execution_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(order_execution_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "title": "Backtest Run Duration Distribution",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(backtest_run_duration_seconds_bucket[5m])) by (le, strategy, is_walk_forward))",
+          "legendFormat": "{{strategy}} (wf={{is_walk_forward}}) p95"
+        }
+      ]
+    },
+    {
+      "title": "Asynq Queue Depth (Pending / Gap)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "asyn_total_task_execution",
+          "legendFormat": "Task Executions"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["tradebot", "observability", "phase2"],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "title": "Process Health",
+  "uid": "tradebot-process-health",
+  "version": 1
+}

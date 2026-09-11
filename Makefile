@@ -29,10 +29,15 @@ clean: ## Stop and remove containers, volumes, networks, and images
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all --remove-orphans
 
 run-api-local: ## Run the API project locally
-	go run cmd/api/main.go
+	go run ./cmd/api
 
 run-worker-local: ## Run the Worker project locally
-	go run cmd/worker/main.go
+	go run ./cmd/worker
 
-run-console: ## Run the console project locally
-	go run cmd/console/main.go
+web-build: ## Build React web frontend and copy to embed dist
+	cd web && npm ci && npm run build
+	rm -rf cmd/api/webui/dist/assets cmd/api/webui/dist/index.html
+	cp -r web/dist/* cmd/api/webui/dist/
+
+web-dev: ## Run Vite dev server for frontend development
+	cd web && npm run dev

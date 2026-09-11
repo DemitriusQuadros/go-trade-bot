@@ -14,6 +14,54 @@ type UseCase struct {
 	mock.Mock
 }
 
+// GetScriptVersions provides a mock function with given fields: ctx, strategyID
+func (_m *UseCase) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	ret := _m.Called(ctx, strategyID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetScriptVersions")
+	}
+
+	var r0 []entities.ScriptVersion
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]entities.ScriptVersion, error)); ok {
+		return rf(ctx, strategyID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []entities.ScriptVersion); ok {
+		r0 = rf(ctx, strategyID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.ScriptVersion)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, strategyID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// RevertScriptVersion provides a mock function with given fields: ctx, strategyID, versionID
+func (_m *UseCase) RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error {
+	ret := _m.Called(ctx, strategyID, versionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RevertScriptVersion")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) error); ok {
+		r0 = rf(ctx, strategyID, versionID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // Enqueue provides a mock function with given fields: ctx
 func (_m *UseCase) Enqueue(ctx context.Context) error {
 	ret := _m.Called(ctx)
@@ -91,21 +139,31 @@ func (_m *UseCase) GetByID(ctx context.Context, id uint) (entities.Strategy, err
 }
 
 // Save provides a mock function with given fields: ctx, strategy
-func (_m *UseCase) Save(ctx context.Context, strategy entities.Strategy) error {
+func (_m *UseCase) Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error) {
 	ret := _m.Called(ctx, strategy)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Save")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) error); ok {
+	var r0 entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) (entities.Strategy, error)); ok {
+		return rf(ctx, strategy)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entities.Strategy) entities.Strategy); ok {
 		r0 = rf(ctx, strategy)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(entities.Strategy)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(context.Context, entities.Strategy) error); ok {
+		r1 = rf(ctx, strategy)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // Update provides a mock function with given fields: ctx, strategy
@@ -124,6 +182,92 @@ func (_m *UseCase) Update(ctx context.Context, strategy entities.Strategy) error
 	}
 
 	return r0
+}
+
+// GetPerformance provides a mock function with given fields: ctx
+func (_m *UseCase) GetPerformance(ctx context.Context) ([]entities.StrategyPerformance, error) {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPerformance")
+	}
+
+	var r0 []entities.StrategyPerformance
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context) ([]entities.StrategyPerformance, error)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) []entities.StrategyPerformance); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.StrategyPerformance)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UpdateStatus provides a mock function with given fields: ctx, id, status
+func (_m *UseCase) UpdateStatus(ctx context.Context, id uint, status entities.StrategyStatus) (entities.Strategy, error) {
+	ret := _m.Called(ctx, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateStatus")
+	}
+
+	var r0 entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, entities.StrategyStatus) (entities.Strategy, error)); ok {
+		return rf(ctx, id, status)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, entities.StrategyStatus) entities.Strategy); ok {
+		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Get(0).(entities.Strategy)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, entities.StrategyStatus) error); ok {
+		r1 = rf(ctx, id, status)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UpdateMode provides a mock function with given fields: ctx, id, mode
+func (_m *UseCase) UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error) {
+	ret := _m.Called(ctx, id, mode)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateMode")
+	}
+
+	var r0 entities.Strategy
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, string) (entities.Strategy, error)); ok {
+		return rf(ctx, id, mode)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, string) entities.Strategy); ok {
+		r0 = rf(ctx, id, mode)
+	} else {
+		r0 = ret.Get(0).(entities.Strategy)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, string) error); ok {
+		r1 = rf(ctx, id, mode)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // NewUseCase creates a new instance of UseCase. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

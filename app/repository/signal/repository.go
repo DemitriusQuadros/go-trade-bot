@@ -47,6 +47,20 @@ func (r SignalRepository) GetAllOpenSignals() ([]entities.Signal, error) {
 	return signals, nil
 }
 
+func (r SignalRepository) GetAllClosedSignals() ([]entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.
+		Preload("Orders").
+		Preload("Strategy").
+		Where("status = ?", entities.Closed).
+		Find(&signals).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return signals, nil
+}
+
 func (r SignalRepository) Update(signal entities.Signal) error {
 	err := r.db.Save(&signal).Error
 

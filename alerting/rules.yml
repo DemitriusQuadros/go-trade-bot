@@ -1,0 +1,38 @@
+groups:
+  - name: go-trade-bot
+    rules:
+      - alert: HighErrorRate
+        expr: rate(order_execution_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High order execution error rate detected"
+      - alert: WebSocketDisconnected
+        expr: websocket_connected == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket live feed is disconnected"
+      - alert: ProcessDown
+        expr: up{job=~"go-app|go-worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Process {{ $labels.job }} is down"
+      - alert: FeedStale
+        expr: feed_candle_delay_seconds{feed_type="live"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live feed candle delay is higher than 5 minutes"
+      - alert: CandleImportStale
+        expr: candle_import_lag_seconds > 172800  # 2 days
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Candle import lag is greater than 2 days"
