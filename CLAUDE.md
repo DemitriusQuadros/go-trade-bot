@@ -112,7 +112,9 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   external process over gRPC (`internal/grpc/`).
 - **`app/strategies/script/`** — Every strategy is now a **Lua script** run in a sandboxed `gopher-lua`
   VM: `runner.go` (`Eval`, context-cancellable), `bridge.go` (`CallHook` — Context↔Lua value marshaling),
-  `indicators.go` (`ind.*` closures over `internal/indicators.IndicatorProvider`), `trace.go`
+  `indicators.go` (`ind.*` closures over `internal/indicators.IndicatorProvider` — one lowercase closure per
+  wrapped go-talib function, e.g. `ind.rsi`/`ind.adx`/`ind.stoch`/`ind.obv`/`ind.sar`; see that file's
+  `bindIndicators` doc comment for the full catalogue), `trace.go`
   (`TraceRecorder`/`TraceRecord`, one record per candle including `Candle exchange.Candle`), `state_store.go`
   (DB-backed persisted state, see `app/repository/scriptstate/` below — deliberately not in-memory/memcache,
   since asynq can redeliver a strategy's next cycle to a different worker replica), `repl.go` (backs the
@@ -146,7 +148,15 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
   `go-binance` directly.**
 - **`feed/`** — `Feed` interface with `LiveFeed` (WebSocket) and `ReplayFeed` (Postgres-backed, for
   backtesting) implementations, plus `multitimeframe.go` for 1m→5m/15m/1h aggregation.
-- **`indicators/`** — `IndicatorProvider` ACL wrapping `go-talib`.
+- **`indicators/`** — `IndicatorProvider` ACL wrapping `go-talib`. `RSI`/`BollingerBands`/`EMA`/`SMA`/`MACD`/
+  `ATR` are frozen (ADR-005); every other genuine go-talib technical/candle indicator (overlap studies,
+  momentum, volume, volatility, price transform, Hilbert Transform cycle, statistic, and window-math
+  functions — ~69 methods) is also wrapped, all taking `[]exchange.Candle` plus numeric params and
+  returning `[]float64` (single or multi-return). `Beta`/`Correl` (need two independent price series) and
+  `MaVp` (needs a per-bar variable period array) are the only genuine indicators NOT wrapped — no sensible
+  signature exists for them given `strategies.Context` carries exactly one candle series. All MAType
+  parameters on the added methods (`Ma`/`Apo`/`Ppo`/`MacdExt`/`Stoch`/`StochF`/`StochRsi`) are hardcoded to
+  `MATypeSMA` in the adapter — see `talib_adapter.go`'s "Additional indicators" section.
 - **`metrics_provider/`** — Sharpe/Drawdown/WinRate/ProfitFactor computation, wrapping `cinar/indicator/v2`.
 - **`notifier/`** — Generic webhook notifier for trade/error events.
 - **`report/`** — HTML backtest report generation.

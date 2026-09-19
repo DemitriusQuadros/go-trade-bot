@@ -232,53 +232,126 @@ func NewTraceRecorder(timestamp time.Time, candle exchange.Candle) *TraceRecorde
 	return &TraceRecorder{timestamp: timestamp, candle: candle}
 }
 
-func (t *TraceRecorder) LogIndicatorCall(cctx strategies.Context, name string, params map[string]any, value float64) {
-	if t == nil {
+// LogIndicatorCall receives every value the ind.* closure actually pushed
+// back to Lua (luaReturnAsValues), not just the first - a single-return
+// indicator (rsi, ema, ...) auto-plots one line under its bare name exactly
+// as before; a multi-return indicator (bollinger, macd, stoch, ...) auto-
+// plots ONE line per returned value, named "<indicator>.<sublabel>" via
+// multiIndicatorSubLabels below, so e.g. ind.bollinger(20, 2) draws
+// bollinger.upper/bollinger.mid/bollinger.lower as three distinct series
+// instead of collapsing to a single (upper-band-only) line.
+func (t *TraceRecorder) LogIndicatorCall(cctx strategies.Context, name string, params map[string]any, values []float64) {
+	if t == nil || len(values) == 0 {
 		return
 	}
-	t.indicators = append(t.indicators, IndicatorCall{Name: name, Params: params, Value: value})
+	t.indicators = append(t.indicators, IndicatorCall{Name: name, Params: params, Value: values[0]})
 
-	// Auto-plot fallback: every indicator the script actually calls (ind.rsi,
-	// ind.sma, ...) shows on the chart automatically, using the same
-	// per-name checkbox toggle plot() already gets - the operator no longer
-	// has to remember a matching plot() call for each indicator they use,
-	// and an indicator the script never calls never appears (no dead RSI
-	// line left over from an earlier version of the script). An explicit
-	// plot() call under the exact same name always wins over this (see
-	// Record()): this is a fallback for indicators the script computes but
-	// doesn't bother plotting itself, not an override of intentional
-	// plot() calls (e.g. a script that plots a smoothed/offset version of
-	// the raw indicator value under the same name).
-	color, ok := t.resolvePlotSlot(name)
+	labels := multiIndicatorSubLabels[name]
+	if len(labels) != len(values) {
+		// Single-return indicator (or a name/arity we don't have a sub-label
+		// mapping for) - plot under the bare name, first value only, same as
+		// the original single-value behavior.
+		t.autoPlotValue(name, values[0])
+		return
+	}
+	for i, label := range labels {
+		t.autoPlotValue(name+"."+label, values[i])
+	}
+}
+
+// autoPlotValue is the auto-plot fallback shared by every LogIndicatorCall
+// sub-line: every indicator (or indicator sub-line) the script actually
+// calls (ind.rsi, ind.bollinger, ...) shows on the chart automatically,
+// using the same per-name checkbox toggle plot() already gets - the
+// operator no longer has to remember a matching plot() call for each
+// indicator they use, and an indicator the script never calls never appears
+// (no dead RSI line left over from an earlier version of the script). An
+// explicit plot() call under the exact same name always wins over this (see
+// Record()): this is a fallback for indicators the script computes but
+// doesn't bother plotting itself, not an override of intentional plot()
+// calls (e.g. a script that plots a smoothed/offset version of the raw
+// indicator value under the same name).
+func (t *TraceRecorder) autoPlotValue(plotName string, value float64) {
+	color, ok := t.resolvePlotSlot(plotName)
 	if !ok {
 		return
 	}
 	if t.autoPlots == nil {
 		t.autoPlots = make(map[string]PlotPoint)
 	}
-	if _, seen := t.autoPlots[name]; !seen {
-		t.autoPlotOrder = append(t.autoPlotOrder, name)
+	if _, seen := t.autoPlots[plotName]; !seen {
+		t.autoPlotOrder = append(t.autoPlotOrder, plotName)
 	}
-	// Last call wins if the same bare indicator name is called more than
+	// Last call wins if the same indicator (sub-)name is called more than
 	// once this cycle with different params (e.g. two different RSI
-	// periods) - an accepted simplification, same spirit as
-	// luaReturnAsValue's "first value only" for multi-return indicators.
-	// A script that wants both visible distinctly should plot() them under
-	// different names itself.
-	t.autoPlots[name] = PlotPoint{Name: name, Value: value, Color: color, Overlay: overlayIndicators[name]}
+	// periods) - a script that wants both visible distinctly should plot()
+	// them under different names itself.
+	t.autoPlots[plotName] = PlotPoint{Name: plotName, Value: value, Color: color, Overlay: overlayIndicators[plotName]}
 }
 
-// overlayIndicators names the ind.* functions (indicators.go) whose values
-// share the candles' own price scale - a moving average or band sits right
-// on top of the candles on a real trading platform, unlike an oscillator
-// (RSI, MACD, ATR) whose 0-100/unbounded range would otherwise squash onto
-// or distort the price pane's autoscale. Drives LogIndicatorCall's auto-plot
-// pane placement (see PlotPoint.Overlay) - keep in sync with indicators.go's
-// bindIndicators if a new price-scale indicator (e.g. VWAP) is added there.
+// multiIndicatorSubLabels maps a multi-return ind.* name to the labels used
+// for its individual auto-plot lines, in the exact order its closure pushes
+// Lua return values (see indicators.go's bindIndicators) - keep these two
+// files in sync if a multi-return indicator's closure changes its push
+// order or a new multi-return indicator is added.
+var multiIndicatorSubLabels = map[string][]string{
+	"bollinger":   {"upper", "mid", "lower"},
+	"macd":        {"macd", "signal", "hist"},
+	"macdext":     {"macd", "signal", "hist"},
+	"macdfix":     {"macd", "signal", "hist"},
+	"mama":        {"mama", "fama"},
+	"aroon":       {"down", "up"},
+	"stoch":       {"k", "d"},
+	"stochf":      {"k", "d"},
+	"stochrsi":    {"k", "d"},
+	"htphasor":    {"inphase", "quadrature"},
+	"htsine":      {"sine", "leadsine"},
+	"minmax":      {"min", "max"},
+	"minmaxindex": {"minidx", "maxidx"},
+}
+
+// overlayIndicators names every ind.* auto-plot line (bare name for a
+// single-return indicator, "<name>.<sublabel>" for a multi-return one, see
+// multiIndicatorSubLabels) whose values share the candles' own price scale -
+// a moving average or band sits right on top of the candles on a real
+// trading platform, unlike an oscillator (RSI, MACD, ATR) whose
+// 0-100/unbounded range would otherwise squash onto or distort the price
+// pane's autoscale. Drives LogIndicatorCall's auto-plot pane placement (see
+// PlotPoint.Overlay) - keep in sync with indicators.go's bindIndicators if a
+// new price-scale indicator is added there. Everything NOT listed here
+// defaults to false (oscillator pane), which is correct for every
+// bounded/ratio/index-valued indicator (rsi, macd.*, stoch.*, adx, obv,
+// maxindex, minmaxindex.*, ...).
 var overlayIndicators = map[string]bool{
-	"sma":       true,
-	"ema":       true,
-	"bollinger": true,
+	"sma":             true,
+	"ema":             true,
+	"dema":            true,
+	"tema":            true,
+	"trima":           true,
+	"wma":             true,
+	"kama":            true,
+	"t3":              true,
+	"ma":              true,
+	"httrendline":     true,
+	"midpoint":        true,
+	"midprice":        true,
+	"sar":             true,
+	"sarext":          true,
+	"avgprice":        true,
+	"medprice":        true,
+	"typprice":        true,
+	"wclprice":        true,
+	"linearreg":       true,
+	"tsf":             true,
+	"max":             true,
+	"min":             true,
+	"bollinger.upper": true,
+	"bollinger.mid":   true,
+	"bollinger.lower": true,
+	"mama.mama":       true,
+	"mama.fama":       true,
+	"minmax.min":      true,
+	"minmax.max":      true,
 }
 
 func (t *TraceRecorder) LogEntry(label string, value any) {

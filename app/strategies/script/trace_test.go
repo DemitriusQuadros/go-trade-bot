@@ -18,7 +18,7 @@ import (
 // never appears at all.
 func TestTraceRecorder_LogIndicatorCall_AutoPlots(t *testing.T) {
 	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, 27.5)
+	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, []float64{27.5})
 
 	out := rec.Record()
 	require.Len(t, out.Plots, 1)
@@ -32,6 +32,50 @@ func TestTraceRecorder_LogIndicatorCall_AutoPlots(t *testing.T) {
 	}
 }
 
+// TestTraceRecorder_LogIndicatorCall_MultiReturnAutoPlotsAllLines verifies
+// the fix for a multi-return indicator (e.g. ind.bollinger) collapsing to a
+// single auto-plotted line: every value the Lua closure returns must show
+// up as its own named, colored, correctly-paned Plots entry.
+func TestTraceRecorder_LogIndicatorCall_MultiReturnAutoPlotsAllLines(t *testing.T) {
+	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
+	rec.LogIndicatorCall(strategies.Context{}, "bollinger", map[string]any{"arg1": 20.0, "arg2": 2.0}, []float64{110.0, 100.0, 90.0})
+
+	out := rec.Record()
+	require.Len(t, out.Plots, 3)
+
+	byName := map[string]PlotPoint{}
+	for _, p := range out.Plots {
+		byName[p.Name] = p
+	}
+
+	upper, ok := byName["bollinger.upper"]
+	require.True(t, ok, "expected bollinger.upper in Plots")
+	assert.Equal(t, 110.0, upper.Value)
+	assert.True(t, upper.Overlay, "bollinger bands share the price pane")
+	assert.NotEmpty(t, upper.Color)
+
+	mid, ok := byName["bollinger.mid"]
+	require.True(t, ok, "expected bollinger.mid in Plots")
+	assert.Equal(t, 100.0, mid.Value)
+	assert.True(t, mid.Overlay)
+
+	lower, ok := byName["bollinger.lower"]
+	require.True(t, ok, "expected bollinger.lower in Plots")
+	assert.Equal(t, 90.0, lower.Value)
+	assert.True(t, lower.Overlay)
+
+	// A different multi-return indicator's sub-lines must stay on the
+	// oscillator pane (macd is not price-scale), distinguishing overlay
+	// classification per sub-line, not just per top-level indicator name.
+	rec2 := NewTraceRecorder(time.Now(), exchange.Candle{})
+	rec2.LogIndicatorCall(strategies.Context{}, "macd", map[string]any{"arg1": 12.0, "arg2": 26.0, "arg3": 9.0}, []float64{1.5, 1.2, 0.3})
+	out2 := rec2.Record()
+	require.Len(t, out2.Plots, 3)
+	for _, p := range out2.Plots {
+		assert.False(t, p.Overlay, "macd sub-lines are oscillator-pane, not overlay: %s", p.Name)
+	}
+}
+
 // TestTraceRecorder_LogPlot_OverridesAutoPlot verifies an explicit plot()
 // call under the same name as an ind.* call wins - the auto-plot fallback
 // is suppressed, and no duplicate same-name point is emitted (which would
@@ -39,7 +83,7 @@ func TestTraceRecorder_LogIndicatorCall_AutoPlots(t *testing.T) {
 // series per timestamp).
 func TestTraceRecorder_LogPlot_OverridesAutoPlot(t *testing.T) {
 	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, 27.5)
+	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, []float64{27.5})
 	rec.LogPlot("rsi", 99.9, "", false)
 
 	out := rec.Record()
@@ -54,8 +98,8 @@ func TestTraceRecorder_LogPlot_OverridesAutoPlot(t *testing.T) {
 // same-name points for the same timestamp.
 func TestTraceRecorder_LogIndicatorCall_LastCallWinsPerCycle(t *testing.T) {
 	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, 20.0)
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 21.0}, 45.0)
+	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, []float64{20.0})
+	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 21.0}, []float64{45.0})
 
 	out := rec.Record()
 	require.Len(t, out.Plots, 1)
@@ -70,7 +114,7 @@ func TestTraceRecorder_PlotCap_SharedBetweenAutoAndExplicit(t *testing.T) {
 	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
 	names := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"}
 	for _, n := range names {
-		rec.LogIndicatorCall(strategies.Context{}, n, nil, 1.0)
+		rec.LogIndicatorCall(strategies.Context{}, n, nil, []float64{1.0})
 	}
 	// A 13th distinct name, this time via explicit plot() - must be refused.
 	rec.LogPlot("m", 2.0, "", false)
