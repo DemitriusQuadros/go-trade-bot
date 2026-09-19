@@ -300,6 +300,7 @@ func orderResultFromCreate(res *binance.CreateOrderResponse) OrderResult {
 		Status:        mapBinanceStatus(res.Status),
 		ExecutedQty:   executedQty,
 		AvgFillPrice:  avgPrice,
+		FilledAt:      time.UnixMilli(res.TransactTime).UTC(),
 	}
 }
 
@@ -313,6 +314,7 @@ func orderResultFromOrder(res *binance.Order) OrderResult {
 		Status:        mapBinanceStatus(res.Status),
 		ExecutedQty:   executedQty,
 		AvgFillPrice:  avgPrice,
+		FilledAt:      time.UnixMilli(res.UpdateTime).UTC(),
 	}
 }
 

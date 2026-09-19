@@ -169,6 +169,15 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 	fillPrice := result.AvgFillPrice
 	spentAmount := float32(filledQty * fillPrice)
 
+	// result.FilledAt carries the exchange/engine's own notion of "now" (real
+	// fill time live, simulated candle time in a backtest) - time.Now() here
+	// would stamp every backtest trade with today's wall-clock date instead of
+	// the date it actually occurred in simulated history.
+	filledAt := result.FilledAt
+	if filledAt.IsZero() {
+		filledAt = time.Now()
+	}
+
 	stopLossOrderID, stopLossPrice := s.submitStopLoss(ctx, e, ordinal, filledQty, fillPrice)
 
 	var slPrice float32
@@ -180,8 +189,8 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		Symbol:     e.Symbol,
 		Status:     entities.Open,
 		StrategyID: e.StrategyID,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		CreatedAt:  filledAt,
+		UpdatedAt:  filledAt,
 		Orders: []entities.Order{
 			{
 				BrokerOrderID:   result.BrokerOrderID,
@@ -197,8 +206,8 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 				Leverage:        0,
 				ExecutedQty:     float32(filledQty),
 				IsClosing:       false,
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
+				CreatedAt:       filledAt,
+				UpdatedAt:       filledAt,
 			},
 		},
 	}
@@ -343,10 +352,15 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	exitPrice := float32(result.AvgFillPrice)
 	exitReason := exitReasonOrDefault(e.ExitReason)
 
+	exitFilledAt := result.FilledAt
+	if exitFilledAt.IsZero() {
+		exitFilledAt = time.Now()
+	}
+
 	openSignal.Status = entities.SignalStatus(entities.Closed)
 	openSignal.Orders[0].ExitPrice = exitPrice
 	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
-	openSignal.Orders[0].UpdatedAt = time.Now()
+	openSignal.Orders[0].UpdatedAt = exitFilledAt
 	openSignal.Orders[0].IsClosing = true
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
 	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
@@ -398,10 +412,15 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 
 	exitPrice := float32(stopResult.AvgFillPrice)
 
+	exitFilledAt := stopResult.FilledAt
+	if exitFilledAt.IsZero() {
+		exitFilledAt = time.Now()
+	}
+
 	openSignal.Status = entities.SignalStatus(entities.Closed)
 	openSignal.Orders[0].ExitPrice = exitPrice
 	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
-	openSignal.Orders[0].UpdatedAt = time.Now()
+	openSignal.Orders[0].UpdatedAt = exitFilledAt
 	openSignal.Orders[0].IsClosing = true
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
 	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)

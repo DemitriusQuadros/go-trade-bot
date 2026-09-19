@@ -65,16 +65,10 @@ export function EquityCurveChart({
 
     const sortedData = [...points].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
-    // Backend note: equity-curve points are timestamped from trade
-    // EntryTime/ExitTime, which for a backtest currently derive from the
-    // Order row's DB CreatedAt/UpdatedAt (real wall-clock insert time), not
-    // the simulated historical candle time - a backtest replaying months of
-    // data in seconds of real time can produce several points within the
-    // same wall-clock second. lightweight-charts requires strictly
-    // ascending, non-repeating times, so collapse same-second duplicates
-    // here (keep the last/most-recent value for that second) rather than
-    // crash - this is a defensive frontend guard, not a fix for the
-    // underlying timestamp source.
+    // lightweight-charts requires strictly ascending, non-repeating times -
+    // two trades filled within the same wall-clock second (e.g. a sub-minute
+    // timeframe backtest) would otherwise crash setData, so same-second
+    // points are collapsed here (keeping the last value for that second).
     const bySecond = new Map<number, number>();
     for (const p of sortedData) {
       const sec = Math.floor(new Date(p.time).getTime() / 1000);
@@ -85,6 +79,7 @@ export function EquityCurveChart({
       .map(([time, value]) => ({ time: time as any, value }));
 
     lineSeries.setData(dedupedData);
+    chart.timeScale().fitContent();
 
     if (startingBalance !== undefined) {
       lineSeries.createPriceLine({

@@ -55,6 +55,7 @@ export function PnlHistoryChart({
       value: p.profit,
       color: p.profit >= 0 ? '#22c55e' : '#ef4444',
     })));
+    chart.timeScale().fitContent();
 
     const handleResize = () => {
       if (chartContainerRef.current) {

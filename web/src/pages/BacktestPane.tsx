@@ -91,14 +91,15 @@ export function BacktestPane() {
 
   const handleExportCSV = () => {
     if (!run || !run.trade_log || !Array.isArray(run.trade_log)) return;
-    const headers = ['Timestamp', 'Action', 'Price', 'Quantity', 'PnL', 'Reason'];
+    const headers = ['Entry Time', 'Exit Time', 'Entry Price', 'Exit Price', 'Quantity', 'Profit', 'Exit Reason'];
     const rows = run.trade_log.map((t) => [
-      t.timestamp || '',
-      t.action || '',
-      t.price || '',
+      t.entry_time || '',
+      t.exit_time || '',
+      t.entry_price || '',
+      t.exit_price || '',
       t.quantity || '',
-      t.pnl || '',
-      `"${(t.reason || '').replace(/"/g, '""')}"`,
+      t.profit || '',
+      `"${(t.exit_reason || '').replace(/"/g, '""')}"`,
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -229,7 +230,7 @@ export function BacktestPane() {
               href={api.getReportUrl(run.id)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-green-500 hover:text-blue-300 flex items-center gap-1 font-medium"
+              className="text-xs text-green-500 hover:text-green-300 flex items-center gap-1 font-medium"
             >
               <span>Open in new tab</span>
               <ExternalLink className="w-3 h-3" />
@@ -324,19 +325,22 @@ export function BacktestPane() {
                   <thead className="sticky top-0 bg-green-950/60">
                     <tr>
                       <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Time
+                        Entry
                       </th>
                       <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Action
+                        Exit
                       </th>
                       <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Price
+                        Entry Price
+                      </th>
+                      <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                        Exit Price
                       </th>
                       <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
                         Qty
                       </th>
                       <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
-                        PnL
+                        Profit
                       </th>
                       <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
                         Reason
@@ -345,51 +349,44 @@ export function BacktestPane() {
                   </thead>
                   <tbody>
                     {run.trade_log.map((trade, idx) => {
-                      const isProfit = (trade.pnl || 0) >= 0;
-                      const isBuy = trade.action?.toLowerCase() === 'buy';
-                      const isSell = trade.action?.toLowerCase() === 'sell';
+                      const isProfit = (trade.profit || 0) >= 0;
+                      const formatTs = (ts: string) =>
+                        ts
+                          ? new Date(ts).toLocaleString(undefined, {
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—';
                       return (
                         <tr key={idx} className="border-t border-green-950/40 hover:bg-green-950/10">
                           <td className="px-2 py-1.5 text-green-700 font-mono whitespace-nowrap">
-                            {trade.timestamp
-                              ? new Date(trade.timestamp).toLocaleString(undefined, {
-                                  month: '2-digit',
-                                  day: '2-digit',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '—'}
+                            {formatTs(trade.entry_time)}
                           </td>
-                          <td className="px-2 py-1.5 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border ${
-                                isBuy
-                                  ? 'bg-green-900/40 text-green-300 border-green-700/40'
-                                  : isSell
-                                  ? 'bg-red-900/40 text-red-300 border-red-700/40'
-                                  : 'bg-blue-900/40 text-blue-300 border-blue-700/40'
-                              }`}
-                            >
-                              {trade.action}
-                            </span>
+                          <td className="px-2 py-1.5 text-green-700 font-mono whitespace-nowrap">
+                            {formatTs(trade.exit_time)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            ${Number(trade.price || 0).toFixed(2)}
+                            ${Number(trade.entry_price || 0).toFixed(2)}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
+                            ${Number(trade.exit_price || 0).toFixed(2)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
                             {Number(trade.quantity || 0).toFixed(4)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            {trade.pnl !== undefined ? (
+                            {trade.profit !== undefined ? (
                               <span className={`font-semibold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {isProfit ? '+' : ''}${Number(trade.pnl).toFixed(2)}
+                                {isProfit ? '+' : ''}${Number(trade.profit).toFixed(2)}
                               </span>
                             ) : (
                               '—'
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-green-700 max-w-[200px] truncate" title={trade.reason || ''}>
-                            {trade.reason || '—'}
+                          <td className="px-2 py-1.5 text-green-700 max-w-[200px] truncate" title={trade.exit_reason || ''}>
+                            {trade.exit_reason || '—'}
                           </td>
                         </tr>
                       );

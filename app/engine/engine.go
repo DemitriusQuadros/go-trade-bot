@@ -59,6 +59,17 @@ type Engine struct {
 	Notifier      notifier.NotificationSender
 	Cache         memcache.Cache
 	Metrics       *metrics.MetricsCollector
+
+	// Timeframe overrides dbStrategy.GetBrokerInterval() for candle/indicator
+	// fetching in buildContext when set. Live/dryrun engines leave this empty
+	// so buildContext keeps using the strategy's own configured Cycle
+	// interval. Backtest/walk-forward/optimize engines (app/usecase/backtest)
+	// set it to the timeframe the run was actually requested at - otherwise
+	// buildContext silently fetches candles at the strategy's live Cycle
+	// interval instead, which can have little or no historical depth even
+	// when the requested backtest timeframe has full coverage, truncating
+	// most cycles to "no candles returned" without surfacing an error.
+	Timeframe string
 }
 
 func NewEngine(
@@ -134,7 +145,12 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 // the two engine-owned Config entries (_cache, _24h_volume), and the
 // resolved IndicatorProvider/ExecutionMode.
 func (e *Engine) buildContext(ctx context.Context, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode) (strategies.Context, error) {
-	candles, err := e.Exchange.ListKline(ctx, symbol, dbStrategy.GetBrokerInterval(), candleWindow)
+	interval := dbStrategy.GetBrokerInterval()
+	if e.Timeframe != "" {
+		interval = e.Timeframe
+	}
+
+	candles, err := e.Exchange.ListKline(ctx, symbol, interval, candleWindow)
 	if err != nil {
 		return strategies.Context{}, fmt.Errorf("failed to fetch candles for %s: %w", symbol, err)
 	}
@@ -190,7 +206,7 @@ func (e *Engine) buildContext(ctx context.Context, dbStrategy entities.Strategy,
 		Config:     config,
 		Indicators: e.Indicators,
 		Price:      candles[len(candles)-1].Close,
-		Timeframe:  dbStrategy.GetBrokerInterval(),
+		Timeframe:  interval,
 		Symbol:     symbol,
 		Mode:       mode,
 	}, nil

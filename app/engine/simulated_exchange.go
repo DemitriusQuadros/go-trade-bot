@@ -110,6 +110,7 @@ func (e *SimulatedFillExchange) SetSimulatedTime(t time.Time, currentCandle exch
 				Status:        exchange.OrderStatusFilled,
 				ExecutedQty:   p.Request.Quantity,
 				AvgFillPrice:  fillPrice,
+				FilledAt:      e.currentSimTime,
 			}
 			e.executedOrders[p.OrderID] = res
 			if p.Request.ClientOrderID != "" {
@@ -133,6 +134,7 @@ func (e *SimulatedFillExchange) SetSimulatedTime(t time.Time, currentCandle exch
 					Status:        exchange.OrderStatusFilled,
 					ExecutedQty:   order.Quantity,
 					AvgFillPrice:  fillPrice,
+					FilledAt:      e.currentSimTime,
 				}
 				e.executedOrders[order.OrderID] = res
 				if order.ClientOrderID != "" {
@@ -173,6 +175,7 @@ func (e *SimulatedFillExchange) PlaceOrder(ctx context.Context, order exchange.P
 			ClientOrderID: clientOrderID,
 			Status:        exchange.OrderStatusNew,
 			ExecutedQty:   0,
+			FilledAt:      e.currentSimTime,
 		}, nil
 	}
 
@@ -188,6 +191,7 @@ func (e *SimulatedFillExchange) PlaceOrder(ctx context.Context, order exchange.P
 			ClientOrderID: clientOrderID,
 			Status:        exchange.OrderStatusNew,
 			ExecutedQty:   0,
+			FilledAt:      e.currentSimTime,
 		}, nil
 	}
 
@@ -207,6 +211,7 @@ func (e *SimulatedFillExchange) PlaceOrder(ctx context.Context, order exchange.P
 		Status:        exchange.OrderStatusFilled,
 		ExecutedQty:   order.Quantity,
 		AvgFillPrice:  fillPrice,
+		FilledAt:      e.currentSimTime,
 	}
 	e.executedOrders[orderID] = res
 	e.executedOrders[clientOrderID] = res

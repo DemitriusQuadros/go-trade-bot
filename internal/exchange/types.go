@@ -52,7 +52,8 @@ type OrderResult struct {
 	ClientOrderID string
 	Status        OrderStatus
 	ExecutedQty   float64
-	AvgFillPrice  float64 // 0 when Status == NEW (resting stop not yet triggered)
+	AvgFillPrice  float64   // 0 when Status == NEW (resting stop not yet triggered)
+	FilledAt      time.Time // real exchange fill/update time (live), or simulated candle time (backtest) - never wall-clock time.Now()
 }
 
 // Candle is the ACL's OHLCV shape, used everywhere a kline crosses a package

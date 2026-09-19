@@ -535,6 +535,13 @@ func (u *BacktestUseCase) executeReplay(
 	cache := memcache.NewInMemoryCache()
 
 	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache, nil)
+	// Without this, buildContext fetches candles at the strategy's own live
+	// Cycle interval (e.g. 15m) instead of the timeframe this backtest was
+	// requested at (e.g. 1h) - historical depth for the strategy's Cycle
+	// interval is often far thinner than for the requested timeframe, which
+	// silently truncates most cycles to "no candles returned" with no error
+	// surfaced to the caller.
+	eng.Timeframe = timeframe
 	stratImpl, ok := strategies.Get(strat.StrategyName, strat)
 	if !ok {
 		return nil, fmt.Errorf("strategy %q not registered", strat.StrategyName)
