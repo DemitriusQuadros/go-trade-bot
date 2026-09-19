@@ -25,6 +25,7 @@ import {
   SquareCode,
   Columns2,
   ChartCandlestick,
+  RefreshCw,
 } from 'lucide-react';
 
 // Editor tab content vs. the chart: which gets the screen. 'split' is the
@@ -195,6 +196,17 @@ export interface WorkbenchContext {
   strategyId: number | null;
   consoleLog: ConsoleEntry[];
   appendConsoleEntry: (e: Omit<ConsoleEntry, 'id' | 'timestamp'>) => void;
+  // Lets the active pane (Editor/REPL - each owns its own symbol/timeframe/
+  // source and knows how to re-run its own preview) plug into the shared
+  // chart's zoom-out-triggers-more-history behavior without WorkbenchShell
+  // needing to know anything about fast-rerun/REPL request shapes. The pane
+  // registers a "widen my window and re-run" callback on mount/update; the
+  // chart calls it via SharedPriceChart's onNeedMoreHistory.
+  registerLoadMoreHistory: (handler: (() => void) | null) => void;
+  loadingMoreHistory: boolean;
+  setLoadingMoreHistory: (loading: boolean) => void;
+  hasMoreHistory: boolean;
+  setHasMoreHistory: (has: boolean) => void;
 }
 
 interface WorkbenchShellProps {
@@ -233,6 +245,25 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   const [selectedTraceRecord, setSelectedTraceRecord] = useState<TraceRecord | null>(null);
   const [contentView, setContentView] = usePersistedEnum<ContentView>('workbench.contentView', CONTENT_VIEWS, 'split');
   const [consolePanelOpen, setConsolePanelOpen] = usePersistedOpen('workbench.consolePanelOpen', true);
+
+  // Zoom-out-loads-more-history wiring (see WorkbenchContext.registerLoadMoreHistory
+  // doc comment above): a ref, not state, since the handler itself never needs
+  // to trigger a re-render - only loadingMoreHistory/hasMoreHistory do.
+  const loadMoreHistoryHandlerRef = useRef<(() => void) | null>(null);
+  const registerLoadMoreHistory = useCallback((handler: (() => void) | null) => {
+    loadMoreHistoryHandlerRef.current = handler;
+  }, []);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+
+  // Switching tabs (Editor/REPL/Backtest) points the chart at a different
+  // trace source with its own window - stale "no more history" state from
+  // whichever pane was active before would otherwise wrongly suppress
+  // loading in the newly-active one.
+  useEffect(() => {
+    setHasMoreHistory(true);
+    setLoadingMoreHistory(false);
+  }, [activeTraceSource]);
 
   // Split-view divider: persisted width in px, dragged via handleDividerDown
   // below. `liveSplitWidth` mirrors it during an active drag (updated on
@@ -316,8 +347,26 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       strategyId,
       consoleLog,
       appendConsoleEntry,
+      registerLoadMoreHistory,
+      loadingMoreHistory,
+      setLoadingMoreHistory,
+      hasMoreHistory,
+      setHasMoreHistory,
     }),
-    [draft, activeTraceSource, editorTrace, replTrace, replResult, backtestRun, strategyId, consoleLog, appendConsoleEntry]
+    [
+      draft,
+      activeTraceSource,
+      editorTrace,
+      replTrace,
+      replResult,
+      backtestRun,
+      strategyId,
+      consoleLog,
+      appendConsoleEntry,
+      registerLoadMoreHistory,
+      loadingMoreHistory,
+      hasMoreHistory,
+    ]
   );
 
   const activeTrace = useMemo(() => {
@@ -496,11 +545,35 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               the side/bottom panels don't claim via SharedPriceChart's fill
               mode (ResizeObserver-driven). */}
           <div className={contentView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
-            <div className="px-1 text-[11px] text-green-700 uppercase font-semibold tracking-wide shrink-0">
-              Shared Price Chart ({activeTraceSource})
+            <div className="px-1 text-[11px] text-green-700 uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
+              <span>Shared Price Chart ({activeTraceSource})</span>
+              {loadingMoreHistory && (
+                <span className="normal-case text-green-500 font-normal tracking-normal flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Loading more history...
+                </span>
+              )}
+              {!loadingMoreHistory && !hasMoreHistory && activeTraceSource !== 'backtest' && (
+                <span className="normal-case text-green-800 font-normal tracking-normal">
+                  (full available history loaded)
+                </span>
+              )}
             </div>
             <div className="flex-1 min-h-0">
-              <SharedPriceChart trace={activeTrace} fill onScrub={setSelectedTraceRecord} symbol={draft.previewSymbol} />
+              <SharedPriceChart
+                trace={activeTrace}
+                fill
+                onScrub={setSelectedTraceRecord}
+                symbol={draft.previewSymbol}
+                // A finished backtest already holds its full requested date
+                // range (no bounded preview window to widen), so only wire
+                // the zoom-out-loads-more-history behavior for Editor/REPL.
+                onNeedMoreHistory={
+                  activeTraceSource !== 'backtest' ? () => loadMoreHistoryHandlerRef.current?.() : undefined
+                }
+                loadingMoreHistory={loadingMoreHistory}
+                hasMoreHistory={hasMoreHistory}
+              />
             </div>
             <div className="shrink-0 max-h-40 overflow-y-auto">
               <CollapsibleSection id="workbench.tickDetail" title="Tick Detail" defaultOpen>

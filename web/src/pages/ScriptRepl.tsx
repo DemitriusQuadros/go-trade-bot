@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
 import { luaAutocompletion } from '@/lib/luaCompletions';
-import { useRepl } from '@/hooks/queries';
+import { api } from '@/api/client';
 import { TraceRecord } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { SharedPriceChart } from '@/components/charts/SharedPriceChart';
@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ReplHistoryEntry {
@@ -54,21 +55,32 @@ export function ScriptRepl() {
   // Client-side execution history
   const [history, setHistory] = useState<ReplHistoryEntry[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
-  const replMutation = useRepl();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  // Cancels any still-in-flight request from a prior keystroke.
+  const abortRef = useRef<AbortController | null>(null);
+  const handleEvaluateRef = useRef<() => void>(() => {});
 
   const handleEvaluate = async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsEvaluating(true);
     setActiveError(null);
     setActiveNoData(false);
     setSelectedTraceRecord(null);
 
     try {
-      const res = await replMutation.mutateAsync({
-        source,
-        symbol: symbol.trim().toUpperCase(),
-        timeframe,
-        window_candles: windowCandles,
-      });
+      const res = await api.repl(
+        {
+          source,
+          symbol: symbol.trim().toUpperCase(),
+          timeframe,
+          window_candles: windowCandles,
+        },
+        { signal: controller.signal }
+      );
 
       const entryId = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const isNoData = res.data_available === false;
@@ -90,12 +102,36 @@ export function ScriptRepl() {
       setActiveTrace(res.trace || []);
       setActiveError(res.error || null);
       setActiveNoData(isNoData);
+      setIsEvaluating(false);
     } catch (err: any) {
+      if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
       setActiveError(err.message || 'Failed to evaluate snippet');
       setActiveTrace([]);
       setActiveResult(null);
       setActiveNoData(false);
+      setIsEvaluating(false);
     }
+  };
+  handleEvaluateRef.current = handleEvaluate;
+
+  // Auto-runs 600ms after the snippet/symbol/timeframe stop changing (same
+  // debounce as the Strategy Editor's fast-rerun preview) instead of
+  // requiring an explicit "Evaluate" click first - fires once on mount too,
+  // which is what populates the chart/candles as soon as this page loads.
+  // windowCandles is deliberately excluded so a manual window-size edit
+  // still needs an explicit re-run.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => handleEvaluateRef.current(), 600);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, symbol, timeframe]);
+
+  const handleEvaluateNow = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    handleEvaluate();
   };
 
   const handleSelectHistoryEntry = (entry: ReplHistoryEntry) => {
@@ -126,6 +162,13 @@ export function ScriptRepl() {
           <p className="text-xs text-green-700 mt-1">
             Interactive Lua scratchpad — evaluate indicator calls and expressions against live market windows without persisting.
           </p>
+          <div
+            className="flex items-center gap-1.5 text-[11px] text-green-700 mt-1"
+            title="Auto-runs 600ms after you stop typing or change symbol/timeframe"
+          >
+            <Terminal className="w-3.5 h-3.5 text-green-500 shrink-0" />
+            <span>Auto-runs on edit</span>
+          </div>
         </div>
 
         {/* Controls: Symbol, Timeframe, Window */}
@@ -169,12 +212,12 @@ export function ScriptRepl() {
           </div>
 
           <button
-            onClick={handleEvaluate}
-            disabled={replMutation.isPending}
+            onClick={handleEvaluateNow}
+            disabled={isEvaluating}
             className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{replMutation.isPending ? 'Evaluating...' : 'Evaluate'}</span>
+            <span>{isEvaluating ? 'Evaluating...' : 'Re-run now'}</span>
           </button>
         </div>
       </div>
@@ -251,7 +294,7 @@ export function ScriptRepl() {
 
             {history.length === 0 ? (
               <div className="p-4 text-center text-xs text-green-800 bg-black/40 rounded">
-                No evaluation history yet. Click "Evaluate" above to test snippets.
+                No evaluation history yet. Type a snippet above - it runs automatically.
               </div>
             ) : (
               <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -276,11 +319,11 @@ export function ScriptRepl() {
                         ) : (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                         )}
-                        <span className="font-mono truncate text-[11px] text-slate-300">
+                        <span className="font-mono truncate text-[11px] text-green-300">
                           {entry.source.split('\n')[0] || '(empty)'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] shrink-0 text-slate-500">
+                      <div className="flex items-center gap-2 text-[10px] shrink-0 text-green-700">
                         <span>{entry.symbol}</span>
                         <span>{entry.timeframe}</span>
                         <span>{entry.timestamp}</span>
@@ -314,7 +357,7 @@ export function ScriptRepl() {
                     : String(activeResult)}
                 </pre>
               ) : (
-                <span className="text-slate-600 text-xs italic">
+                <span className="text-green-800 text-xs italic">
                   {activeError ? 'Evaluation terminated with error' : 'No result returned (expression yielded nil)'}
                 </span>
               )}

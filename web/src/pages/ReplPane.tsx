@@ -1,15 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
 import { luaAutocompletion } from '@/lib/luaCompletions';
-import { useRepl } from '@/hooks/queries';
+import { api } from '@/api/client';
 import { TraceRecord } from '@/api/types';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { WorkbenchContext } from './WorkbenchShell';
-import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
+import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw, RefreshCw } from 'lucide-react';
 
 interface ReplHistoryEntry {
   id: string;
@@ -28,6 +28,11 @@ return ind.rsi(14)
 `;
 
 const TIMEFRAME_OPTIONS = ['1m', '5m', '15m', '1h', '4h', '1d'];
+
+// Same cap as EditorPane.tsx's fast-rerun preview - kept identical so
+// zooming out behaves consistently regardless of which pane's chart the
+// operator is looking at.
+const MAX_WINDOW_CANDLES = 2000;
 
 export function ReplPane() {
   const ctx = useOutletContext<WorkbenchContext>();
@@ -49,8 +54,18 @@ export function ReplPane() {
 
   const [history, setHistory] = useState<ReplHistoryEntry[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
-  const replMutation = useRepl();
+  // Mirrors windowCandles for synchronous reads inside handleLoadMoreHistory
+  // (needs the widened value immediately, before the next render commits it).
+  const windowCandlesRef = useRef(windowCandles);
+  windowCandlesRef.current = windowCandles;
+  const handleEvaluateRef = useRef<() => void>(() => {});
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  // Cancels any still-in-flight request from a prior keystroke, same as
+  // EditorPane.tsx's fast-rerun preview - api.repl (unlike the old useRepl()
+  // mutation hook this replaced) takes an AbortSignal for exactly this.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setActiveTraceSource('repl');
@@ -58,16 +73,23 @@ export function ReplPane() {
   }, []);
 
   const handleEvaluate = async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsEvaluating(true);
     setActiveError(null);
     setActiveNoData(false);
 
     try {
-      const res = await replMutation.mutateAsync({
-        source,
-        symbol: symbol.trim().toUpperCase(),
-        timeframe,
-        window_candles: windowCandles,
-      });
+      const res = await api.repl(
+        {
+          source,
+          symbol: symbol.trim().toUpperCase(),
+          timeframe,
+          window_candles: windowCandlesRef.current,
+        },
+        { signal: controller.signal }
+      );
 
       const entryId = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const isNoData = res.data_available === false;
@@ -89,6 +111,13 @@ export function ReplPane() {
       setReplTrace(res.trace || []);
       setActiveError(res.error || null);
       setActiveNoData(isNoData);
+      setIsEvaluating(false);
+      ctx.setLoadingMoreHistory(false);
+      // The REPL response has no candle count to compare against the
+      // requested window (unlike fast-rerun's one-record-per-candle trace,
+      // EvalREPL always returns at most one) - data_available===false is the
+      // only signal that there's nothing further back to fetch.
+      ctx.setHasMoreHistory(!isNoData && windowCandlesRef.current < MAX_WINDOW_CANDLES);
 
       if (res.error) {
         appendConsoleEntry({ source: 'repl', kind: 'error', message: res.error });
@@ -99,14 +128,75 @@ export function ReplPane() {
         );
       }
     } catch (err: any) {
+      if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
       const message = err.message || 'Failed to evaluate snippet';
       setActiveError(message);
       setReplTrace([]);
       setReplResult(null);
       setActiveNoData(false);
+      setIsEvaluating(false);
+      ctx.setLoadingMoreHistory(false);
       appendConsoleEntry({ source: 'repl', kind: 'error', message });
     }
   };
+  handleEvaluateRef.current = handleEvaluate;
+
+  // Auto-runs 600ms after the snippet/symbol/timeframe stop changing - same
+  // debounce as EditorPane.tsx's fast-rerun preview, so the chart and Return
+  // Value panel populate on their own instead of requiring an explicit
+  // "Evaluate" click first. Fires once on mount too (an empty deps-diff is
+  // still a "change" the first time), which is what makes the chart/candles
+  // load automatically as soon as the REPL tab opens. windowCandles is
+  // deliberately excluded - zoom-out-triggered widenings re-run immediately
+  // via handleLoadMoreHistory below, not through this debounce.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => handleEvaluateRef.current(), 600);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, symbol, timeframe]);
+
+  const handleEvaluateNow = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    handleEvaluate();
+  };
+
+  // Zoom-out-loads-more-history (SharedPriceChart's onNeedMoreHistory, wired
+  // through WorkbenchShell's registerLoadMoreHistory below): doubles the
+  // window and re-evaluates the same snippet immediately.
+  const handleLoadMoreHistory = () => {
+    if (windowCandlesRef.current >= MAX_WINDOW_CANDLES) {
+      ctx.setHasMoreHistory(false);
+      return;
+    }
+    const nextWindow = Math.min(windowCandlesRef.current * 2, MAX_WINDOW_CANDLES);
+    windowCandlesRef.current = nextWindow;
+    setWindowCandles(nextWindow);
+    ctx.setLoadingMoreHistory(true);
+    handleEvaluateRef.current();
+  };
+  const handleLoadMoreHistoryRef = useRef(handleLoadMoreHistory);
+  handleLoadMoreHistoryRef.current = handleLoadMoreHistory;
+
+  // Only the actually-visible pane's handler should be wired into the
+  // shared chart - see EditorPane.tsx's identical registration effect.
+  useEffect(() => {
+    if (ctx.activeTraceSource !== 'repl') return;
+    ctx.registerLoadMoreHistory(() => handleLoadMoreHistoryRef.current());
+    return () => ctx.registerLoadMoreHistory(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.activeTraceSource]);
+
+  // A different symbol/timeframe has an unrelated history depth - start its
+  // window back at the default rather than carrying over a size only
+  // meaningful for the previous symbol.
+  useEffect(() => {
+    windowCandlesRef.current = 100;
+    setWindowCandles(100);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, timeframe]);
 
   const handleSelectHistoryEntry = (entry: ReplHistoryEntry) => {
     setSelectedHistoryId(entry.id);
@@ -134,14 +224,24 @@ export function ReplPane() {
           subtitle="(expression or hook)"
           defaultOpen
           action={
-            <button
-              onClick={() => setSource(DEFAULT_SNIPPET)}
-              className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
-              title="Reset to template"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reset</span>
-            </button>
+            <>
+              <button
+                onClick={handleEvaluateNow}
+                className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+                title="Re-run now (skip the debounce wait)"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Re-run now</span>
+              </button>
+              <button
+                onClick={() => setSource(DEFAULT_SNIPPET)}
+                className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+                title="Reset to template"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Reset</span>
+              </button>
+            </>
           }
         >
           <div className="text-sm bg-black/95 -m-3">
@@ -156,6 +256,11 @@ export function ReplPane() {
             />
           </div>
         </CollapsibleSection>
+
+        <div className="flex items-center gap-1.5 text-[11px] text-green-700" title="Auto-runs 600ms after you stop typing or change symbol/timeframe">
+          <Terminal className="w-3.5 h-3.5 text-green-500 shrink-0" />
+          <span>Auto-runs on edit</span>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded border border-green-900/40">
@@ -190,16 +295,17 @@ export function ReplPane() {
               onChange={(e) => setWindowCandles(Number(e.target.value) || 100)}
               className="bg-black text-green-300 font-bold px-2 py-1 rounded border border-green-950 text-xs w-16 focus:outline-none focus:border-green-600"
               min={10}
-              max={500}
+              max={MAX_WINDOW_CANDLES}
+              title="Also grows automatically when you zoom/pan out on the chart"
             />
           </div>
           <button
-            onClick={handleEvaluate}
-            disabled={replMutation.isPending}
+            onClick={handleEvaluateNow}
+            disabled={isEvaluating}
             className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{replMutation.isPending ? 'Evaluating...' : 'Evaluate'}</span>
+            <span>{isEvaluating ? 'Evaluating...' : 'Evaluate'}</span>
           </button>
         </div>
 
@@ -226,7 +332,7 @@ export function ReplPane() {
         <CollapsibleSection id="workbench.repl.history" title="Execution History" subtitle={`(${history.length})`} defaultOpen>
           {history.length === 0 ? (
             <div className="p-4 text-center text-xs text-green-800 bg-black/40 rounded">
-              No evaluation history yet. Click "Evaluate" above to test snippets.
+              No evaluation history yet. Type a snippet above - it runs automatically.
             </div>
           ) : (
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -251,11 +357,11 @@ export function ReplPane() {
                       ) : (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                       )}
-                      <span className="font-mono truncate text-[11px] text-slate-300">
+                      <span className="font-mono truncate text-[11px] text-green-300">
                         {entry.source.split('\n')[0] || '(empty)'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] shrink-0 text-slate-500">
+                    <div className="flex items-center gap-2 text-[10px] shrink-0 text-green-700">
                       <span>{entry.symbol}</span>
                       <span>{entry.timeframe}</span>
                       <span>{entry.timestamp}</span>
@@ -285,7 +391,7 @@ export function ReplPane() {
                 {typeof ctx.replResult === 'object' ? JSON.stringify(ctx.replResult, null, 2) : String(ctx.replResult)}
               </pre>
             ) : (
-              <span className="text-slate-600 text-xs italic">
+              <span className="text-green-800 text-xs italic">
                 {activeError ? 'Evaluation terminated with error' : 'No result (expression yielded nil)'}
               </span>
             )}

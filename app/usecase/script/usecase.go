@@ -133,7 +133,28 @@ func (u *UseCase) Eval(ctx context.Context, req EvalRequest) (EvalResponse, erro
 		return resp, nil
 	}
 
-	return EvalResponse{Result: result, Trace: []strategyscript.TraceRecord{trace.Record()}, DataAvailable: dataAvailable}, nil
+	return EvalResponse{Result: result, Trace: buildEvalTrace(candles, trace.Record()), DataAvailable: dataAvailable}, nil
+}
+
+// buildEvalTrace turns the snippet's single evaluated TraceRecord (whatever
+// ind.*/debug.log/plot calls it made, computed once against the FULL fetched
+// window as cctx.Candles - Eval evaluates the snippet exactly once, unlike
+// FastRerun's per-candle hook replay) into one TraceRecord per fetched
+// candle, so the frontend candlestick chart can render the whole requested
+// window instead of a single bar. Every earlier candle gets a bare
+// TraceRecord (Candle only, no indicators/plots - the snippet never ran
+// against it); only the last one carries the snippet's actual
+// Indicators/Log/Plots/Signal, since that's the only cycle that really ran.
+func buildEvalTrace(candles []exchange.Candle, last strategyscript.TraceRecord) []strategyscript.TraceRecord {
+	if len(candles) == 0 {
+		return []strategyscript.TraceRecord{last}
+	}
+	trace := make([]strategyscript.TraceRecord, len(candles))
+	for i, c := range candles {
+		trace[i] = strategyscript.TraceRecord{Timestamp: c.OpenTime, Candle: c}
+	}
+	trace[len(trace)-1] = last
+	return trace
 }
 
 // FastRerun replays an unsaved script over a candle window (live if EndTime is

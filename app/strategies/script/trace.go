@@ -58,6 +58,16 @@ type PlotPoint struct {
 	Name  string  `json:"name"`
 	Value float64 `json:"value"`
 	Color string  `json:"color"` // always populated on the wire - resolved before Record(), never empty
+	// Overlay says this point belongs on the price pane itself (a moving
+	// average, Bollinger band, VWAP - anything on the same y-scale as
+	// price), like TradingView draws them over the candles, rather than in
+	// the separate oscillator pane below (RSI, MACD, ATR - a different
+	// scale that would otherwise get squashed onto/distort the price
+	// autoscale). Auto-plots (see LogIndicatorCall) set this from a
+	// hardcoded indicator-name classification; an explicit plot() call
+	// defaults to false (oscillator pane) unless the script passes true as
+	// its 4th argument.
+	Overlay bool `json:"overlay"`
 }
 
 // traceCandleJSON is the wire shape for TraceRecord.Candle - matches
@@ -184,12 +194,18 @@ func (t *TraceRecord) UnmarshalJSON(data []byte) error {
 // no-op (nil-check before every method call), so passing nil costs nothing
 // beyond the branch.
 type TraceRecorder struct {
-	timestamp     time.Time
-	candle        exchange.Candle
-	indicators    []IndicatorCall
-	signal        *strategies.Signal
-	log           []LogEntry
-	plots         []PlotPoint
+	timestamp  time.Time
+	candle     exchange.Candle
+	indicators []IndicatorCall
+	signal     *strategies.Signal
+	log        []LogEntry
+	plots      []PlotPoint
+	// autoPlots/autoPlotOrder back LogIndicatorCall's auto-plot fallback
+	// (see its doc comment): one point per distinct ind.* name actually
+	// called this cycle, last-value-wins if called more than once, emitted
+	// in Record() only for names the script didn't already plot() itself.
+	autoPlots     map[string]PlotPoint
+	autoPlotOrder []string
 	plotNamesSeen map[string]int // name -> palette slot index, first-seen order
 	plotCapHit    bool           // true once the 13th distinct name has been dropped, guards the one-time warning
 }
@@ -221,6 +237,48 @@ func (t *TraceRecorder) LogIndicatorCall(cctx strategies.Context, name string, p
 		return
 	}
 	t.indicators = append(t.indicators, IndicatorCall{Name: name, Params: params, Value: value})
+
+	// Auto-plot fallback: every indicator the script actually calls (ind.rsi,
+	// ind.sma, ...) shows on the chart automatically, using the same
+	// per-name checkbox toggle plot() already gets - the operator no longer
+	// has to remember a matching plot() call for each indicator they use,
+	// and an indicator the script never calls never appears (no dead RSI
+	// line left over from an earlier version of the script). An explicit
+	// plot() call under the exact same name always wins over this (see
+	// Record()): this is a fallback for indicators the script computes but
+	// doesn't bother plotting itself, not an override of intentional
+	// plot() calls (e.g. a script that plots a smoothed/offset version of
+	// the raw indicator value under the same name).
+	color, ok := t.resolvePlotSlot(name)
+	if !ok {
+		return
+	}
+	if t.autoPlots == nil {
+		t.autoPlots = make(map[string]PlotPoint)
+	}
+	if _, seen := t.autoPlots[name]; !seen {
+		t.autoPlotOrder = append(t.autoPlotOrder, name)
+	}
+	// Last call wins if the same bare indicator name is called more than
+	// once this cycle with different params (e.g. two different RSI
+	// periods) - an accepted simplification, same spirit as
+	// luaReturnAsValue's "first value only" for multi-return indicators.
+	// A script that wants both visible distinctly should plot() them under
+	// different names itself.
+	t.autoPlots[name] = PlotPoint{Name: name, Value: value, Color: color, Overlay: overlayIndicators[name]}
+}
+
+// overlayIndicators names the ind.* functions (indicators.go) whose values
+// share the candles' own price scale - a moving average or band sits right
+// on top of the candles on a real trading platform, unlike an oscillator
+// (RSI, MACD, ATR) whose 0-100/unbounded range would otherwise squash onto
+// or distort the price pane's autoscale. Drives LogIndicatorCall's auto-plot
+// pane placement (see PlotPoint.Overlay) - keep in sync with indicators.go's
+// bindIndicators if a new price-scale indicator (e.g. VWAP) is added there.
+var overlayIndicators = map[string]bool{
+	"sma":       true,
+	"ema":       true,
+	"bollinger": true,
 }
 
 func (t *TraceRecorder) LogEntry(label string, value any) {
@@ -237,18 +295,15 @@ func (t *TraceRecorder) SetSignal(s *strategies.Signal) {
 	t.signal = s
 }
 
-// LogPlot records one plot(name, value, color) call. Enforces the
-// maxDistinctPlotNames soft cap (ADR-026): the first 12 distinct names seen
-// this cycle are recorded normally (every call, not deduplicated); the 13th+
-// distinct name is silently dropped except for a one-time
-// "plot_limit_exceeded" log entry (guarded by plotCapHit so it doesn't spam
-// on every subsequent over-cap call within the same cycle). An empty color
-// resolves to the palette slot assigned to name's first-seen order, so a
-// PlotPoint's Color is always non-empty on the wire.
-func (t *TraceRecorder) LogPlot(name string, value float64, color string) {
-	if t == nil {
-		return
-	}
+// resolvePlotSlot assigns (or reuses) name's color-palette slot. Shared by
+// LogPlot (explicit plot() calls) and LogIndicatorCall (the ind.* auto-plot
+// fallback) so the two never disagree on a name's color and both count
+// against the same maxDistinctPlotNames budget (ADR-026): the first 12
+// distinct names seen this cycle - from either source - get a slot; the
+// 13th+ is refused (ok=false) with a one-time "plot_limit_exceeded" log
+// entry (guarded by plotCapHit so it doesn't spam on every subsequent
+// over-cap call within the same cycle).
+func (t *TraceRecorder) resolvePlotSlot(name string) (color string, ok bool) {
 	if t.plotNamesSeen == nil {
 		t.plotNamesSeen = make(map[string]int)
 	}
@@ -259,17 +314,47 @@ func (t *TraceRecorder) LogPlot(name string, value float64, color string) {
 				t.plotCapHit = true
 				t.log = append(t.log, LogEntry{Label: "plot_limit_exceeded", Value: name})
 			}
-			return // 13th+ distinct name this cycle: silently dropped, per ADR-026
+			return "", false // 13th+ distinct name this cycle: silently dropped, per ADR-026
 		}
 		slot = len(t.plotNamesSeen)
 		t.plotNamesSeen[name] = slot
 	}
-	if color == "" {
-		color = plotColorPalette[slot%len(plotColorPalette)]
+	return plotColorPalette[slot%len(plotColorPalette)], true
+}
+
+// LogPlot records one plot(name, value, color, overlay) call - every call,
+// not deduplicated (unlike LogIndicatorCall's auto-plot map, an explicit
+// plot() call is the script author's own choice to make, so it is never
+// second-guessed here). An empty color resolves via resolvePlotSlot, so a
+// PlotPoint's Color is always non-empty on the wire. overlay puts the point
+// on the price pane instead of the oscillator pane - see PlotPoint.Overlay.
+func (t *TraceRecorder) LogPlot(name string, value float64, color string, overlay bool) {
+	if t == nil {
+		return
 	}
-	t.plots = append(t.plots, PlotPoint{Name: name, Value: value, Color: color})
+	slotColor, ok := t.resolvePlotSlot(name)
+	if !ok {
+		return
+	}
+	if color == "" {
+		color = slotColor
+	}
+	t.plots = append(t.plots, PlotPoint{Name: name, Value: value, Color: color, Overlay: overlay})
 }
 
 func (t *TraceRecorder) Record() TraceRecord {
-	return TraceRecord{Timestamp: t.timestamp, Candle: t.candle, Indicators: t.indicators, Signal: t.signal, Log: t.log, Plots: t.plots}
+	plots := t.plots
+	if len(t.autoPlots) > 0 {
+		explicitlyPlotted := make(map[string]bool, len(t.plots))
+		for _, p := range t.plots {
+			explicitlyPlotted[p.Name] = true
+		}
+		for _, name := range t.autoPlotOrder {
+			if explicitlyPlotted[name] {
+				continue // the script's own plot() call under this name wins
+			}
+			plots = append(plots, t.autoPlots[name])
+		}
+	}
+	return TraceRecord{Timestamp: t.timestamp, Candle: t.candle, Indicators: t.indicators, Signal: t.signal, Log: t.log, Plots: plots}
 }

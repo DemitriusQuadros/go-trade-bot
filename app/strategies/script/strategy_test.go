@@ -146,8 +146,8 @@ func (s *stubExchange) SubscribeKline(context.Context, string, string) (<-chan e
 // stubSignalUC reports "no open position" so the engine runs the entry path.
 type stubSignalUC struct{}
 
-func (s *stubSignalUC) GenerateBuySignal(signalusecase.EntrySignal) error  { return nil }
-func (s *stubSignalUC) GenerateSellSignal(signalusecase.ExitSignal) error  { return nil }
+func (s *stubSignalUC) GenerateBuySignal(signalusecase.EntrySignal) error { return nil }
+func (s *stubSignalUC) GenerateSellSignal(signalusecase.ExitSignal) error { return nil }
 func (s *stubSignalUC) GetOpenSignal(string, uint) (entities.Signal, error) {
 	return entities.Signal{}, nil
 }

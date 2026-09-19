@@ -12,7 +12,6 @@ import {
   ImportScheduleCreateRequest,
   ImportSchedule,
   FastRerunRequest,
-  ReplRequest,
 } from '@/api/types';
 
 export const QUERY_KEYS = {
@@ -240,13 +239,6 @@ export function useFastRerun() {
     mutationFn: (req: FastRerunRequest) => api.fastRerun(req),
   });
 }
-
-export function useRepl() {
-  return useMutation({
-    mutationFn: (req: ReplRequest) => api.repl(req),
-  });
-}
-
 
 export const useScriptVersions = (id: number) => {
   return useQuery({

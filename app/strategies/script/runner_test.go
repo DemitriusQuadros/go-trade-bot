@@ -19,7 +19,7 @@ import (
 // needs a real (non-nil) collector shares this single instance.
 var (
 	testCollectorOnce sync.Once
-	testCollector      *metrics.MetricsCollector
+	testCollector     *metrics.MetricsCollector
 )
 
 func newTestCollector() *metrics.MetricsCollector {

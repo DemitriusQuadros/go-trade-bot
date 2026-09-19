@@ -17,9 +17,9 @@ import (
 // package-internal interface, so a small fake is the house-appropriate
 // substitute here).
 type fakeScriptStateRepo struct {
-	getRow   entities.ScriptState
-	getErr   error
-	upserted *entities.ScriptState
+	getRow    entities.ScriptState
+	getErr    error
+	upserted  *entities.ScriptState
 	upsertErr error
 }
 

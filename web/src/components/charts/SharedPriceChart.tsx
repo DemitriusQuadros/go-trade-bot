@@ -25,6 +25,21 @@ interface SharedPriceChartProps {
   // is ignored in this mode; it remains the fixed-px behavior otherwise,
   // for callers like ScriptRepl.tsx that aren't in a fill layout.
   fill?: boolean;
+  // Called when the user actively zooms out / pans toward the left edge of
+  // the currently-loaded candle window (REPL/editor fast-rerun previews are
+  // bounded to a few hundred candles, unlike a full backtest run) - the
+  // caller is expected to widen its requested window and re-run the
+  // strategy, which flows back here as a bigger `trace` array. Omit for
+  // callers (e.g. a finished backtest) that already hold their full range.
+  onNeedMoreHistory?: () => void;
+  // True while the caller's onNeedMoreHistory fetch is in flight - suppresses
+  // re-firing on every subsequent pan/zoom tick until new (bigger) data
+  // actually lands, instead of queuing a burst of redundant requests.
+  loadingMoreHistory?: boolean;
+  // False once the caller has discovered there's no more history to fetch
+  // (the last widen attempt came back with fewer candles than requested) -
+  // stops the edge-detection from firing forever once the data floor is hit.
+  hasMoreHistory?: boolean;
 }
 
 // Below this many screen pixels per bar, a marker's qty text is dropped in
@@ -32,6 +47,11 @@ interface SharedPriceChartProps {
 // labels once bars get too dense to fit them without overlapping. Recomputed
 // on every zoom/pan via subscribeVisibleLogicalRangeChange (Effect 4).
 const MIN_PX_PER_BAR_FOR_MARKER_TEXT = 28;
+
+// How close (in bar count) the visible range's left edge has to get to bar 0
+// (the oldest loaded candle) before a zoom-out/pan-left gesture counts as
+// "reaching for history that isn't loaded yet" and triggers onNeedMoreHistory.
+const LOAD_MORE_EDGE_BARS = 15;
 
 // Verbatim copy of the old ExecutionTraceChart.tsx's array - kept manually
 // synchronized with plotColorPalette in app/strategies/script/trace.go.
@@ -52,17 +72,49 @@ function toChartTimeSeconds(r: TraceRecord): number {
   return Math.floor(new Date(r.timestamp).getTime() / 1000);
 }
 
-export function SharedPriceChart({ trace, height = 600, onScrub, symbol, fill = false }: SharedPriceChartProps) {
+export function SharedPriceChart({
+  trace,
+  height = 600,
+  onScrub,
+  symbol,
+  fill = false,
+  onNeedMoreHistory,
+  loadingMoreHistory = false,
+  hasMoreHistory = true,
+}: SharedPriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const plotSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  // Tracks which pane each name's series currently lives in (0 = price pane,
+  // 1 = oscillator pane) - a name's overlay-ness is expected to be stable
+  // within one script, but if it ever flips (e.g. the operator edits a
+  // plot() call's overlay argument mid-session), the series has to be torn
+  // down and recreated in the new pane since lightweight-charts has no
+  // "move an existing series to a different pane" API.
+  const plotPaneRef = useRef<Map<string, boolean>>(new Map());
   const [hiddenPlots, setHiddenPlots] = useState<Set<string>>(new Set());
   const [legendRecord, setLegendRecord] = useState<TraceRecord | null>(null);
   const [showMarkerText, setShowMarkerText] = useState(true);
   const onScrubRef = useRef(onScrub);
   onScrubRef.current = onScrub;
+
+  // Refs, not state: read inside the subscribeVisibleLogicalRangeChange
+  // callback registered once in Effect 1, so these always see the latest
+  // values without re-subscribing the chart's zoom/pan listener.
+  const onNeedMoreHistoryRef = useRef(onNeedMoreHistory);
+  onNeedMoreHistoryRef.current = onNeedMoreHistory;
+  const loadingMoreHistoryRef = useRef(loadingMoreHistory);
+  loadingMoreHistoryRef.current = loadingMoreHistory;
+  const hasMoreHistoryRef = useRef(hasMoreHistory);
+  hasMoreHistoryRef.current = hasMoreHistory;
+  // Previous visible-range left edge, to tell "actively panning/zooming
+  // toward bar 0" apart from "the chart's initial auto-fit already starts
+  // near bar 0" (a short trace fits entirely on load, which must NOT
+  // immediately trigger a history fetch before the user has touched the
+  // chart at all).
+  const prevRangeFromRef = useRef<number | null>(null);
 
   const recordsWithCandle = useMemo(() => {
     if (!trace || trace.length === 0) return [];
@@ -193,6 +245,22 @@ export function SharedPriceChart({ trace, height = 600, onScrub, symbol, fill = 
       if (barsInView <= 0) return;
       const pxPerBar = containerRef.current.clientWidth / barsInView;
       setShowMarkerText(pxPerBar >= MIN_PX_PER_BAR_FOR_MARKER_TEXT);
+
+      // Load-more-history edge detection: only fires on an actual leftward
+      // zoom-out/pan (range.from decreasing), never on the chart's own
+      // initial auto-fit render (prevRangeFromRef starts null, so the first
+      // callback just records a baseline instead of firing).
+      const prevFrom = prevRangeFromRef.current;
+      prevRangeFromRef.current = range.from;
+      if (
+        prevFrom !== null &&
+        range.from < prevFrom &&
+        range.from <= LOAD_MORE_EDGE_BARS &&
+        hasMoreHistoryRef.current &&
+        !loadingMoreHistoryRef.current
+      ) {
+        onNeedMoreHistoryRef.current?.();
+      }
     });
 
     // ResizeObserver instead of a window 'resize' listener - a fill-mode
@@ -217,6 +285,7 @@ export function SharedPriceChart({ trace, height = 600, onScrub, symbol, fill = 
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       plotSeriesRef.current.clear();
+      plotPaneRef.current.clear();
     };
   }, []);
 
@@ -330,22 +399,40 @@ export function SharedPriceChart({ trace, height = 600, onScrub, symbol, fill = 
     // with a NEW trace array reuses the same ISeriesApi object for a name
     // that was already present, rather than removing and re-adding it.
     const namesInNewTrace = new Set<string>();
-    trace.forEach((r) => r.plots?.forEach((p) => namesInNewTrace.add(p.name)));
+    const overlayForName = new Map<string, boolean>();
+    trace.forEach((r) =>
+      r.plots?.forEach((p) => {
+        namesInNewTrace.add(p.name);
+        if (!overlayForName.has(p.name)) overlayForName.set(p.name, !!p.overlay);
+      })
+    );
 
     for (const [name, series] of plotSeriesRef.current) {
       if (!namesInNewTrace.has(name)) {
         chart.removeSeries(series);
         plotSeriesRef.current.delete(name);
+        plotPaneRef.current.delete(name);
       }
     }
 
-    // plot() series (RSI, MACD, etc.) get a dedicated SECOND PANE below the
-    // candles - a real sub-chart with its own border and price scale, not
-    // an overlay squeezed into a margin of the price pane. Value ranges
-    // like RSI's 0-100 never touch the candle series' autoscale this way.
-    // paneIndex 1 is created implicitly by addSeries on first use.
+    // Overlay plots (moving averages, bands - see PlotPoint.Overlay) render
+    // directly on the PRICE PANE (paneIndex 0), like TradingView draws a
+    // moving average over the candles. Everything else (RSI, MACD, ...) gets
+    // a dedicated SECOND PANE below the candles - a real sub-chart with its
+    // own border and price scale, not squeezed into a margin of the price
+    // pane, so an oscillator's 0-100/unbounded range never touches the
+    // candle series' autoscale. paneIndex 1 is created implicitly by
+    // addSeries on first use.
     namesInNewTrace.forEach((name) => {
+      const overlay = overlayForName.get(name) ?? false;
       let series = plotSeriesRef.current.get(name);
+      if (series && plotPaneRef.current.get(name) !== overlay) {
+        // This name's overlay-ness changed since the series was created -
+        // no "move to a different pane" API, so tear down and recreate.
+        chart.removeSeries(series);
+        plotSeriesRef.current.delete(name);
+        series = undefined;
+      }
       if (!series) {
         series = chart.addSeries(
           LineSeries,
@@ -355,16 +442,22 @@ export function SharedPriceChart({ trace, height = 600, onScrub, symbol, fill = 
             title: name,
             visible: !hiddenPlots.has(name),
           },
-          1
+          overlay ? 0 : 1
         );
         plotSeriesRef.current.set(name, series);
+        plotPaneRef.current.set(name, overlay);
       }
+      // lightweight-charts requires strictly one point per series per
+      // timestamp - a record with more than one plot() call under this name
+      // (or an auto-plot the backend didn't dedupe) would otherwise crash
+      // setData, so keep only the last matching point per record.
       const lineData = recordsWithCandle
-        .flatMap((r) =>
-          (r.plots || [])
-            .filter((p) => p.name === name)
-            .map((p) => ({ time: toChartTimeSeconds(r) as Time, value: p.value }))
-        );
+        .map((r) => {
+          const matches = (r.plots || []).filter((p) => p.name === name);
+          if (matches.length === 0) return null;
+          return { time: toChartTimeSeconds(r) as Time, value: matches[matches.length - 1].value };
+        })
+        .filter((p): p is { time: Time; value: number } => p !== null);
       series.setData(lineData);
     });
 

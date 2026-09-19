@@ -34,6 +34,35 @@ func TestStrategyRepository_Save(t *testing.T) {
 	assert.Equal(t, "Test Strategy", result.Name)
 }
 
+// TestStrategyRepository_Update_PreservesCreatedAt guards against a real
+// regression: GORM's Save() on a struct with a non-zero primary key issues a
+// full-column UPDATE, including zero-valued fields - since the PUT
+// /strategy/{id} DTO never carries created_at, every edit was silently
+// wiping the row's real creation date to 0001-01-01 before Update() started
+// Omit-ing CreatedAt.
+func TestStrategyRepository_Update_PreservesCreatedAt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&entities.Strategy{}))
+
+	repo := repository.NewStrategyRepository(db)
+
+	saved, err := repo.Save(context.Background(), entities.Strategy{Name: "Original"})
+	require.NoError(t, err)
+	require.False(t, saved.CreatedAt.IsZero(), "sanity check: Save() must set CreatedAt on insert")
+	originalCreatedAt := saved.CreatedAt
+
+	// Mirrors what the PUT /strategy/{id} handler actually builds (DTO.ToModel()):
+	// every field the DTO carries, but never CreatedAt.
+	update := entities.Strategy{ID: saved.ID, Name: "Edited"}
+	require.NoError(t, repo.Update(context.Background(), update))
+
+	got, err := repo.GetByID(context.Background(), saved.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Edited", got.Name, "the actual edit must still persist")
+	assert.WithinDuration(t, originalCreatedAt, got.CreatedAt, time.Second, "CreatedAt must survive an update untouched")
+}
+
 func setupPerformanceDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)

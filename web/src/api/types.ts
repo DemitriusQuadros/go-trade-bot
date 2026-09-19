@@ -166,12 +166,14 @@ export interface BacktestRun {
   equity_curve: EquityPoint[];
   execution_trace?: TraceRecord[];
   trade_log?: Array<{
-    timestamp: string;
-    action: string;
-    price: number;
+    entry_time: string;
+    exit_time: string;
+    entry_price: number;
+    exit_price: number;
     quantity: number;
-    pnl?: number;
-    reason?: string;
+    profit: number;
+    exit_reason?: string;
+    symbol: string;
   }>;
   created_at: string;
 }
@@ -448,6 +450,7 @@ export interface TracePlotPoint {
   name: string;
   value: number;
   color: string;
+  overlay: boolean;
 }
 
 export interface TraceRecord {

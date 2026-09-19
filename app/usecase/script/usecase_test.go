@@ -111,16 +111,40 @@ func TestEval_RSIMatchesDirectProvider(t *testing.T) {
 	require.True(t, ok, "result should be a number, got %T", resp.Result)
 	assert.InDelta(t, expected, got, 1e-9)
 
-	// The trace must contain the rsi indicator call.
-	require.Len(t, resp.Trace, 1)
+	// The trace now carries one record per fetched candle (backend-09: so the
+	// chart can render the whole requested window, not just the one cycle
+	// the snippet actually ran against) - only the LAST record carries the
+	// rsi indicator call, since Eval evaluates the snippet exactly once.
+	require.Len(t, resp.Trace, len(candles))
 	sawRSI := false
-	for _, ind := range resp.Trace[0].Indicators {
+	for _, ind := range resp.Trace[len(resp.Trace)-1].Indicators {
 		if ind.Name == "rsi" {
 			sawRSI = true
 			assert.InDelta(t, expected, ind.Value, 1e-9)
 		}
 	}
 	assert.True(t, sawRSI, "trace should contain the rsi call")
+}
+
+// --- backend-09: Eval's trace spans the full fetched window, not one record -
+
+func TestEval_TraceSpansFullWindow(t *testing.T) {
+	candles := fixtureCandles("BTCUSDT", 100)
+	live := &spyLiveSource{candles: candles}
+	uc := scriptuc.NewUseCase(live, nil, nil, newRunner())
+
+	resp, err := uc.Eval(context.Background(), scriptuc.EvalRequest{Source: "return ind.rsi(14)", Symbol: "BTCUSDT"})
+	require.NoError(t, err)
+	require.Empty(t, resp.Error)
+	require.Len(t, resp.Trace, len(candles), "one trace record per fetched candle, so the chart can render the whole window")
+
+	for i, r := range resp.Trace {
+		assert.Equal(t, candles[i].OpenTime, r.Timestamp)
+		assert.Equal(t, candles[i].Close, r.Candle.Close)
+		if i < len(resp.Trace)-1 {
+			assert.Empty(t, r.Indicators, "the snippet only ran once, against the last candle - earlier records carry no indicators")
+		}
+	}
 }
 
 // --- AC3: syntactically invalid script --------------------------------------

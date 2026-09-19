@@ -35,8 +35,15 @@ func (r StrategyRepository) GetAll(ctx context.Context) ([]entities.Strategy, er
 	return strategies, err
 }
 
+// Update saves an existing strategy row. CreatedAt is deliberately omitted:
+// the incoming entities.Strategy always carries a zero CreatedAt (the
+// PUT /strategy/{id} DTO has no created_at field - callers only ever set
+// name/description/script_source/etc), and GORM's Save() on a struct with a
+// non-zero primary key issues a full-column UPDATE, including zero-valued
+// fields, unless told otherwise. Without this Omit, every single edit
+// silently wiped the row's real creation date to 0001-01-01.
 func (r StrategyRepository) Update(ctx context.Context, strategy entities.Strategy) error {
-	return r.db.WithContext(ctx).Save(&strategy).Error
+	return r.db.WithContext(ctx).Omit("CreatedAt").Save(&strategy).Error
 }
 
 func (r StrategyRepository) Delete(ctx context.Context, id uint) error {

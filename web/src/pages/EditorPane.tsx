@@ -17,6 +17,17 @@ import { Save, Rocket, CheckCircle2, AlertCircle, Code2, RotateCcw, RefreshCw } 
 
 const LIVE_REFRESH_MS = 5000;
 
+// Fast-rerun's default preview window - matches the engine's own per-cycle
+// candleWindow (app/engine/engine.go) so a preview sees the same history
+// depth a real live/backtest cycle would. Doubled (capped at
+// MAX_WINDOW_CANDLES) each time the user zooms/pans toward the left edge of
+// the chart - see SharedPriceChart's onNeedMoreHistory.
+const DEFAULT_WINDOW_CANDLES = 100;
+// Upper bound on how far a single preview will widen itself: past this, the
+// per-cycle Lua sandbox cost (one hook invocation per candle) starts making
+// the 600ms-debounced auto-run on every keystroke feel sluggish.
+const MAX_WINDOW_CANDLES = 2000;
+
 export function EditorPane() {
   const navigate = useNavigate();
   const ctx = useOutletContext<WorkbenchContext>();
@@ -31,11 +42,18 @@ export function EditorPane() {
   const [errorLine, setErrorLine] = useState<number | undefined>(undefined);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [liveRefresh, setLiveRefresh] = useState(true);
+  const [windowCandles, setWindowCandles] = useState(DEFAULT_WINDOW_CANDLES);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const abortRef = useRef<AbortController | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const runPreviewNowRef = useRef<() => void>(() => {});
+  // Mirrors windowCandles for synchronous reads inside runPreviewNow/
+  // handleLoadMoreHistory closures (React state updates aren't visible
+  // until the next render, but handleLoadMoreHistory needs the widened
+  // value immediately to build the fetch it fires in the same tick).
+  const windowCandlesRef = useRef(windowCandles);
+  windowCandlesRef.current = windowCandles;
 
   useEffect(() => {
     setActiveTraceSource('editor');
@@ -47,6 +65,7 @@ export function EditorPane() {
     const controller = new AbortController();
     abortRef.current = controller;
     const targetSymbol = draft.previewSymbol || draft.symbols[0] || 'BTCUSDT';
+    const requestedWindow = windowCandlesRef.current;
     api
       .fastRerun(
         {
@@ -55,11 +74,12 @@ export function EditorPane() {
           symbol: targetSymbol,
           timeframe: `${draft.cycleMinutes}m`,
           end_time: null,
-          window_candles: 100,
+          window_candles: requestedWindow,
         },
         { signal: controller.signal }
       )
       .then((res) => {
+        ctx.setLoadingMoreHistory(false);
         if (res.error) {
           setPreviewError(res.error);
           setErrorLine(res.error_line);
@@ -69,6 +89,10 @@ export function EditorPane() {
           setPreviewError(null);
           setErrorLine(undefined);
           setEditorTrace(res.trace || []);
+          // Fewer candles came back than requested - the exchange/DB simply
+          // doesn't have any more history for this symbol/timeframe, so
+          // stop the chart's zoom-out edge-detection from firing again.
+          ctx.setHasMoreHistory((res.trace || []).length >= requestedWindow && requestedWindow < MAX_WINDOW_CANDLES);
           // Volume-shaping (frontend-06): only append debug_log entries from
           // the MOST RECENT cycle in this batch, not every cycle - a 100-
           // candle fast-rerun would otherwise flood the console panel with
@@ -85,11 +109,52 @@ export function EditorPane() {
         }
       })
       .catch((err) => {
+        ctx.setLoadingMoreHistory(false);
         if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
         setPreviewError(err.message || 'Preview request failed');
         appendConsoleEntry({ source: 'editor', kind: 'error', message: err.message || 'Preview request failed' });
       });
   };
+
+  // Zoom-out-loads-more-history (SharedPriceChart's onNeedMoreHistory, wired
+  // through WorkbenchShell's registerLoadMoreHistory below): doubles the
+  // preview window and immediately re-runs, rather than waiting for the
+  // 600ms debounce - the user is actively looking at the chart edge, not
+  // mid-keystroke.
+  const handleLoadMoreHistory = () => {
+    if (windowCandlesRef.current >= MAX_WINDOW_CANDLES) {
+      ctx.setHasMoreHistory(false);
+      return;
+    }
+    const nextWindow = Math.min(windowCandlesRef.current * 2, MAX_WINDOW_CANDLES);
+    windowCandlesRef.current = nextWindow;
+    setWindowCandles(nextWindow);
+    ctx.setLoadingMoreHistory(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    runPreviewNowRef.current();
+  };
+  const handleLoadMoreHistoryRef = useRef(handleLoadMoreHistory);
+  handleLoadMoreHistoryRef.current = handleLoadMoreHistory;
+
+  // Only the actually-visible pane's handler should be wired into the
+  // shared chart - Editor/REPL/Backtest are all mounted simultaneously
+  // (WorkbenchShell just CSS-hides the inactive ones), so this re-registers
+  // on every activeTraceSource change rather than once on mount.
+  useEffect(() => {
+    if (ctx.activeTraceSource !== 'editor') return;
+    ctx.registerLoadMoreHistory(() => handleLoadMoreHistoryRef.current());
+    return () => ctx.registerLoadMoreHistory(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.activeTraceSource]);
+
+  // A different symbol/timeframe/strategy has an unrelated history depth -
+  // start its preview back at the default window rather than carrying over
+  // a size the user only widened for the PREVIOUS symbol's chart.
+  useEffect(() => {
+    windowCandlesRef.current = DEFAULT_WINDOW_CANDLES;
+    setWindowCandles(DEFAULT_WINDOW_CANDLES);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.previewSymbol, draft.cycleMinutes, draft.strategyId]);
 
   // 600ms-debounced auto-run, cancelled (not queued) on each new keystroke.
   useEffect(() => {
@@ -209,6 +274,26 @@ export function EditorPane() {
     }
   };
 
+  // Cmd/Ctrl+S saves without changing status: for an existing strategy that's
+  // exactly the "Save Changes" button; for a brand new one (not yet
+  // persisted) it mirrors "Save as Draft" - the shortcut should never be
+  // what silently flips a strategy into "productive"/live-tradeable, only
+  // the explicit "Save & Enable" button does that.
+  const saveStrategyRef = useRef(saveStrategy);
+  saveStrategyRef.current = saveStrategy;
+  const isEditRef = useRef(isEdit);
+  isEditRef.current = isEdit;
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault(); // stop the browser's own "Save Page As..." dialog
+        saveStrategyRef.current(isEditRef.current ? undefined : 'disabled');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     // h-full flex-col: lets the Lua editor section below (CollapsibleSection
     // fill mode) stretch to use whatever vertical space WorkbenchShell's
@@ -252,6 +337,7 @@ export function EditorPane() {
             <button
               onClick={() => saveStrategy()}
               disabled={updateMutation.isPending}
+              title="Ctrl+S / ⌘S"
               className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
             >
               <Save className="w-3.5 h-3.5" />
@@ -262,6 +348,7 @@ export function EditorPane() {
               <button
                 onClick={() => saveStrategy('disabled')}
                 disabled={createMutation.isPending}
+                title="Ctrl+S / ⌘S"
                 className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
               >
                 <Save className="w-3.5 h-3.5" />
