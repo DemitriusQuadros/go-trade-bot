@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -141,5 +142,48 @@ func TestParseZipCSV_EmptyZipFile(t *testing.T) {
 	_, err := parseZipCSV(buf.Bytes(), "BTCUSDT", "1m")
 	if err == nil {
 		t.Fatal("expected error for zip with no files, got nil")
+	}
+}
+
+// Regression test for a real corruption bug: newer Binance monthly archives
+// express open_time in microseconds instead of milliseconds, with no column
+// or header change to signal it. A raw value that's actually microseconds,
+// naively treated as milliseconds, lands ~1000x too far in the future (this
+// exact case put BTCUSDT/ETHUSDT candles in the year 56000s instead of 2026
+// before normalizeToMillis existed).
+func TestParseZipCSV_MicrosecondOpenTimeIsNormalized(t *testing.T) {
+	wantTime := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	microseconds := wantTime.UnixMicro() // e.g. 1788300800000000 - looks like ms*1000
+
+	csvContent := fmt.Sprintf("%d,100,101,99,100.5,10,0,0,0,0,0,0\n", microseconds)
+	zipBytes := buildZip(t, "data.csv", csvContent)
+
+	candles, err := parseZipCSV(zipBytes, "BTCUSDT", "1h")
+	if err != nil {
+		t.Fatalf("parseZipCSV error: %v", err)
+	}
+	if len(candles) != 1 {
+		t.Fatalf("expected 1 candle, got %d", len(candles))
+	}
+	if !candles[0].OpenTime.Equal(wantTime) {
+		t.Errorf("OpenTime = %v, want %v (microsecond value was not normalized to milliseconds)", candles[0].OpenTime, wantTime)
+	}
+}
+
+func TestNormalizeToMillis(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  int64
+		want int64
+	}{
+		{"plausible milliseconds pass through unchanged", 1700000000000, 1700000000000},
+		{"microsecond value is divided by 1000", 1700000000000000, 1700000000000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeToMillis(tc.raw); got != tc.want {
+				t.Errorf("normalizeToMillis(%d) = %d, want %d", tc.raw, got, tc.want)
+			}
+		})
 	}
 }

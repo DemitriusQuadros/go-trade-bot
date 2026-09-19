@@ -108,12 +108,13 @@ func parseZipCSV(zipBytes []byte, symbol, interval string) ([]entities.Candle, e
 			continue
 		}
 
-		openTimeMs, err := strconv.ParseInt(record[0], 10, 64)
+		openTimeRaw, err := strconv.ParseInt(record[0], 10, 64)
 		if err != nil {
 			// A header row's first field ("open_time") isn't an integer -
 			// skip it rather than treating it as a parse failure.
 			continue
 		}
+		openTimeMs := normalizeToMillis(openTimeRaw)
 		open, err1 := strconv.ParseFloat(record[1], 64)
 		high, err2 := strconv.ParseFloat(record[2], 64)
 		low, err3 := strconv.ParseFloat(record[3], 64)
@@ -136,4 +137,24 @@ func parseZipCSV(zipBytes []byte, symbol, interval string) ([]entities.Candle, e
 	}
 
 	return candles, nil
+}
+
+// maxPlausibleMillis is 2100-01-01 in Unix milliseconds - comfortably past
+// any real candle date, but three orders of magnitude below what the same
+// moment looks like in microseconds. Binance's monthly kline archives
+// switched open_time from milliseconds to microseconds for newer files
+// (confirmed empirically: BTCUSDT/ETHUSDT 1h archives covering 2026 produced
+// open_time values ~1000x too large, landing candles in the year 56000s
+// instead of 2026, before this normalization existed) without any column or
+// header change to signal it - the only way to tell them apart is magnitude.
+const maxPlausibleMillis = 4_102_444_800_000
+
+// normalizeToMillis converts a raw open_time field to Unix milliseconds
+// regardless of whether the source archive expressed it in milliseconds or
+// microseconds.
+func normalizeToMillis(raw int64) int64 {
+	if raw > maxPlausibleMillis {
+		return raw / 1000
+	}
+	return raw
 }
