@@ -261,6 +261,7 @@ func (r *Runner) CallHook(
 	L.SetGlobal("state", stateTable)
 	bindIndicators(L, cctx, trace)
 	bindDebugLog(L, trace)
+	bindPlot(L, trace)
 
 	fn := L.GetGlobal(hookName)
 	if fn == lua.LNil {

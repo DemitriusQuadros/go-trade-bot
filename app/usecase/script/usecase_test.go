@@ -212,3 +212,69 @@ func TestFastRerun_NoEndTimeUsesLiveSource(t *testing.T) {
 	assert.Equal(t, 0, hist.calls, "historical source must not be used when end_time is omitted")
 	assert.Equal(t, 100, live.lastLimit)
 }
+
+// --- backend-02: ErrorLine wiring -------------------------------------------
+
+// AC#2 (repl surface): a genuine runtime error on a known line populates
+// EvalResponse.ErrorLine, and .Error is the extracted message, not the full
+// fmt.Errorf-wrapped original string.
+func TestEval_RuntimeError_PopulatesErrorLine(t *testing.T) {
+	live := &spyLiveSource{candles: fixtureCandles("BTCUSDT", 100)}
+	uc := scriptuc.NewUseCase(live, nil, nil, newRunner())
+
+	src := "local nope = nil\nnope()\n"
+	resp, err := uc.Eval(context.Background(), scriptuc.EvalRequest{Source: src, Symbol: "BTCUSDT"})
+	require.NoError(t, err)
+	require.NotNil(t, resp.ErrorLine)
+	assert.Equal(t, 2, *resp.ErrorLine)
+	assert.NotContains(t, resp.Error, "eval error", "message should be the extracted portion, not the full wrapped string")
+}
+
+// AC#5: an error string ParseLuaError cannot extract a line from (error()
+// called with a table argument) leaves ErrorLine nil/absent while .Error
+// still carries the full original message.
+func TestEval_ErrorWithNoLineNumber_LeavesErrorLineNil(t *testing.T) {
+	live := &spyLiveSource{candles: fixtureCandles("BTCUSDT", 100)}
+	uc := scriptuc.NewUseCase(live, nil, nil, newRunner())
+
+	resp, err := uc.Eval(context.Background(), scriptuc.EvalRequest{Source: "error({code=1})", Symbol: "BTCUSDT"})
+	require.NoError(t, err)
+	assert.Nil(t, resp.ErrorLine)
+	assert.NotEmpty(t, resp.Error)
+}
+
+// AC#1 (fast-rerun surface): a genuine parse error with an extractable line
+// number populates FastRerunResponse.ErrorLine via the Validate pre-check.
+func TestFastRerun_ParseError_PopulatesErrorLine(t *testing.T) {
+	candles := fixtureCandles("BTCUSDT", 100)
+	live := &spyLiveSource{candles: candles}
+	repo := &fakeStrategyRepo{strategy: entities.Strategy{ID: 1, StrategyName: "script"}}
+	uc := scriptuc.NewUseCase(live, nil, repo, newRunner())
+
+	src := "\n\n\n\nfunction should_long(ctx)\n  return + \nend\n"
+	resp, err := uc.FastRerun(context.Background(), scriptuc.FastRerunRequest{
+		StrategyID: 1,
+		Source:     src,
+		Symbol:     "BTCUSDT",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.ErrorLine)
+	assert.Equal(t, 6, *resp.ErrorLine)
+}
+
+// AC#4: an infra-level failure (candle fetch itself fails) is a real Go
+// error, never reaching ParseLuaError - ErrorLine-bearing response is not
+// produced at all in this path.
+func TestEval_InfraFailure_NeverReachesParseLuaError(t *testing.T) {
+	uc := scriptuc.NewUseCase(&erroringLiveSource{}, nil, nil, newRunner())
+
+	resp, err := uc.Eval(context.Background(), scriptuc.EvalRequest{Source: "return 1", Symbol: "BTCUSDT"})
+	require.Error(t, err)
+	assert.Nil(t, resp.ErrorLine)
+}
+
+type erroringLiveSource struct{}
+
+func (e *erroringLiveSource) ListKline(_ context.Context, _, _ string, _ int) ([]exchange.Candle, error) {
+	return nil, assert.AnError
+}

@@ -125,7 +125,12 @@ func (u *UseCase) Eval(ctx context.Context, req EvalRequest) (EvalResponse, erro
 	result, evalErr := u.runner.EvalREPL(replStrategyName, cctx, req.Source, trace)
 	if evalErr != nil {
 		// Script-level error: report via .Error, empty result/trace (AC#3).
-		return EvalResponse{Result: nil, Trace: []strategyscript.TraceRecord{}, Error: evalErr.Error(), DataAvailable: dataAvailable}, nil
+		line, msg, hasLine := strategyscript.ParseLuaError(evalErr)
+		resp := EvalResponse{Result: nil, Trace: []strategyscript.TraceRecord{}, Error: msg, DataAvailable: dataAvailable}
+		if hasLine {
+			resp.ErrorLine = &line
+		}
+		return resp, nil
 	}
 
 	return EvalResponse{Result: result, Trace: []strategyscript.TraceRecord{trace.Record()}, DataAvailable: dataAvailable}, nil
@@ -177,7 +182,12 @@ func (u *UseCase) FastRerun(ctx context.Context, req FastRerunRequest) (FastReru
 	// per-hook runtime errors are failed-closed by ScriptStrategy and do not
 	// surface here.
 	if verr := u.runner.Validate(req.Source); verr != nil {
-		return FastRerunResponse{Trace: []strategyscript.TraceRecord{}, Error: verr.Error(), DataAvailable: dataAvailable}, nil
+		line, msg, hasLine := strategyscript.ParseLuaError(verr)
+		resp := FastRerunResponse{Trace: []strategyscript.TraceRecord{}, Error: msg, DataAvailable: dataAvailable}
+		if hasLine {
+			resp.ErrorLine = &line
+		}
+		return resp, nil
 	}
 
 	strat := strategyscript.NewScriptStrategy(dbStrat, newInMemoryStateStore(), u.runner)

@@ -1,7 +1,7 @@
 import { EditorView } from '@codemirror/view';
 
 // The Hacker Lime theme's CodeMirror override, shared by every script-editing
-// surface (ScriptEditor, ScriptRepl) so it cannot drift between them.
+// surface (EditorPane, ReplPane, ScriptRepl) so it cannot drift between them.
 export const luaEditorDarkTheme = EditorView.theme(
   {
     '&': {

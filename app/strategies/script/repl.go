@@ -41,6 +41,7 @@ func (r *Runner) EvalREPL(strategyName string, cctx strategies.Context, source s
 	L.SetGlobal("state", buildStateTable(L, map[string]interface{}{}))
 	bindIndicators(L, cctx, trace)
 	bindDebugLog(L, trace)
+	bindPlot(L, trace)
 
 	type replResult struct {
 		value interface{}

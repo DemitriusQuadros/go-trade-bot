@@ -37,6 +37,7 @@ type TraceRecord struct {
 	Indicators []IndicatorCall
 	Signal     *strategies.Signal
 	Log        []LogEntry
+	Plots      []PlotPoint
 }
 
 type IndicatorCall struct {
@@ -48,6 +49,15 @@ type IndicatorCall struct {
 type LogEntry struct {
 	Label string `json:"label"`
 	Value any    `json:"value"`
+}
+
+// PlotPoint is authored fresh for the plot() Lua binding (unlike Candle/
+// Signal, it has no frozen upstream Go type to shadow), so it gets json tags
+// directly and needs no traceRecordJSON-style shadow type of its own.
+type PlotPoint struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Color string  `json:"color"` // always populated on the wire - resolved before Record(), never empty
 }
 
 // traceCandleJSON is the wire shape for TraceRecord.Candle - matches
@@ -82,6 +92,7 @@ type traceRecordJSON struct {
 	Indicators []IndicatorCall  `json:"indicators"`
 	Signal     *traceSignalJSON `json:"signal,omitempty"`
 	Log        []LogEntry       `json:"log"`
+	Plots      []PlotPoint      `json:"plots"`
 }
 
 func toOrderJSON(o *strategies.Order) *traceOrderJSON {
@@ -103,12 +114,16 @@ func (t TraceRecord) MarshalJSON() ([]byte, error) {
 		Timestamp:  t.Timestamp,
 		Indicators: t.Indicators,
 		Log:        t.Log,
+		Plots:      t.Plots,
 	}
 	if t.Indicators == nil {
 		out.Indicators = []IndicatorCall{}
 	}
 	if t.Log == nil {
 		out.Log = []LogEntry{}
+	}
+	if t.Plots == nil {
+		out.Plots = []PlotPoint{}
 	}
 	out.Candle = &traceCandleJSON{
 		O: t.Candle.Open,
@@ -137,6 +152,7 @@ func (t *TraceRecord) UnmarshalJSON(data []byte) error {
 	t.Timestamp = in.Timestamp
 	t.Indicators = in.Indicators
 	t.Log = in.Log
+	t.Plots = in.Plots
 	if in.Candle != nil {
 		t.Candle = exchange.Candle{
 			Open:     in.Candle.O,
@@ -168,11 +184,29 @@ func (t *TraceRecord) UnmarshalJSON(data []byte) error {
 // no-op (nil-check before every method call), so passing nil costs nothing
 // beyond the branch.
 type TraceRecorder struct {
-	timestamp  time.Time
-	candle     exchange.Candle
-	indicators []IndicatorCall
-	signal     *strategies.Signal
-	log        []LogEntry
+	timestamp     time.Time
+	candle        exchange.Candle
+	indicators    []IndicatorCall
+	signal        *strategies.Signal
+	log           []LogEntry
+	plots         []PlotPoint
+	plotNamesSeen map[string]int // name -> palette slot index, first-seen order
+	plotCapHit    bool           // true once the 13th distinct name has been dropped, guards the one-time warning
+}
+
+// maxDistinctPlotNames is the soft cap from blueprint §1/ADR-026 - generous
+// relative to TradingView's own free-tier 2-3 slot limit, protects chart
+// readability and trace payload size, never fails a cycle.
+const maxDistinctPlotNames = 12
+
+// plotColorPalette is ExecutionTraceChart.tsx's INDICATOR_COLORS, mirrored
+// server-side so a color is always resolved before the record leaves the Go
+// process (frontend never has to guess a default) - see the "Reused
+// palette, not shared code" note in backend-01-plot-binding-and-trace-plots.md
+// for why this duplication is deliberate, not accidental drift.
+// MUST match web/src/components/charts/ExecutionTraceChart.tsx's INDICATOR_COLORS.
+var plotColorPalette = []string{
+	"#38bdf8", "#f59e0b", "#a855f7", "#ec4899", "#14b8a6", "#eab308",
 }
 
 // NewTraceRecorder takes the cycle's current candle (Context.Candles' last
@@ -203,6 +237,39 @@ func (t *TraceRecorder) SetSignal(s *strategies.Signal) {
 	t.signal = s
 }
 
+// LogPlot records one plot(name, value, color) call. Enforces the
+// maxDistinctPlotNames soft cap (ADR-026): the first 12 distinct names seen
+// this cycle are recorded normally (every call, not deduplicated); the 13th+
+// distinct name is silently dropped except for a one-time
+// "plot_limit_exceeded" log entry (guarded by plotCapHit so it doesn't spam
+// on every subsequent over-cap call within the same cycle). An empty color
+// resolves to the palette slot assigned to name's first-seen order, so a
+// PlotPoint's Color is always non-empty on the wire.
+func (t *TraceRecorder) LogPlot(name string, value float64, color string) {
+	if t == nil {
+		return
+	}
+	if t.plotNamesSeen == nil {
+		t.plotNamesSeen = make(map[string]int)
+	}
+	slot, seen := t.plotNamesSeen[name]
+	if !seen {
+		if len(t.plotNamesSeen) >= maxDistinctPlotNames {
+			if !t.plotCapHit {
+				t.plotCapHit = true
+				t.log = append(t.log, LogEntry{Label: "plot_limit_exceeded", Value: name})
+			}
+			return // 13th+ distinct name this cycle: silently dropped, per ADR-026
+		}
+		slot = len(t.plotNamesSeen)
+		t.plotNamesSeen[name] = slot
+	}
+	if color == "" {
+		color = plotColorPalette[slot%len(plotColorPalette)]
+	}
+	t.plots = append(t.plots, PlotPoint{Name: name, Value: value, Color: color})
+}
+
 func (t *TraceRecorder) Record() TraceRecord {
-	return TraceRecord{Timestamp: t.timestamp, Candle: t.candle, Indicators: t.indicators, Signal: t.signal, Log: t.log}
+	return TraceRecord{Timestamp: t.timestamp, Candle: t.candle, Indicators: t.indicators, Signal: t.signal, Log: t.log, Plots: t.plots}
 }
