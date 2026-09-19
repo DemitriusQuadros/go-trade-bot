@@ -11,7 +11,7 @@ export function TraceAnnotationPanel({ record }: TraceAnnotationPanelProps) {
     return (
       <div className="flex items-center gap-2 p-3 bg-black/60 border border-green-950/40 rounded-lg text-xs text-green-700/70 font-mono">
         <Info className="w-4 h-4 shrink-0 text-green-800" />
-        <span>Hover over or click candles on the chart to inspect signals, indicators, and execution log at that tick.</span>
+        <span>Hover or click a candle for signal/indicator detail.</span>
       </div>
     );
   }

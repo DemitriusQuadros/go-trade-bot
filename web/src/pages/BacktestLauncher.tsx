@@ -106,7 +106,7 @@ export function BacktestLauncher() {
             fee_pct: Number(feePct),
           },
         });
-        navigate(`/backtest/${res.id}`);
+        navigate(`/strategies/${selectedStrategyId}/edit/backtest/${res.id}`);
       } else {
         const res = await api.runBacktest({
           strategy_id: Number(selectedStrategyId),
@@ -120,7 +120,7 @@ export function BacktestLauncher() {
             fee_pct: Number(feePct),
           },
         });
-        navigate(`/backtest/${res.id}`);
+        navigate(`/strategies/${selectedStrategyId}/edit/backtest/${res.id}`);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to execute backtest simulation');
@@ -387,7 +387,7 @@ export function BacktestLauncher() {
               <button
                 type="submit"
                 disabled={launching}
-                className="w-full btn btn-primary py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
+                className="w-full bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-green-600 py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
               >
                 <Play className="w-4 h-4" />
                 <span>{launching ? 'Simulating Historical Ticks...' : 'Execute Backtest'}</span>
@@ -416,7 +416,7 @@ export function BacktestLauncher() {
                   return (
                     <Link
                       key={run.id}
-                      to={`/backtest/${run.id}`}
+                      to={`/strategies/${run.strategy_id}/edit/backtest/${run.id}`}
                       className="block p-3 bg-black/50 hover:bg-green-950/20 border border-green-900/30 rounded-lg transition-colors group"
                     >
                       <div className="flex items-center justify-between mb-1">

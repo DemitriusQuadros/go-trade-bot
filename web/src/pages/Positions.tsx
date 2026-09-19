@@ -171,7 +171,7 @@ export function Positions() {
 
             <button
               onClick={() => refetchSignals()}
-              className="btn btn-secondary text-xs py-1"
+              className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs p-1.5"
               title="Refresh positions"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -194,8 +194,11 @@ export function Positions() {
             No {statusTab} positions found.
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
+          // `.table-container`/`.table` were dead classes (see
+          // BacktestPane's trade log fix for the full story) - real
+          // Tailwind now via [&_th]/[&_td] arbitrary variants on <table>.
+          <div className="overflow-x-auto rounded border border-green-950/60">
+            <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-500 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-950/40 [&_thead]:bg-green-950/40">
               <thead>
                 <tr>
                   <th>Signal ID</th>

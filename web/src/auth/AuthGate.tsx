@@ -116,7 +116,7 @@ export function AuthGate({ children }: AuthGateProps) {
             <button
               type="submit"
               disabled={validating}
-              className="w-full btn btn-primary py-2.5 flex items-center justify-center gap-2 font-semibold text-sm"
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg py-2.5 flex items-center justify-center gap-2 font-semibold text-sm transition-colors"
             >
               {validating ? (
                 <>

@@ -132,7 +132,7 @@ export function ExecutionLog() {
         <button
           onClick={handleExportCSV}
           disabled={filteredOrders.length === 0}
-          className="btn btn-secondary text-xs flex items-center gap-1.5"
+          className="bg-green-950/40 hover:bg-green-900/40 disabled:opacity-50 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Export Audit Log (CSV)</span>
@@ -174,7 +174,7 @@ export function ExecutionLog() {
 
             <button
               onClick={() => refetchSignals()}
-              className="btn btn-secondary text-xs py-1"
+              className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs p-1.5"
               title="Refresh logs"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -195,8 +195,14 @@ export function ExecutionLog() {
             No execution logs found matching search criteria.
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
+          // `.table-container`/`.table` were dead classes (see BacktestPane's
+          // trade log fix for the full story) - real Tailwind now.
+          // [&_th]/[&_td] arbitrary variants apply padding/borders to every
+          // cell from the <table> element itself, since Tailwind's preflight
+          // zeroes out default table cell padding and this table has too
+          // many bare <td>s to annotate individually.
+          <div className="overflow-x-auto rounded border border-green-950/60">
+            <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-500 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-950/40 [&_thead]:bg-green-950/40">
               <thead>
                 <tr>
                   <th>Order ID</th>

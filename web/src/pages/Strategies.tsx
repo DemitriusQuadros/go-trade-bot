@@ -123,7 +123,7 @@ export function Strategies() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleEnqueue}
-            className="btn btn-secondary text-xs flex items-center gap-1.5"
+            className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
             title="Force immediate worker execution pass"
           >
             <Send className="w-3.5 h-3.5 text-green-500" />
@@ -133,7 +133,7 @@ export function Strategies() {
           <button
             data-walkthrough="new-strategy-btn"
             onClick={() => navigate('/strategies/new')}
-            className="btn btn-primary text-xs flex items-center gap-1.5"
+            className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Plus className="w-4 h-4" />
             <span>New Strategy</span>
@@ -200,7 +200,11 @@ export function Strategies() {
               </select>
             </div>
 
-            <button onClick={() => refetchStrategies()} className="btn btn-secondary text-xs py-1" title="Refresh">
+            <button
+              onClick={() => refetchStrategies()}
+              className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs p-1.5"
+              title="Refresh"
+            >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -217,7 +221,10 @@ export function Strategies() {
         {strategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg space-y-3">
             <p>No strategies configured.</p>
-            <button onClick={() => navigate('/strategies/new')} className="btn btn-primary text-xs">
+            <button
+              onClick={() => navigate('/strategies/new')}
+              className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs px-3 py-1.5 font-bold"
+            >
               + New Strategy
             </button>
           </div>
@@ -298,7 +305,7 @@ export function Strategies() {
                       <div className="flex flex-col items-start gap-1.5">
                         <button
                           onClick={() => navigate(`/strategies/${strat.id}/edit`)}
-                          className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
+                          className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
                           title="View or edit this strategy's Lua script"
                         >
                           <Code2 className="w-3.5 h-3.5 text-green-600" />
@@ -307,10 +314,10 @@ export function Strategies() {
 
                         <button
                           onClick={() => handleToggleStatus(strat)}
-                          className={`btn text-xs py-1 px-2.5 whitespace-nowrap ${
+                          className={`rounded border text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap ${
                             strat.status === 'disabled'
-                              ? 'btn-success'
-                              : 'btn-secondary text-green-600'
+                              ? 'bg-emerald-900/40 hover:bg-emerald-800/40 text-emerald-300 border-emerald-700/40'
+                              : 'bg-green-950/40 hover:bg-green-900/40 text-green-600 border-green-800/40'
                           }`}
                           title={strat.status === 'disabled' ? 'Enable' : 'Disable'}
                         >

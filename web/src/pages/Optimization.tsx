@@ -344,7 +344,7 @@ export function Optimization() {
               <button
                 type="submit"
                 disabled={launching || (!!activeRunId && !isCompleted)}
-                className="w-full btn btn-primary py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
+                className="w-full bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-green-600 py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
               >
                 <Play className="w-4 h-4" />
                 <span>
@@ -407,7 +407,9 @@ export function Optimization() {
               <Card className="border-emerald-500/30 bg-emerald-950/20">
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="badge badge-green mb-1">Optimal Parameter Set</span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-green-900/40 text-green-300 border-green-700/40 mb-1">
+                      Optimal Parameter Set
+                    </span>
                     <h3 className="text-base font-bold text-green-500 mt-1">
                       Best Discovered Configuration
                     </h3>
@@ -452,8 +454,11 @@ export function Optimization() {
                   title="Top Evaluated Combinations"
                   subtitle="Sorted by risk-adjusted return (Sharpe Ratio)"
                 />
-                <div className="table-container max-h-80 overflow-y-auto">
-                  <table className="table">
+                {/* `.table-container`/`.table` were dead classes (see
+                    BacktestPane's trade log fix for the full story) - real
+                    Tailwind now via [&_th]/[&_td] arbitrary variants. */}
+                <div className="max-h-80 overflow-auto rounded border border-green-950/60">
+                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-500 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_th]:sticky [&_th]:top-0 [&_th]:bg-green-950/90 [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-950/40">
                     <thead>
                       <tr>
                         <th>Rank</th>

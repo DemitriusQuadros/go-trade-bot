@@ -7,7 +7,7 @@ import { luaAutocompletion } from '@/lib/luaCompletions';
 import { useRepl } from '@/hooks/queries';
 import { TraceRecord } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { ExecutionTraceChart } from '@/components/charts/ExecutionTraceChart';
+import { SharedPriceChart } from '@/components/charts/SharedPriceChart';
 import { TraceAnnotationPanel } from '@/components/charts/TraceAnnotationPanel';
 import {
   Play,
@@ -171,7 +171,7 @@ export function ScriptRepl() {
           <button
             onClick={handleEvaluate}
             disabled={replMutation.isPending}
-            className="btn btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
+            className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>{replMutation.isPending ? 'Evaluating...' : 'Evaluate'}</span>
@@ -329,10 +329,11 @@ export function ScriptRepl() {
             />
             {activeTrace.length > 0 ? (
               <div className="space-y-3">
-                <ExecutionTraceChart
+                <SharedPriceChart
                   trace={activeTrace}
                   height={280}
                   onScrub={setSelectedTraceRecord}
+                  symbol={symbol}
                 />
                 <TraceAnnotationPanel record={selectedTraceRecord} />
               </div>

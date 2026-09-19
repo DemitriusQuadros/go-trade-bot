@@ -25,8 +25,14 @@ export function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content max-w-md">
+    // `modal-overlay`/`modal-content`/`btn*` were all dead classes (no CSS
+    // rule ever defined them, same issue found and fixed across the
+    // workbench panes) - this dialog rendered with no backdrop, no
+    // positioning, and no button styling at all, effectively invisible/
+    // easy-to-miss whenever triggered (used for delete confirmations in
+    // Strategies/Settings/CandleImport). Real fixed-position overlay now.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-lg border border-green-900/40 bg-black p-5 shadow-xl">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             {isDangerous && (
@@ -47,12 +53,19 @@ export function ConfirmDialog({
         <p className="text-sm text-slate-300 mb-6">{message}</p>
 
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="btn btn-secondary">
+          <button
+            onClick={onCancel}
+            className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 px-4 py-2 text-sm"
+          >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={isDangerous ? 'btn btn-danger' : 'btn btn-primary'}
+            className={
+              isDangerous
+                ? 'bg-red-900/40 hover:bg-red-800/40 text-red-300 rounded border border-red-700/40 px-4 py-2 text-sm font-semibold'
+                : 'bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 px-4 py-2 text-sm font-semibold'
+            }
           >
             {confirmText}
           </button>
