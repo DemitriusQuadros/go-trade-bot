@@ -142,6 +142,37 @@ func (a *BinanceAdapter) ListKline(ctx context.Context, symbol string, interval 
 	return candles, nil
 }
 
+// ListKlineRange fetches klines anchored to an explicit [startTime, endTime)
+// window instead of "the most recent `limit` candles" - ListKline has no
+// start/end params at all, so with no anchor Binance always returns the most
+// recent candles regardless of what a caller intended, which is exactly the
+// bug that silently capped every historical backfill at ~`limit` candles'
+// worth of wall-clock time (see app/usecase/candleimport/usecase.go's
+// importSymbolTimeframe, the only caller - a real historical range fetch is
+// never meaningful for the live trading engine, which is why this isn't on
+// the broader ExchangeClient interface; see HistoricalKlineFetcher below).
+func (a *BinanceAdapter) ListKlineRange(ctx context.Context, symbol, interval string, startTime, endTime time.Time, limit int) ([]Candle, error) {
+	klines, err := a.client.NewKlinesService().
+		Symbol(symbol).
+		Interval(interval).
+		StartTime(startTime.UnixMilli()).
+		EndTime(endTime.UnixMilli()).
+		Limit(limit).
+		Do(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candles := make([]Candle, 0, len(klines))
+	for _, k := range klines {
+		c, err := candleFromKline(symbol, interval, k)
+		if err != nil {
+			return nil, err
+		}
+		candles = append(candles, c)
+	}
+	return candles, nil
+}
+
 func (a *BinanceAdapter) ListTickerPrices(ctx context.Context, symbol string) ([]TickerPrice, error) {
 	prices, err := a.client.NewListPricesService().Symbol(symbol).Do(ctx)
 	if err != nil {

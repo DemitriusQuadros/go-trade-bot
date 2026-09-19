@@ -6,12 +6,31 @@ import (
 	"gorm.io/datatypes"
 )
 
+// ImportSource picks which fetch path an ImportRequest uses. "" (zero
+// value) is treated as ImportSourceREST for backward compat with requests
+// persisted/enqueued before this field existed.
+type ImportSource string
+
+const (
+	// ImportSourceREST talks to the live Binance kline REST API
+	// (ListKlineRange) - correct for incremental/ongoing sync, but slow
+	// (rate-limited, paginated) for a deep historical range.
+	ImportSourceREST ImportSource = "rest"
+	// ImportSourceArchive bulk-downloads from Binance's public
+	// data.binance.vision monthly kline archive - no rate limits, months of
+	// history in seconds per file. The right choice for a one-time deep
+	// historical backfill; granularity is whole months (a request's From/To
+	// are truncated to month boundaries).
+	ImportSourceArchive ImportSource = "archive"
+)
+
 type ImportRequest struct {
 	Symbols    []string
 	Timeframes []string
 	From       time.Time
 	To         time.Time
 	MinHistory time.Duration
+	Source     ImportSource // "" == ImportSourceREST, see above
 }
 
 type ImportSummary struct {

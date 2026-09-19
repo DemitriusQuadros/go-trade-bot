@@ -2,7 +2,9 @@ package exchange
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
+	"time"
 
 	"go-trade-bot/internal/configuration"
 )
@@ -51,6 +53,22 @@ func (s *SwappableExchangeClient) GetOrder(ctx context.Context, symbol, orderID 
 
 func (s *SwappableExchangeClient) ListKline(ctx context.Context, symbol, interval string, limit int) ([]Candle, error) {
 	return (*s.current.Load()).ListKline(ctx, symbol, interval, limit)
+}
+
+// ListKlineRange forwards to the current client's HistoricalKlineFetcher
+// implementation if it has one (BinanceAdapter/BinanceTestnetAdapter both
+// do). This makes SwappableExchangeClient itself satisfy
+// exchange.HistoricalKlineFetcher via type assertion at the call site
+// (app/usecase/candleimport), same as if it were talking to a BinanceAdapter
+// directly - candleimport is wired through this Swappable wrapper in the API
+// process's fx graph (cmd/api/modules/candleimport.go), not a raw adapter.
+func (s *SwappableExchangeClient) ListKlineRange(ctx context.Context, symbol, interval string, startTime, endTime time.Time, limit int) ([]Candle, error) {
+	current := *s.current.Load()
+	fetcher, ok := current.(HistoricalKlineFetcher)
+	if !ok {
+		return nil, fmt.Errorf("exchange: current client (%T) does not support historical range fetches", current)
+	}
+	return fetcher.ListKlineRange(ctx, symbol, interval, startTime, endTime, limit)
 }
 
 func (s *SwappableExchangeClient) ListTickerPrices(ctx context.Context, symbol string) ([]TickerPrice, error) {

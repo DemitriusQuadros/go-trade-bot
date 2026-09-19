@@ -366,11 +366,19 @@ export interface DrainTimeoutErrorBody {
 // --- Candle Import & Scheduling --------------------------------------------
 export type CandleImportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
 
+export type CandleImportSource = 'rest' | 'archive';
+
 export interface CandleImportRequest {
   symbols: string[];
   timeframes: string[];
   from: string;   // RFC3339
   to: string;     // RFC3339
+  // 'rest' (default, omit to get this) walks the live Binance kline REST
+  // API - correct for incremental/ongoing sync, but slow for a deep
+  // historical range. 'archive' bulk-downloads Binance's public
+  // data.binance.vision monthly kline dumps instead - no rate limits,
+  // months of history in seconds per file, at month granularity.
+  source?: CandleImportSource;
 }
 
 export interface CandleImportPairResult {
@@ -436,12 +444,19 @@ export interface TraceSignal {
   take_profit?: { qty: number; price: number };
 }
 
+export interface TracePlotPoint {
+  name: string;
+  value: number;
+  color: string;
+}
+
 export interface TraceRecord {
   timestamp: string;
   candle?: TraceCandle;
   indicators: TraceIndicatorCall[];
   signal?: TraceSignal;
   log: TraceLogEntry[];
+  plots: TracePlotPoint[];
 }
 
 export interface FastRerunRequest {

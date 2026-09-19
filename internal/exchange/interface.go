@@ -4,7 +4,10 @@
 // the ExchangeClient interface defined here.
 package exchange
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ExchangeClient is the single ACL interface every trading call site depends
 // on. BinanceAdapter (production) and BinanceTestnetAdapter (Paper Trading,
@@ -25,4 +28,24 @@ type ExchangeClient interface {
 	ListTickerPrices(ctx context.Context, symbol string) ([]TickerPrice, error)
 	GetAccountBalance(ctx context.Context) (AccountBalance, error)
 	SubscribeKline(ctx context.Context, symbol, interval string) (<-chan Candle, error)
+}
+
+// HistoricalKlineFetcher is a narrow capability interface, deliberately NOT
+// folded into ExchangeClient above: fetching an explicit historical date
+// range only ever makes sense for a one-shot/scheduled deep backfill against
+// the real exchange (app/usecase/candleimport), never for the live trading
+// engine or the backtest simulator (app/engine.SimulatedFillExchange, which
+// only ever wants "N candles before simulated time asOf" from locally stored
+// data - "a historical range fetch from Binance" is meaningless there).
+// Folding this onto ExchangeClient would force a real implementation onto
+// every implementer for a method almost none of them can meaningfully serve.
+// BinanceAdapter implements this (and BinanceTestnetAdapter inherits it via
+// embedding); callers that need it type-assert an ExchangeClient value
+// against this interface rather than depending on it directly.
+type HistoricalKlineFetcher interface {
+	// ListKlineRange fetches klines anchored to an explicit
+	// [startTime, endTime) window - unlike ListKline, which has no
+	// start/end params and therefore always returns the most recent
+	// `limit` candles regardless of caller intent.
+	ListKlineRange(ctx context.Context, symbol, interval string, startTime, endTime time.Time, limit int) ([]Candle, error)
 }

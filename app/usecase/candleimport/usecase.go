@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"go-trade-bot/app/repository/candle"
 	"go-trade-bot/app/repository/candleimport"
 	worker "go-trade-bot/app/workers/candleimport"
+	"go-trade-bot/internal/binancearchive"
 	"go-trade-bot/internal/exchange"
 )
 
@@ -30,7 +32,8 @@ type candleImportUseCase struct {
 	importRepo candleimport.Repository
 	worker     worker.Worker
 
-	client exchange.ExchangeClient
+	client     exchange.ExchangeClient
+	httpClient *http.Client // used only by the ImportSourceArchive path (data.binance.vision)
 }
 
 // NewCandleImportUseCase depends on candle.Repository (the interface), not
@@ -47,6 +50,7 @@ func NewCandleImportUseCase(repo candle.Repository, importRepo candleimport.Repo
 		importRepo: importRepo,
 		worker:     worker,
 		client:     client,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -75,7 +79,13 @@ func (u *candleImportUseCase) Run(ctx context.Context, req entities.ImportReques
 			}
 
 			start := time.Now()
-			importedCount, gapsCount, err := u.importSymbolTimeframe(ctx, symbol, tf, req.From, req.To)
+			var importedCount, gapsCount int
+			var err error
+			if req.Source == entities.ImportSourceArchive {
+				importedCount, gapsCount, err = u.importSymbolTimeframeFromArchive(ctx, symbol, tf, req.From, req.To)
+			} else {
+				importedCount, gapsCount, err = u.importSymbolTimeframe(ctx, symbol, tf, req.From, req.To)
+			}
 			duration := time.Since(start).Seconds()
 
 			if err != nil {
@@ -107,6 +117,21 @@ func (u *candleImportUseCase) importSymbolTimeframe(
 		return 0, 0, err
 	}
 
+	// u.client (exchange.ExchangeClient) must ALSO implement
+	// exchange.HistoricalKlineFetcher for a historical backfill to work at
+	// all - see that interface's doc comment for why it's a separate,
+	// narrower capability rather than folded into ExchangeClient itself.
+	// Both real paths (the CLI's raw *BinanceAdapter and the fx-wired
+	// *SwappableExchangeClient used by the web-triggered async job) satisfy
+	// it; failing fast here with a clear message beats the previous silent
+	// bug where ListKline(no start/end) quietly returned only the most
+	// recent `limit` candles and the pagination loop's own bookkeeping
+	// never caught that its fetch wasn't advancing.
+	fetcher, ok := u.client.(exchange.HistoricalKlineFetcher)
+	if !ok {
+		return 0, 0, fmt.Errorf("exchange client (%T) does not support historical range fetches (ListKlineRange) required for candle import", u.client)
+	}
+
 	latestTime, err := u.repo.LatestOpenTime(ctx, symbol, timeframe)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to check latest open time: %w", err)
@@ -125,11 +150,22 @@ func (u *candleImportUseCase) importSymbolTimeframe(
 	const batchLimit = 1000
 
 	for currentStart.Before(to) {
+		// Bound each request's end to `to` (or a full batch's worth of
+		// duration, whichever is sooner) - this is what actually makes
+		// currentStart's advancement below meaningful. Previously the fetch
+		// ignored currentStart/batchEnd entirely and always asked for "the
+		// most recent `limit` candles", so pagination past the first page
+		// never happened no matter how the loop's bookkeeping advanced.
+		batchEnd := currentStart.Add(time.Duration(batchLimit) * tfDuration)
+		if batchEnd.After(to) {
+			batchEnd = to
+		}
+
 		var klines []exchange.Candle
 		var fetchErr error
 
 		for retries := 0; retries < 3; retries++ {
-			klines, fetchErr = u.client.ListKline(ctx, symbol, timeframe, batchLimit)
+			klines, fetchErr = fetcher.ListKlineRange(ctx, symbol, timeframe, currentStart, batchEnd, batchLimit)
 			if fetchErr != nil {
 				if strings.Contains(fetchErr.Error(), "429") || strings.Contains(fetchErr.Error(), "Rate limit") {
 					log.Printf("[WARN] rate limited for %s/%s, backing off 5s...", symbol, timeframe)
@@ -142,11 +178,16 @@ func (u *candleImportUseCase) importSymbolTimeframe(
 		}
 
 		if fetchErr != nil {
-			return totalImported, 0, fmt.Errorf("ListKline failed for %s/%s: %w", symbol, timeframe, fetchErr)
+			return totalImported, 0, fmt.Errorf("ListKlineRange failed for %s/%s: %w", symbol, timeframe, fetchErr)
 		}
 
 		if len(klines) == 0 {
-			break
+			// No candles in [currentStart, batchEnd) - could be a real gap
+			// (exchange downtime, symbol not yet listed) rather than "done",
+			// so advance past this empty window instead of stopping, same
+			// as the non-empty branch below would via maxOpenTime.
+			currentStart = batchEnd
+			continue
 		}
 
 		var entityCandles []entities.Candle
@@ -190,9 +231,59 @@ func (u *candleImportUseCase) importSymbolTimeframe(
 		}
 	}
 
+	gapsDetected := u.detectGaps(ctx, symbol, timeframe, from, to, tfDuration)
+	return totalImported, gapsDetected, nil
+}
+
+// importSymbolTimeframeFromArchive bulk-imports from Binance's public
+// data.binance.vision monthly kline archive instead of the live REST API -
+// see entities.ImportSourceArchive's doc comment. Granularity is whole
+// months: `from`/`to` are walked as month boundaries regardless of their
+// time-of-day, since that's the archive's own granularity.
+func (u *candleImportUseCase) importSymbolTimeframeFromArchive(
+	ctx context.Context,
+	symbol, timeframe string,
+	from, to time.Time,
+) (int, int, error) {
+	tfDuration, err := parseTimeframeDuration(timeframe)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	totalImported := 0
+	fromMonth := time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, time.UTC)
+	toMonth := time.Date(to.Year(), to.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	for month := fromMonth; !month.After(toMonth); month = month.AddDate(0, 1, 0) {
+		candles, err := binancearchive.FetchMonth(ctx, u.httpClient, symbol, timeframe, month)
+		if err != nil {
+			return totalImported, 0, fmt.Errorf("archive fetch failed for %s/%s %s: %w", symbol, timeframe, month.Format("2006-01"), err)
+		}
+		if len(candles) == 0 {
+			continue
+		}
+		if err := u.repo.Upsert(ctx, candles); err != nil {
+			return totalImported, 0, fmt.Errorf("upsert failed for %s/%s %s: %w", symbol, timeframe, month.Format("2006-01"), err)
+		}
+		totalImported += len(candles)
+	}
+
+	gapsDetected := u.detectGaps(ctx, symbol, timeframe, from, to, tfDuration)
+	return totalImported, gapsDetected, nil
+}
+
+// detectGaps checks stored candles for the (symbol, timeframe) in [from, to)
+// for open-time gaps wider than one candle's duration. Shared by both the
+// REST and archive import paths, which otherwise fetch identically-shaped
+// entities.Candle rows through completely different mechanisms - gap
+// detection just reads back whatever ended up in the DB, so it doesn't care
+// which path put it there. Errors are logged, not propagated: a failed gap
+// check shouldn't fail an otherwise-successful import.
+func (u *candleImportUseCase) detectGaps(ctx context.Context, symbol, timeframe string, from, to time.Time, tfDuration time.Duration) int {
 	storedCandles, err := u.repo.Range(ctx, symbol, timeframe, from, to)
 	if err != nil {
-		return totalImported, 0, nil
+		log.Printf("[WARN] gap check failed for %s/%s: %v", symbol, timeframe, err)
+		return 0
 	}
 
 	gapsDetected := 0
@@ -204,8 +295,7 @@ func (u *candleImportUseCase) importSymbolTimeframe(
 				symbol, timeframe, storedCandles[i].OpenTime, storedCandles[i+1].OpenTime, diff)
 		}
 	}
-
-	return totalImported, gapsDetected, nil
+	return gapsDetected
 }
 
 func parseTimeframeDuration(tf string) (time.Duration, error) {

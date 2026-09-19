@@ -22,7 +22,7 @@ import {
   usePatchImportSchedule,
   useDeleteImportSchedule,
 } from '@/hooks/queries';
-import { CandleImportRequest, ImportSchedule } from '@/api/types';
+import { CandleImportRequest, CandleImportSource, ImportSchedule } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
@@ -75,6 +75,7 @@ export function CandleImport() {
   const [selectedTimeframes, setSelectedTimeframes] = useState<string[]>(['1h', '1d']);
   const [fromDate, setFromDate] = useState(defaultDates.from);
   const [toDate, setToDate] = useState(defaultDates.to);
+  const [source, setSource] = useState<CandleImportSource>('rest');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -143,6 +144,7 @@ export function CandleImport() {
       timeframes: selectedTimeframes,
       from: new Date(`${fromDate}T00:00:00Z`).toISOString(),
       to: new Date(`${toDate}T23:59:59Z`).toISOString(),
+      source,
     };
 
     try {
@@ -297,6 +299,39 @@ export function CandleImport() {
             </div>
           </div>
 
+          {/* Source: REST (live API, correct for incremental/recent sync)
+              vs Archive (Binance's public data.binance.vision monthly
+              dumps - no rate limits, the right choice for a deep one-time
+              historical backfill). See entities.ImportSource's doc comment
+              on the backend for the full rationale. */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              Data Source
+              <HelpTooltip>
+                Live REST hits Binance's kline API directly - correct for recent/incremental data, but
+                rate-limited and slow for a deep historical range. Archive Backfill bulk-downloads
+                Binance's own public monthly kline dumps instead - no rate limits, months of history in
+                seconds, at month granularity.
+              </HelpTooltip>
+            </label>
+            <div className="flex gap-2">
+              {(['rest', 'archive'] as CandleImportSource[]).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSource(s)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                    source === s
+                      ? 'bg-blue-950/70 border-blue-700 text-blue-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  {s === 'rest' ? 'Live (REST API)' : 'Archive Backfill (deep history)'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Date range inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
@@ -320,6 +355,12 @@ export function CandleImport() {
               />
             </div>
           </div>
+          {source === 'archive' && (
+            <p className="text-[11px] text-slate-500 -mt-2">
+              Archive backfill works at month granularity - the exact days above are rounded out to cover
+              full calendar months.
+            </p>
+          )}
 
           <div className="flex justify-end pt-2">
             <button
@@ -368,8 +409,11 @@ export function CandleImport() {
                   </span>
                 </div>
 
-                <div className="table-container">
-                  <table className="table">
+                {/* `.table-container`/`.table` were dead classes (see
+                    BacktestPane's trade log fix for the full story) - real
+                    Tailwind now via [&_th]/[&_td] arbitrary variants. */}
+                <div className="overflow-x-auto rounded border border-slate-800">
+                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-slate-400 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-slate-800 [&_thead]:bg-slate-900/60">
                     <thead>
                       <tr>
                         <th>Symbol</th>
@@ -573,8 +617,11 @@ export function CandleImport() {
               No scheduled imports configured.
             </div>
           ) : (
-            <div className="table-container">
-              <table className="table">
+            // `.table-container`/`.table` were dead classes (see
+            // BacktestPane's trade log fix for the full story) - real
+            // Tailwind now via [&_th]/[&_td] arbitrary variants.
+            <div className="overflow-x-auto rounded border border-slate-800">
+              <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-slate-400 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-slate-800 [&_thead]:bg-slate-900/60">
                 <thead>
                   <tr>
                     <th>Symbol</th>
