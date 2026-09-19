@@ -241,28 +241,28 @@ export function BacktestLauncher() {
                     <button
                       type="button"
                       onClick={() => handlePreset(1)}
-                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-green-600 font-medium"
+                      className="px-2 py-0.5 bg-green-900 hover:bg-green-800 rounded text-[10px] text-green-600 font-medium"
                     >
                       1M
                     </button>
                     <button
                       type="button"
                       onClick={() => handlePreset(3)}
-                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-green-600 font-medium"
+                      className="px-2 py-0.5 bg-green-900 hover:bg-green-800 rounded text-[10px] text-green-600 font-medium"
                     >
                       3M
                     </button>
                     <button
                       type="button"
                       onClick={() => handlePreset(6)}
-                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-green-600 font-medium"
+                      className="px-2 py-0.5 bg-green-900 hover:bg-green-800 rounded text-[10px] text-green-600 font-medium"
                     >
                       6M
                     </button>
                     <button
                       type="button"
                       onClick={() => handlePreset(12)}
-                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-green-600 font-medium"
+                      className="px-2 py-0.5 bg-green-900 hover:bg-green-800 rounded text-[10px] text-green-600 font-medium"
                     >
                       1Y
                     </button>
@@ -343,7 +343,7 @@ export function BacktestLauncher() {
                     type="checkbox"
                     checked={isWalkForward}
                     onChange={(e) => setIsWalkForward(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 bg-black border-slate-700"
+                    className="w-4 h-4 rounded text-green-600 focus:ring-green-500 bg-black border-green-950"
                   />
                 </div>
 

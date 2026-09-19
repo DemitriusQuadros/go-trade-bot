@@ -504,7 +504,7 @@ export function Optimization() {
           ) : (
             !activeRunId && (
               <Card className="p-12 text-center text-green-700">
-                <Grid className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <Grid className="w-10 h-10 text-green-800 mx-auto mb-3" />
                 <h3 className="text-sm font-semibold text-green-400 mb-1">
                   No Optimization Results Selected
                 </h3>

@@ -139,7 +139,7 @@ export function MonteCarloDistribution({
         </div>
         <div className="p-2 bg-black/60 rounded border border-green-900/30">
           <span className="text-green-700 block text-[10px] uppercase">Ruin Probability</span>
-          <span className={`font-mono font-bold ${ruinProb > 0.05 ? 'text-rose-400' : 'text-slate-200'}`}>
+          <span className={`font-mono font-bold ${ruinProb > 0.05 ? 'text-rose-400' : 'text-green-300'}`}>
             {(ruinProb * 100).toFixed(2)}%
           </span>
         </div>

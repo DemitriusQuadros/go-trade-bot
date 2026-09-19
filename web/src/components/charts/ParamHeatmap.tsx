@@ -26,7 +26,7 @@ export function ParamHeatmap({
   const flat = cellValues.flat().filter((v): v is number => v !== null && !isNaN(v));
   if (flat.length === 0) {
     return (
-      <div className="p-8 text-center text-xs text-slate-500 bg-slate-900/50 rounded-lg border border-slate-800">
+      <div className="p-8 text-center text-xs text-green-700 bg-green-950/50 rounded-lg border border-green-900">
         No parameter combinations to display in heatmap.
       </div>
     );
@@ -61,7 +61,7 @@ export function ParamHeatmap({
     <div className="overflow-x-auto p-2">
       <div className="flex flex-col gap-2 min-w-[400px]">
         {/* Heatmap header */}
-        <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+        <div className="flex items-center justify-between text-xs text-green-600 mb-1">
           <span>Y: {yAxisLabel} \ X: {xAxisLabel}</span>
           <div className="flex items-center gap-2">
             <span className="text-[10px]">Min: {formatValue(min)}</span>
@@ -78,13 +78,13 @@ export function ParamHeatmap({
           }}
         >
           {/* Top-left empty corner */}
-          <div className="p-2 text-xs font-semibold text-slate-400 text-center" />
+          <div className="p-2 text-xs font-semibold text-green-600 text-center" />
 
           {/* X Axis column headers */}
           {xAxisValues.map((xVal, xi) => (
             <div
               key={`col-${xi}`}
-              className="p-1.5 text-xs font-semibold text-slate-300 text-center bg-slate-900/60 rounded"
+              className="p-1.5 text-xs font-semibold text-green-300 text-center bg-green-950/60 rounded"
             >
               {xVal}
             </div>
@@ -94,7 +94,7 @@ export function ParamHeatmap({
           {yAxisValues.map((yVal, yi) => (
             <React.Fragment key={`row-${yi}`}>
               {/* Y Axis row header */}
-              <div className="p-2 text-xs font-semibold text-slate-300 flex items-center justify-end pr-3 bg-slate-900/60 rounded">
+              <div className="p-2 text-xs font-semibold text-green-300 flex items-center justify-end pr-3 bg-green-950/60 rounded">
                 {yVal}
               </div>
 
@@ -108,12 +108,12 @@ export function ParamHeatmap({
                     key={`cell-${yi}-${xi}`}
                     style={{ backgroundColor: getColor(val) }}
                     className={`h-12 flex flex-col items-center justify-center rounded text-xs font-mono transition-all hover:scale-105 hover:z-10 cursor-default ${
-                      isBest ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950 font-bold text-white' : 'text-slate-100'
+                      isBest ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-black font-bold text-white' : 'text-green-100'
                     }`}
                     title={`Y: ${yVal}, X: ${xAxisValues[xi]} => ${val !== null ? formatValue(val) : 'N/A'}${isBest ? ' (BEST)' : ''}`}
                   >
                     {val !== null ? formatValue(val) : '—'}
-                    {isBest && <span className="text-[9px] uppercase tracking-tighter text-blue-300">best</span>}
+                    {isBest && <span className="text-[9px] uppercase tracking-tighter text-green-300">best</span>}
                   </div>
                 );
               })}

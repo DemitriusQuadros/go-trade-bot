@@ -199,10 +199,10 @@ export function CandleImport() {
     <div className="max-w-5xl mx-auto space-y-6 pb-20">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-green-500 flex items-center gap-2">
           Historical Candle Data
         </h1>
-        <p className="text-xs text-slate-400 mt-1">
+        <p className="text-xs text-green-600 mt-1">
           Import historical OHLCV market candles for backtesting and configure automated recurring sync schedules.
         </p>
       </div>
@@ -223,7 +223,7 @@ export function CandleImport() {
 
           {/* Symbols tag input */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
               Trading Symbols <span className="text-rose-400">*</span>
               <HelpTooltip>Enter trading pairs to import (e.g. BTCUSDT, ETHUSDT, SOLUSDT)</HelpTooltip>
             </label>
@@ -239,12 +239,12 @@ export function CandleImport() {
                   }
                 }}
                 placeholder="Type symbol and click Add..."
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                className="flex-1 px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
               />
               <button
                 type="button"
                 onClick={handleAddSymbol}
-                className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                className="px-3.5 py-2 rounded-lg bg-green-900 hover:bg-green-800 text-xs font-semibold text-green-300"
               >
                 Add
               </button>
@@ -253,7 +253,7 @@ export function CandleImport() {
               {symbols.map((sym) => (
                 <span
                   key={sym}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-950/60 border border-blue-800 text-xs font-medium text-blue-300"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-950/60 border border-green-800 text-xs font-medium text-green-300"
                 >
                   {sym}
                   <button
@@ -270,7 +270,7 @@ export function CandleImport() {
 
           {/* Timeframes multi-select */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
               Candle Timeframes <span className="text-rose-400">*</span>
               <HelpTooltip>Select all resolution intervals to download simultaneously</HelpTooltip>
             </label>
@@ -282,15 +282,15 @@ export function CandleImport() {
                     key={tf}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-colors ${
                       checked
-                        ? 'bg-blue-950/70 border-blue-700 text-blue-300'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                        ? 'bg-green-950/70 border-green-800 text-green-300'
+                        : 'bg-black border-green-900 text-green-600 hover:border-green-950'
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => handleToggleTimeframe(tf)}
-                      className="rounded border-slate-700 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-green-950 text-green-600 focus:ring-green-500"
                     />
                     <span>{tf}</span>
                   </label>
@@ -305,7 +305,7 @@ export function CandleImport() {
               historical backfill). See entities.ImportSource's doc comment
               on the backend for the full rationale. */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
               Data Source
               <HelpTooltip>
                 Live REST hits Binance's kline API directly - correct for recent/incremental data, but
@@ -322,8 +322,8 @@ export function CandleImport() {
                   onClick={() => setSource(s)}
                   className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                     source === s
-                      ? 'bg-blue-950/70 border-blue-700 text-blue-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? 'bg-green-950/70 border-green-800 text-green-300'
+                      : 'bg-black border-green-900 text-green-600 hover:border-green-950'
                   }`}
                 >
                   {s === 'rest' ? 'Live (REST API)' : 'Archive Backfill (deep history)'}
@@ -335,28 +335,28 @@ export function CandleImport() {
           {/* Date range inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">From Date</label>
+              <label className="text-xs font-semibold text-green-300">From Date</label>
               <input
                 type="date"
                 required
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600 font-mono"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">To Date</label>
+              <label className="text-xs font-semibold text-green-300">To Date</label>
               <input
                 type="date"
                 required
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600 font-mono"
               />
             </div>
           </div>
           {source === 'archive' && (
-            <p className="text-[11px] text-slate-500 -mt-2">
+            <p className="text-[11px] text-green-700 -mt-2">
               Archive backfill works at month granularity - the exact days above are rounded out to cover
               full calendar months.
             </p>
@@ -366,7 +366,7 @@ export function CandleImport() {
             <button
               type="submit"
               disabled={startImportMutation.isPending}
-              className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+              className="px-5 py-2.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-semibold text-white shadow-lg flex items-center gap-2 transition-colors disabled:opacity-50"
             >
               {startImportMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -388,11 +388,11 @@ export function CandleImport() {
           />
           <div className="p-6 pt-0 space-y-4">
             {(!jobData || jobData.status === 'pending' || jobData.status === 'running') && (
-              <div className="p-6 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col items-center justify-center gap-3 text-center" aria-busy="true">
-                <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+              <div className="p-6 rounded-xl bg-black/70 border border-green-900 flex flex-col items-center justify-center gap-3 text-center" aria-busy="true">
+                <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
                 <div>
-                  <h4 className="text-sm font-semibold text-white">Importing Candlesticks...</h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <h4 className="text-sm font-semibold text-green-400">Importing Candlesticks...</h4>
+                  <p className="text-xs text-green-600 mt-0.5">
                     Fetching exchange partitions, checking for gaps, and writing klines to database.
                   </p>
                 </div>
@@ -412,8 +412,8 @@ export function CandleImport() {
                 {/* `.table-container`/`.table` were dead classes (see
                     BacktestPane's trade log fix for the full story) - real
                     Tailwind now via [&_th]/[&_td] arbitrary variants. */}
-                <div className="overflow-x-auto rounded border border-slate-800">
-                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-slate-400 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-slate-800 [&_thead]:bg-slate-900/60">
+                <div className="overflow-x-auto rounded border border-green-900">
+                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-600 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-900 [&_thead]:bg-green-950/60">
                     <thead>
                       <tr>
                         <th>Symbol</th>
@@ -426,8 +426,8 @@ export function CandleImport() {
                     <tbody>
                       {jobData.result.per_pair.map((pair, idx) => (
                         <tr key={idx}>
-                          <td className="font-semibold text-white">{pair.symbol}</td>
-                          <td className="font-mono text-xs text-slate-300">{pair.timeframe}</td>
+                          <td className="font-semibold text-green-400">{pair.symbol}</td>
+                          <td className="font-mono text-xs text-green-300">{pair.timeframe}</td>
                           <td className="font-mono text-xs text-emerald-400">
                             {pair.candles_imported.toLocaleString()}
                           </td>
@@ -476,15 +476,15 @@ export function CandleImport() {
       <Card>
         <div className="p-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold text-white">Scheduled Recurring Imports</h3>
-            <p className="text-xs text-slate-400">
+            <h3 className="text-lg font-bold text-green-400">Scheduled Recurring Imports</h3>
+            <p className="text-xs text-green-600">
               Automated cron jobs syncing historical candles periodically in the background worker
             </p>
           </div>
           <button
             type="button"
             onClick={() => setShowScheduleForm(!showScheduleForm)}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow flex items-center gap-1.5 shrink-0"
+            className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-semibold text-white shadow flex items-center gap-1.5 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Schedule</span>
@@ -507,29 +507,29 @@ export function CandleImport() {
 
           {/* New Schedule Inline Form */}
           {showScheduleForm && (
-            <form onSubmit={handleCreateSchedule} className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+            <form onSubmit={handleCreateSchedule} className="p-4 rounded-xl bg-black/70 border border-green-900 space-y-4">
+              <h4 className="text-xs font-bold text-green-400 uppercase tracking-wider">
                 Create Recurring Sync Schedule
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-semibold">Symbol</label>
+                  <label className="text-[10px] text-green-600 uppercase font-semibold">Symbol</label>
                   <input
                     type="text"
                     required
                     value={schedSymbol}
                     onChange={(e) => setSchedSymbol(e.target.value)}
                     placeholder="BTCUSDT"
-                    className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-semibold">Timeframe</label>
+                  <label className="text-[10px] text-green-600 uppercase font-semibold">Timeframe</label>
                   <select
                     value={schedTimeframe}
                     onChange={(e) => setSchedTimeframe(e.target.value)}
-                    className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300"
                   >
                     {TIMEFRAME_OPTIONS.map((tf) => (
                       <option key={tf} value={tf}>
@@ -540,11 +540,11 @@ export function CandleImport() {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-semibold">Frequency</label>
+                  <label className="text-[10px] text-green-600 uppercase font-semibold">Frequency</label>
                   <select
                     value={schedFreq}
                     onChange={(e) => setSchedFreq(e.target.value as 'daily' | 'weekly')}
-                    className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300"
                   >
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
@@ -554,13 +554,13 @@ export function CandleImport() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-semibold">
+                  <label className="text-[10px] text-green-600 uppercase font-semibold">
                     Hour (UTC)
                   </label>
                   <select
                     value={schedHour}
                     onChange={(e) => setSchedHour(parseInt(e.target.value, 10))}
-                    className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200"
+                    className="px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300"
                   >
                     {Array.from({ length: 24 }).map((_, h) => (
                       <option key={h} value={h}>
@@ -572,13 +572,13 @@ export function CandleImport() {
 
                 {schedFreq === 'weekly' && (
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-semibold">
+                    <label className="text-[10px] text-green-600 uppercase font-semibold">
                       Day of Week
                     </label>
                     <select
                       value={schedDow}
                       onChange={(e) => setSchedDow(parseInt(e.target.value, 10))}
-                      className="px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200"
+                      className="px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300"
                     >
                       <option value={1}>Monday</option>
                       <option value={2}>Tuesday</option>
@@ -596,14 +596,14 @@ export function CandleImport() {
                 <button
                   type="button"
                   onClick={() => setShowScheduleForm(false)}
-                  className="px-3 py-1.5 rounded text-xs text-slate-400 hover:text-slate-200"
+                  className="px-3 py-1.5 rounded text-xs text-green-600 hover:text-green-300"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createScheduleMutation.isPending}
-                  className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white"
+                  className="px-4 py-1.5 rounded bg-green-700 hover:bg-green-600 text-xs font-semibold text-white"
                 >
                   Create Schedule
                 </button>
@@ -613,15 +613,15 @@ export function CandleImport() {
 
           {/* Schedules Table */}
           {schedules.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-lg">
+            <div className="p-8 text-center text-xs text-green-700 bg-black/40 rounded-lg">
               No scheduled imports configured.
             </div>
           ) : (
             // `.table-container`/`.table` were dead classes (see
             // BacktestPane's trade log fix for the full story) - real
             // Tailwind now via [&_th]/[&_td] arbitrary variants.
-            <div className="overflow-x-auto rounded border border-slate-800">
-              <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-slate-400 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-slate-800 [&_thead]:bg-slate-900/60">
+            <div className="overflow-x-auto rounded border border-green-900">
+              <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-600 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-900 [&_thead]:bg-green-950/60">
                 <thead>
                   <tr>
                     <th>Symbol</th>
@@ -636,9 +636,9 @@ export function CandleImport() {
                   {schedules.map((sched) => (
                     <React.Fragment key={sched.id}>
                       <tr>
-                        <td className="font-semibold text-white">{sched.symbol}</td>
-                        <td className="font-mono text-xs text-slate-300">{sched.timeframe}</td>
-                        <td className="text-xs text-slate-300">
+                        <td className="font-semibold text-green-400">{sched.symbol}</td>
+                        <td className="font-mono text-xs text-green-300">{sched.timeframe}</td>
+                        <td className="text-xs text-green-300">
                           {describeCronSpec(sched.cron_spec)}
                         </td>
                         <td>
@@ -649,10 +649,10 @@ export function CandleImport() {
                               onChange={() => handleToggleSchedule(sched)}
                               className="sr-only peer"
                             />
-                            <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                            <div className="w-9 h-5 bg-green-900 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-green-200 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-700"></div>
                           </label>
                         </td>
-                        <td className="text-xs font-mono text-slate-400">
+                        <td className="text-xs font-mono text-green-600">
                           {sched.last_run_at
                             ? new Date(sched.last_run_at).toLocaleString()
                             : 'Never'}
@@ -661,7 +661,7 @@ export function CandleImport() {
                           <button
                             type="button"
                             onClick={() => setDeleteTarget(sched)}
-                            className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-rose-950/30"
+                            className="p-1 text-green-700 hover:text-rose-400 rounded hover:bg-rose-950/30"
                             title="Delete schedule"
                           >
                             <Trash2 className="w-4 h-4" />

@@ -25,18 +25,18 @@ export function MiniSidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-slate-950 border-r border-slate-800 transition-all duration-300 z-50 flex flex-col ${
+      className={`fixed left-0 top-0 h-screen bg-black border-r border-green-900/30 transition-all duration-300 z-50 flex flex-col ${
         expanded ? 'w-48' : 'w-14'
       }`}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
-      <div className="flex items-center gap-2.5 h-14 px-3 border-b border-slate-800 overflow-hidden shrink-0">
+      <div className="flex items-center gap-2.5 h-14 px-3 border-b border-green-900/30 overflow-hidden shrink-0">
         <div className="p-1.5 bg-green-600 rounded-lg text-black shrink-0">
           <Activity className="w-4 h-4" />
         </div>
         <span
-          className={`font-bold text-sm tracking-tight text-slate-100 font-mono whitespace-nowrap transition-opacity duration-300 ${
+          className={`font-bold text-sm tracking-tight text-green-100 font-mono whitespace-nowrap transition-opacity duration-300 ${
             expanded ? 'opacity-100' : 'opacity-0'
           }`}
         >
@@ -87,7 +87,7 @@ export function MiniSidebar() {
 
         {/* Monitoring External Links */}
         {(settings?.prometheus_url || settings?.grafana_url || settings?.asynqmon_url) && (
-          <div className="mt-2 pt-2 border-t border-slate-800 flex flex-col gap-1">
+          <div className="mt-2 pt-2 border-t border-green-900/30 flex flex-col gap-1">
             {settings?.prometheus_url && (
               <ExternalNavItem
                 href={settings.prometheus_url}
@@ -140,8 +140,8 @@ function NavItem({
       className={({ isActive }) =>
         `flex items-center gap-3 px-2 py-2 rounded-md transition-colors overflow-hidden ${
           isActive
-            ? 'bg-slate-800 text-green-400 font-semibold'
-            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            ? 'bg-green-950/60 text-green-400 font-semibold'
+            : 'text-green-700 hover:text-green-300 hover:bg-green-950/30'
         }`
       }
       title={expanded ? undefined : label}
@@ -175,7 +175,7 @@ function ExternalNavItem({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`${label} (opens in new tab)`}
-      className="flex items-center gap-3 px-2 py-2 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 overflow-hidden transition-colors"
+      className="flex items-center gap-3 px-2 py-2 rounded-md text-green-700 hover:text-green-300 hover:bg-green-950/30 overflow-hidden transition-colors"
       title={expanded ? undefined : label}
     >
       <div className="shrink-0">{icon}</div>

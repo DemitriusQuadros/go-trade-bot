@@ -293,7 +293,7 @@ export function Strategies() {
                       <select
                         value={strat.mode}
                         onChange={(e) => handleModeChange(strat, e.target.value as StrategyMode)}
-                        className="w-full bg-green-950/20 border border-slate-700 text-xs rounded px-2 py-1 text-green-400 focus:outline-none focus:border-blue-500 font-medium"
+                        className="w-full bg-green-950/20 border border-green-950 text-xs rounded px-2 py-1 text-green-400 focus:outline-none focus:border-green-600 font-medium"
                       >
                         <option value="dryrun">Dry Run</option>
                         <option value="paper">Paper</option>

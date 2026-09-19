@@ -40,17 +40,17 @@ export function ConfirmDialog({
                 <AlertTriangle className="w-5 h-5" />
               </div>
             )}
-            <h3 className="text-base font-semibold text-slate-100">{title}</h3>
+            <h3 className="text-base font-semibold text-green-100">{title}</h3>
           </div>
           <button
             onClick={onCancel}
-            className="text-slate-400 hover:text-slate-200 p-1"
+            className="text-green-600 hover:text-green-300 p-1"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-sm text-slate-300 mb-6">{message}</p>
+        <p className="text-sm text-green-300 mb-6">{message}</p>
 
         <div className="flex justify-end gap-3">
           <button

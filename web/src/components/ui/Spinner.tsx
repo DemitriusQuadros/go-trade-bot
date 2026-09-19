@@ -16,14 +16,14 @@ export function Spinner({
 
   return (
     <Loader2
-      className={`animate-spin text-blue-500 ${sizeMap[size]} ${className}`}
+      className={`animate-spin text-green-500 ${sizeMap[size]} ${className}`}
     />
   );
 }
 
 export function LoadingScreen({ message = 'Loading...' }: { message?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center p-12 gap-3 text-slate-400">
+    <div className="flex flex-col items-center justify-center p-12 gap-3 text-green-600">
       <Spinner size="lg" />
       <p className="text-sm font-medium">{message}</p>
     </div>

@@ -34,12 +34,12 @@ export function TraceAnnotationPanel({ record }: TraceAnnotationPanelProps) {
           </span>
         </div>
         {hasCandle && candle && (
-          <div className="flex items-center gap-3 text-slate-300">
-            <span>O: <span className="text-slate-100">{candle.o.toFixed(2)}</span></span>
+          <div className="flex items-center gap-3 text-green-300">
+            <span>O: <span className="text-green-100">{candle.o.toFixed(2)}</span></span>
             <span>H: <span className="text-emerald-400">{candle.h.toFixed(2)}</span></span>
             <span>L: <span className="text-rose-400">{candle.l.toFixed(2)}</span></span>
             <span>C: <span className="text-green-400 font-bold">{candle.c.toFixed(2)}</span></span>
-            <span>V: <span className="text-slate-400">{candle.v.toFixed(2)}</span></span>
+            <span>V: <span className="text-green-600">{candle.v.toFixed(2)}</span></span>
           </div>
         )}
       </div>
@@ -65,7 +65,7 @@ export function TraceAnnotationPanel({ record }: TraceAnnotationPanelProps) {
             </div>
           )}
           {signal.take_profit && (
-            <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-950/60 border border-blue-600/40 text-blue-300 rounded text-[11px]">
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-green-950/60 border border-green-700/40 text-green-300 rounded text-[11px]">
               <span>TP: {signal.take_profit.qty} @ ${signal.take_profit.price.toFixed(2)}</span>
             </div>
           )}
@@ -79,13 +79,13 @@ export function TraceAnnotationPanel({ record }: TraceAnnotationPanelProps) {
       {/* Indicators and Logs Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
         {/* Computed Indicators */}
-        <div className="space-y-1.5 bg-slate-950/60 p-2.5 rounded border border-green-950/30">
+        <div className="space-y-1.5 bg-black/60 p-2.5 rounded border border-green-950/30">
           <div className="flex items-center gap-1.5 text-green-500 text-[11px] font-bold uppercase tracking-wider">
             <Activity className="w-3.5 h-3.5" />
             <span>Indicators ({indicators.length})</span>
           </div>
           {indicators.length === 0 ? (
-            <div className="text-slate-500 text-[11px]">No indicator calls recorded this cycle.</div>
+            <div className="text-green-700 text-[11px]">No indicator calls recorded this cycle.</div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {indicators.map((ind, idx) => {
@@ -108,19 +108,19 @@ export function TraceAnnotationPanel({ record }: TraceAnnotationPanelProps) {
         </div>
 
         {/* Script Log Output */}
-        <div className="space-y-1.5 bg-slate-950/60 p-2.5 rounded border border-green-950/30">
+        <div className="space-y-1.5 bg-black/60 p-2.5 rounded border border-green-950/30">
           <div className="flex items-center gap-1.5 text-green-500 text-[11px] font-bold uppercase tracking-wider">
             <Terminal className="w-3.5 h-3.5" />
             <span>Debug Log ({logs.length})</span>
           </div>
           {logs.length === 0 ? (
-            <div className="text-slate-500 text-[11px]">No debug logs recorded this cycle.</div>
+            <div className="text-green-700 text-[11px]">No debug logs recorded this cycle.</div>
           ) : (
             <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
               {logs.map((entry, idx) => (
                 <div key={idx} className="flex items-start gap-1.5 text-[11px] leading-relaxed">
                   <span className="text-green-600 font-semibold">{entry.label}:</span>
-                  <span className="text-slate-300 break-all">
+                  <span className="text-green-300 break-all">
                     {typeof entry.value === 'object' ? JSON.stringify(entry.value) : String(entry.value)}
                   </span>
                 </div>

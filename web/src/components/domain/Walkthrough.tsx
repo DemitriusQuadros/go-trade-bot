@@ -174,32 +174,32 @@ export function Walkthrough({
       <div
         ref={cardRef}
         style={getCardStyle()}
-        className="w-80 p-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl text-slate-100 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-200"
+        className="w-80 p-4 rounded-xl bg-green-950 border border-green-900 shadow-2xl text-green-100 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-200"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-800">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-900/60 text-green-300 border border-green-800">
               {currentStepIdx + 1} / {steps.length}
             </span>
-            <h3 className="text-sm font-semibold text-white">{step.title}</h3>
+            <h3 className="text-sm font-semibold text-green-300">{step.title}</h3>
           </div>
           <button
             type="button"
             onClick={onSkip}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800"
+            className="text-green-600 hover:text-green-300 p-1 rounded-md hover:bg-green-900"
             aria-label="Skip walkthrough"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-xs text-slate-300 leading-relaxed">{step.body}</p>
+        <p className="text-xs text-green-300 leading-relaxed">{step.body}</p>
 
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-between pt-2 border-t border-green-900">
           <button
             type="button"
             onClick={onSkip}
-            className="text-xs text-slate-400 hover:text-slate-200 px-2 py-1"
+            className="text-xs text-green-600 hover:text-green-300 px-2 py-1"
           >
             Skip
           </button>
@@ -208,7 +208,7 @@ export function Walkthrough({
               <button
                 type="button"
                 onClick={handlePrev}
-                className="px-2.5 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-1"
+                className="px-2.5 py-1.5 rounded text-xs text-green-300 hover:bg-green-900 flex items-center gap-1"
               >
                 <ChevronLeft className="w-3.5 h-3.5" /> Back
               </button>
@@ -216,7 +216,7 @@ export function Walkthrough({
             <button
               type="button"
               onClick={handleNext}
-              className="px-3 py-1.5 rounded text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow flex items-center gap-1"
+              className="px-3 py-1.5 rounded text-xs font-semibold bg-green-700 hover:bg-green-600 text-white shadow flex items-center gap-1"
             >
               {isLast ? (
                 <>

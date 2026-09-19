@@ -53,7 +53,7 @@ export function HelpTooltip({ children, label = 'More information', side = 'top'
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onClick={() => setOpen((o) => !o)}
-        className="text-slate-500 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full p-0.5 inline-flex items-center justify-center cursor-pointer transition-colors"
+        className="text-green-700 hover:text-green-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full p-0.5 inline-flex items-center justify-center cursor-pointer transition-colors"
       >
         <Info className="w-3.5 h-3.5" />
       </button>
@@ -61,7 +61,7 @@ export function HelpTooltip({ children, label = 'More information', side = 'top'
         <span
           role="tooltip"
           id={id}
-          className={`absolute z-50 w-64 p-2.5 rounded-md bg-slate-900 border border-slate-700 text-xs text-slate-200 shadow-xl pointer-events-none leading-relaxed ${positionClasses[side]}`}
+          className={`absolute z-50 w-64 p-2.5 rounded-md bg-green-950 border border-green-950 text-xs text-green-300 shadow-xl pointer-events-none leading-relaxed ${positionClasses[side]}`}
         >
           {children}
         </span>
