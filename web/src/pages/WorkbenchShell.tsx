@@ -15,6 +15,7 @@ import { ConsolePanel } from '@/components/domain/ConsolePanel';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { usePersistedOpen, usePersistedEnum, usePersistedNumber } from '@/hooks/usePersistedOpen';
+import { useRegisterEditorBridge } from '@/context/EditorBridgeContext';
 import {
   ArrowLeft,
   Code2,
@@ -374,6 +375,22 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
     if (activeTraceSource === 'repl') return replTrace;
     return backtestRun?.execution_trace || [];
   }, [activeTraceSource, editorTrace, replTrace, backtestRun]);
+
+  // Bridge for the floating AI copilot widget (mounted outside this nested
+  // route tree, in App.tsx) - see context/EditorBridgeContext.ts. Sourced
+  // directly from `draft`, which this shell already owns; applyScript just
+  // pushes into the same setDraft the Editor pane's own Save button uses,
+  // so it flows through the exact same controlled-CodeMirror `value` prop
+  // LuaScriptEditor already re-renders on.
+  const editorBridge = useMemo(
+    () => ({
+      currentSource: draft.source,
+      applyScript: (source: string) => setDraft((prev) => ({ ...prev, source })),
+      strategyId: strategyId ?? undefined,
+    }),
+    [draft.source, setDraft, strategyId]
+  );
+  useRegisterEditorBridge(editorBridge);
 
   if (isEdit && isStrategyLoading) {
     return <LoadingScreen message={`Loading strategy #${strategyId}...`} />;

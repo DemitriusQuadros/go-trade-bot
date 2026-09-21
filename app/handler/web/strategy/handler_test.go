@@ -6,6 +6,7 @@ import (
 	"go-trade-bot/app/entities"
 	handler "go-trade-bot/app/handler/web/strategy"
 	"go-trade-bot/app/handler/web/strategy/mocks"
+	"go-trade-bot/internal/customerror"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -235,6 +236,45 @@ func TestStrategyHandler_PatchMode(t *testing.T) {
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, "paper", resp.Mode)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_Delete_Succeeds(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	mockUseCase.On("Delete", mock.Anything, uint(5)).Return(nil)
+
+	req, err := http.NewRequest(http.MethodDelete, "/strategy/5", nil)
+	assert.NoError(t, err)
+	req = muxSetURLVars(req, map[string]string{"id": "5"})
+	rec := httptest.NewRecorder()
+
+	h.Delete(rec, req)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	mockUseCase.AssertExpectations(t)
+}
+
+// TestStrategyHandler_Delete_UseCaseErrorPropagatesStatusCode verifies a
+// guard rejection from the usecase (e.g. "productive strategy" -> 409) is
+// surfaced with its real status code, not flattened to a generic 500 -
+// customerror.WriteHTTPError is what makes that guarantee.
+func TestStrategyHandler_Delete_UseCaseErrorPropagatesStatusCode(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	mockUseCase.On("Delete", mock.Anything, uint(5)).
+		Return(customerror.New(http.StatusConflict, "Cannot delete a productive strategy - disable it first"))
+
+	req, err := http.NewRequest(http.MethodDelete, "/strategy/5", nil)
+	assert.NoError(t, err)
+	req = muxSetURLVars(req, map[string]string{"id": "5"})
+	rec := httptest.NewRecorder()
+
+	h.Delete(rec, req)
+
+	assert.Equal(t, http.StatusConflict, rec.Code)
 	mockUseCase.AssertExpectations(t)
 }
 

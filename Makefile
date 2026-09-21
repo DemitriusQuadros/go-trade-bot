@@ -41,3 +41,6 @@ web-build: ## Build React web frontend and copy to embed dist
 
 web-dev: ## Run Vite dev server for frontend development
 	cd web && npm run dev
+
+gen-agent-docs: ## Regenerate the strategy-authoring doc (docs/generated + the agent's embedded copy) from source (Backend Spec 05)
+	go run ./internal/docgen/cmd/gen-strategy-authoring-doc

@@ -69,6 +69,11 @@ export function MiniSidebar() {
         />
         <NavItem to="/optimization" icon={<TrendingUp className="w-5 h-5" />} label="Optimization" expanded={expanded} />
         <NavItem to="/execution" icon={<FileSpreadsheet className="w-5 h-5" />} label="Execution Log" expanded={expanded} />
+        {/* AI Agent / Agent History were removed from here - the copilot is
+            now a floating widget (AgentCopilotWidget, mounted in App.tsx),
+            not a page you navigate to. /agent/history is still reachable
+            from the widget's own header and from each strategy row's
+            "Agent History" link on Strategies.tsx. */}
         <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label="Candle Import" expanded={expanded} />
         <NavItem
           to="/settings"

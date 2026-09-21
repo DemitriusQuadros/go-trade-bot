@@ -16,6 +16,8 @@ export default defineConfig({
       // NewServeMux), a namespace no SPA client-side route ever uses, so a
       // plain path-prefix proxy is enough - no more collision between e.g.
       // GET /backtest (API) and the SPA's /backtest page to work around.
+      // This one rule already covers /api/agent/runs[...] too - no special
+      // case needed for the agent feature's routes.
       '/api': 'http://localhost:8080',
     },
   },

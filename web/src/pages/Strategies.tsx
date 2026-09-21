@@ -15,6 +15,8 @@ import {
   Send,
   X,
   Code2,
+  Bot,
+  Trash2,
 } from 'lucide-react';
 
 export function Strategies() {
@@ -24,17 +26,24 @@ export function Strategies() {
   const [modeFilter, setModeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Confirm dialog state
+  // Confirm dialog state. confirmText was previously hardcoded to "Confirm
+  // LIVE Mode" at the single shared <ConfirmDialog> render site below -
+  // correct for the one action that used this dialog at the time (the
+  // live-mode switch), but wrong for every other action that opens it
+  // (delete, now) since the button label never changed to match. Making it
+  // part of this state, set per-action, is the actual fix.
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
+    confirmText: string;
     isDangerous: boolean;
     onConfirm: () => void;
   }>({
     isOpen: false,
     title: '',
     message: '',
+    confirmText: 'Confirm',
     isDangerous: false,
     onConfirm: () => {},
   });
@@ -73,6 +82,7 @@ export function Strategies() {
         isOpen: true,
         title: 'Confirm Switch to LIVE Trading',
         message: `Are you sure you want to enable REAL LIVE execution for "${strat.name}"? Real orders and capital will be committed on the exchange.`,
+        confirmText: 'Confirm LIVE Mode',
         isDangerous: true,
         onConfirm: async () => {
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -92,6 +102,32 @@ export function Strategies() {
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err.message || 'Failed to update mode' });
     }
+  };
+
+  // Permanently deletes the strategy and everything that references it
+  // (signals, orders, executions, backtests, optimization runs,
+  // performance snapshots, script history, agent chat history) - no undo.
+  // The backend independently blocks a productive strategy or one with
+  // open positions (409), surfaced here as an error message rather than
+  // relying on this confirmation alone to prevent an unsafe delete.
+  const handleDelete = (strat: Strategy) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Permanently Delete Strategy',
+      message: `Delete "${strat.name}" (#${strat.id})? This permanently removes it and ALL related data - signals, orders, backtests, executions, performance history, script versions, and agent chat history. This cannot be undone.`,
+      confirmText: 'Delete Permanently',
+      isDangerous: true,
+      onConfirm: async () => {
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        try {
+          await api.deleteStrategy(strat.id);
+          setActionMessage({ type: 'success', text: `Strategy #${strat.id} deleted` });
+          refetchStrategies();
+        } catch (err: any) {
+          setActionMessage({ type: 'error', text: err.message || 'Failed to delete strategy' });
+        }
+      },
+    });
   };
 
   const handleEnqueue = async () => {
@@ -313,6 +349,15 @@ export function Strategies() {
                         </button>
 
                         <button
+                          onClick={() => navigate(`/agent/history?strategy_id=${strat.id}`)}
+                          className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
+                          title="View what the AI agent has done to this strategy"
+                        >
+                          <Bot className="w-3.5 h-3.5 text-green-600" />
+                          <span>Agent History</span>
+                        </button>
+
+                        <button
                           onClick={() => handleToggleStatus(strat)}
                           className={`rounded border text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap ${
                             strat.status === 'disabled'
@@ -333,6 +378,15 @@ export function Strategies() {
                             </>
                           )}
                         </button>
+
+                        <button
+                          onClick={() => handleDelete(strat)}
+                          className="bg-rose-950/30 hover:bg-rose-900/40 text-rose-400 rounded border border-rose-900/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
+                          title="Permanently delete this strategy and all related data"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -349,7 +403,7 @@ export function Strategies() {
         title={confirmDialog.title}
         message={confirmDialog.message}
         isDangerous={confirmDialog.isDangerous}
-        confirmText="Confirm LIVE Mode"
+        confirmText={confirmDialog.confirmText}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />

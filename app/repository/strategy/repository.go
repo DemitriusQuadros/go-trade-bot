@@ -46,8 +46,53 @@ func (r StrategyRepository) Update(ctx context.Context, strategy entities.Strate
 	return r.db.WithContext(ctx).Omit("CreatedAt").Save(&strategy).Error
 }
 
+// Delete removes a strategy and every row that references it, in one
+// transaction - a hard delete, not a soft/flagged one (no entity in this
+// project has a DeletedAt column), matching the "keep the database small"
+// requirement this cascade was built for. Order rows have no direct
+// StrategyID column (only SignalID), so they're found via the strategy's
+// signal IDs first. AgentRun rows are included deliberately: the AI
+// copilot's chat history for a strategy has no reason to outlive the
+// strategy itself, and would otherwise accumulate as orphaned rows
+// referencing a StrategyID that no longer resolves to anything (Backend
+// Spec 02's StrategyID is a plain uint, not a DB foreign key, so nothing
+// would even complain about the dangling reference if this were skipped).
+//
+// Deliberately NOT wrapped in the safety guard (Status/open-signals check) -
+// that's app/usecase/strategy.StrategyUseCase.Delete's job; this method
+// trusts its caller and only handles "make it all go away, correctly and
+// atomically."
 func (r StrategyRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&entities.Strategy{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var signalIDs []uint
+		if err := tx.Model(&entities.Signal{}).Where("strategy_id = ?", id).Pluck("id", &signalIDs).Error; err != nil {
+			return err
+		}
+		if len(signalIDs) > 0 {
+			if err := tx.Where("signal_id IN ?", signalIDs).Delete(&entities.Order{}).Error; err != nil {
+				return err
+			}
+		}
+
+		for _, del := range []func(*gorm.DB) *gorm.DB{
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.Signal{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.StrategyExecution{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.BacktestRun{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.OptimizationRun{}) },
+			func(tx *gorm.DB) *gorm.DB {
+				return tx.Where("strategy_id = ?", id).Delete(&entities.StrategyPerformanceSnapshot{})
+			},
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.ScriptState{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.ScriptVersion{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.AgentRun{}) },
+		} {
+			if err := del(tx).Error; err != nil {
+				return err
+			}
+		}
+
+		return tx.Delete(&entities.Strategy{}, id).Error
+	})
 }
 
 func (r StrategyRepository) SaveExecution(ctx context.Context, execution entities.StrategyExecution) error {
