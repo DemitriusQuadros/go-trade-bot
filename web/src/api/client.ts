@@ -27,6 +27,8 @@ import { ScriptVersion,
   FastRerunResponse,
   ReplRequest,
   ReplResponse,
+  AgentRun,
+  AgentHistoryTurn,
 } from './types';
 
 const TOKEN_STORAGE_KEY = 'gtb_api_token';
@@ -133,6 +135,13 @@ export const api = {
     api.post<Strategy>('/strategy', data),
   updateStrategy: (id: number, data: StrategyUpdateRequest) =>
     api.put<Strategy>(`/strategy/${id}`, data),
+  // Permanently removes the strategy AND everything that references it
+  // (signals, orders, executions, backtests, optimization runs,
+  // performance snapshots, script state/versions, agent chat history -
+  // see app/repository/strategy.Delete's doc comment). No undo. The
+  // backend blocks this with a 409 for a productive strategy or one with
+  // open positions - surfaced to the caller as a thrown ApiError.
+  deleteStrategy: (id: number) => api.delete<void>(`/strategy/${id}`),
   patchStrategyStatus: (id: number, status: string) =>
     api.patch<Strategy>(`/strategy/${id}/status`, { status }),
   patchStrategyMode: (id: number, mode: string) =>
@@ -226,4 +235,29 @@ export const api = {
     api.post<FastRerunResponse>('/api/script/fast-rerun', req, opts),
   repl: (req: ReplRequest, opts?: { signal?: AbortSignal }) =>
     api.post<ReplResponse>('/api/script/repl', req, opts),
+
+  // AI Strategy Agent (frontend-01/02) - a second transport onto the same
+  // AgentUseCase.RunToolLoop cmd/mcp exposes over MCP. sendAgentMessage
+  // blocks until the full RunToolLoop turn completes (no streaming in v1).
+  // strategyId is an optional additive hint (see app/handler/web/agent's
+  // sendMessageRequest.StrategyID) - sent by the floating copilot widget
+  // when it's open inside the strategy workbench, so the agent's answers
+  // can be strategy-aware without the operator repeating "for strategy #N".
+  // history is every prior turn of the CURRENT session (built by the
+  // widget from its own transcript) - without it, every message started a
+  // brand-new RunToolLoop with zero memory of anything discussed or
+  // drafted earlier in the same chat, which made iterating on a script
+  // ("draft this, now tighten the stop loss") impossible.
+  sendAgentMessage: (
+    input: string,
+    strategyId?: number,
+    history?: AgentHistoryTurn[],
+    opts?: { signal?: AbortSignal },
+  ) => api.post<AgentRun>('/agent/runs', { input, strategy_id: strategyId, history }, opts),
+  listAgentRuns: (limit = 20, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(`/agent/runs?limit=${limit}`, opts),
+  listAgentRunsForStrategy: (strategyId: number, limit = 20, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(`/agent/runs?strategy_id=${strategyId}&limit=${limit}`, opts),
+  getAgentRun: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun>(`/agent/runs/${id}`, opts),
 };

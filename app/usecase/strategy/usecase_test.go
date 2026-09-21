@@ -376,6 +376,67 @@ func TestStrategyUseCase_UpdateMode(t *testing.T) {
 	})
 }
 
+// TestStrategyUseCase_Delete_BlocksProductiveStrategy is one of two
+// operator-confirmed safety guards on Delete: a strategy currently marked
+// Productive must be disabled first, so a live-trading strategy can never
+// be deleted out from under itself.
+func TestStrategyUseCase_Delete_BlocksProductiveStrategy(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	mockRepo.On("GetByID", ctx, uint(1)).Return(entities.Strategy{ID: 1, Status: entities.Productive}, nil)
+
+	err := strategyUC.Delete(ctx, 1)
+	assert.Error(t, err)
+	mockRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+// TestStrategyUseCase_Delete_BlocksOpenPositions is the second guard:
+// a strategy with any open signal/position must have it closed first -
+// deleting the strategy row out from under an open position would orphan
+// real capital with no strategy left to manage it.
+func TestStrategyUseCase_Delete_BlocksOpenPositions(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	strat := entities.Strategy{ID: 1, Status: entities.Testing}
+	mockRepo.On("GetByID", ctx, uint(1)).Return(strat, nil)
+	mockRepo.On("CountOpenSignals", ctx, strat).Return(int64(1), nil)
+
+	err := strategyUC.Delete(ctx, 1)
+	assert.Error(t, err)
+	mockRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
+}
+
+// TestStrategyUseCase_Delete_Succeeds verifies a disabled/testing strategy
+// with no open positions is actually deleted - the guards above must not
+// block the legitimate case.
+func TestStrategyUseCase_Delete_Succeeds(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+	ctx := context.Background()
+
+	strat := entities.Strategy{ID: 1, Status: entities.Disabled}
+	mockRepo.On("GetByID", ctx, uint(1)).Return(strat, nil)
+	mockRepo.On("CountOpenSignals", ctx, strat).Return(int64(0), nil)
+	mockRepo.On("Delete", ctx, uint(1)).Return(nil)
+
+	err := strategyUC.Delete(ctx, 1)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestStrategyUseCase_Delete_InvalidID(t *testing.T) {
+	mockRepo := new(mocks.StrategyRepository)
+	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)
+
+	err := strategyUC.Delete(context.Background(), 0)
+	assert.Error(t, err)
+	mockRepo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
+}
+
 func TestStrategyUseCase_GetPerformance(t *testing.T) {
 	mockRepo := new(mocks.StrategyRepository)
 	strategyUC := usecase.NewStrategyUseCase(mockRepo, nil)

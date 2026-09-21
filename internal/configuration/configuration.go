@@ -37,6 +37,19 @@ type Configuration struct {
 	InternalBridgeSecret string
 	DryRun               DryRunConfig
 	Console              ConsoleConfig
+	Agent                Agent
+}
+
+// Agent holds model-provider credentials and selection for the AI strategy
+// agent (Backend Spec 01). Single-operator scope (no per-user rows) - this
+// is process config, not DB state, matching the resolved decision to reuse
+// the Broker/API_TOKEN pattern rather than add an encryption-at-rest layer.
+type Agent struct {
+	Provider       string // "anthropic" | "gemini" - which provider is active
+	AnthropicKey   string // env AGENT_ANTHROPIC_KEY / config.yml AGENT.ANTHROPIC_KEY
+	AnthropicModel string // e.g. "claude-sonnet-5"; empty uses the adapter's built-in default
+	GeminiKey      string // env AGENT_GEMINI_KEY / config.yml AGENT.GEMINI_KEY
+	GeminiModel    string
 }
 
 type ConsoleConfig struct {
@@ -189,6 +202,17 @@ func NewConfiguration() *Configuration {
 	}
 	internalBridgeSecret := viper.GetString("INTERNAL_BRIDGE_SECRET")
 
+	// Agent config (Backend Spec 01) is read leniently, same as the other
+	// Phase 1+ additions above - an unset AGENT.* block must not prevent
+	// cmd/api/cmd/worker (which never construct a ModelProvider) from
+	// starting. cmd/mcp's ModelProviderModule is the only place that fails
+	// fast on a missing/invalid value (see cmd/mcp/modules/modelprovider.go).
+	agentProvider := viper.GetString("AGENT.PROVIDER")
+	agentAnthropicKey := viper.GetString("AGENT.ANTHROPIC_KEY")
+	agentAnthropicModel := viper.GetString("AGENT.ANTHROPIC_MODEL")
+	agentGeminiKey := viper.GetString("AGENT.GEMINI_KEY")
+	agentGeminiModel := viper.GetString("AGENT.GEMINI_MODEL")
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -227,6 +251,13 @@ func NewConfiguration() *Configuration {
 		Console: ConsoleConfig{
 			MetricsEnabled: consoleMetricsEnabled,
 			MetricsPort:    consoleMetricsPort,
+		},
+		Agent: Agent{
+			Provider:       agentProvider,
+			AnthropicKey:   agentAnthropicKey,
+			AnthropicModel: agentAnthropicModel,
+			GeminiKey:      agentGeminiKey,
+			GeminiModel:    agentGeminiModel,
 		},
 	}
 }

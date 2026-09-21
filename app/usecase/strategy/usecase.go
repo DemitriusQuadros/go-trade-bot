@@ -19,6 +19,8 @@ type StrategyRepository interface {
 	GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance
 	SaveScriptVersion(ctx context.Context, v entities.ScriptVersion) error
 	GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error)
+	CountOpenSignals(ctx context.Context, strategy entities.Strategy) (int64, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type StrategyWorker interface {
@@ -172,6 +174,43 @@ func (u StrategyUseCase) GetByID(ctx context.Context, id uint) (entities.Strateg
 
 func (u StrategyUseCase) GetAll(ctx context.Context) ([]entities.Strategy, error) {
 	return u.Repository.GetAll(ctx)
+}
+
+// Delete permanently removes a strategy and cascades to every table that
+// references it (signals, orders, executions, backtests, optimization
+// runs, performance snapshots, script state/versions, and AI agent chat
+// history - see repository.Delete's doc comment for the full list and
+// why AgentRun is included). This is a hard delete with no undo.
+//
+// Two guards, both operator-confirmed requirements: a strategy currently
+// marked Productive must be disabled first (deleting a live-trading
+// strategy out from under itself is exactly the kind of accident this
+// exists to prevent), and a strategy with any open signal/position must
+// have it closed first - deleting the strategy row out from under an open
+// position would orphan real capital with no strategy left to manage it.
+func (u StrategyUseCase) Delete(ctx context.Context, id uint) error {
+	if id == 0 {
+		return customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+
+	if strat.Status == entities.Productive {
+		return customerror.New(http.StatusConflict, "Cannot delete a productive strategy - disable it first")
+	}
+
+	openCount, err := u.Repository.CountOpenSignals(ctx, strat)
+	if err != nil {
+		return err
+	}
+	if openCount > 0 {
+		return customerror.New(http.StatusConflict, "Cannot delete a strategy with open positions - close them first")
+	}
+
+	return u.Repository.Delete(ctx, id)
 }
 
 func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {

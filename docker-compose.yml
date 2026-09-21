@@ -84,6 +84,51 @@ services:
     volumes:
       - ./config.yml:/root/config.yml:ro
 
+  # mcp exposes app/usecase/agent's tools/resources over MCP (Backend Spec
+  # 04) to external AI clients - a fifth, independent binary alongside api/
+  # worker/backtest/candleimport, never embedded into any of them (ADR-A2).
+  # Runs the SAME Lua script runner save_strategy_script/run_backtest can
+  # invoke, so it carries the identical runaway-Lua-VM risk the worker's
+  # mem_limit exists for - see that comment block above for the full
+  # reasoning; the 512m figure has the same "placeholder pending a real
+  # baseline" caveat.
+  #
+  # --transport=http (not the stdio default) is required here: this
+  # container has no interactive stdin for a client to talk to - stdio mode
+  # is only for a client spawning the binary itself as a local subprocess
+  # (e.g. Claude Desktop), not a standing service.
+  #
+  # network_mode: host - required because config.yml (this project's
+  # existing convention across api/worker/mcp) points REDIS.ADDR/DB.HOST at
+  # "localhost", which only resolves to the redis/postgres containers when
+  # this container shares the host's own network namespace. Found the hard
+  # way: `worker`'s own container (bridge-networked, no override) has been
+  # crash-looping on exactly this - `dial tcp [::1]:5432: connect:
+  # connection refused` - for the ~30 hours it's shown Exited in `docker
+  # ps`, unrelated to this feature. Not fixing worker's here (separate,
+  # pre-existing issue); host networking sidesteps it for mcp specifically.
+  # This also means the `ports:`/`expose:` keys don't apply under host mode
+  # - 8090 is already reachable at the host's own :8090 directly. On the
+  # actual remote-notebook deployment (Linux, so host networking behaves
+  # identically) put nginx (deploy/nginx/mcp.conf.example) in front of
+  # localhost:8090 rather than relying on Docker's own port publishing.
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET: mcp
+    container_name: mcp
+    command: ["./app", "--transport=http"]
+    restart: unless-stopped
+    mem_limit: 512m
+    network_mode: host
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./config.yml:/root/config.yml:ro
+
 volumes:
   redis_data:
   prometheus_data:

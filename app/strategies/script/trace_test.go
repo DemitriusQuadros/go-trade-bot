@@ -92,18 +92,75 @@ func TestTraceRecorder_LogPlot_OverridesAutoPlot(t *testing.T) {
 	assert.Equal(t, 99.9, out.Plots[0].Value, "the explicit plot() value must win over the auto-plotted indicator value")
 }
 
-// TestTraceRecorder_LogIndicatorCall_LastCallWinsPerCycle verifies that
-// calling the same bare indicator name twice in one cycle (e.g. two
-// different RSI periods) auto-plots only the latest value, not two
-// same-name points for the same timestamp.
-func TestTraceRecorder_LogIndicatorCall_LastCallWinsPerCycle(t *testing.T) {
+// TestTraceRecorder_LogIndicatorCall_DisambiguatesDifferentParamsSameCycle
+// verifies the fix for the reported bug: calling the same indicator twice
+// in one cycle with DIFFERENT params (e.g. two EMAs at different periods)
+// must plot both lines, distinguished by their params in the name, instead
+// of the second call silently overwriting the first (the previous
+// behavior - collapsing to a single "ema" point - meant only one of the two
+// EMA lines ever rendered on the chart, which is what the user reported).
+func TestTraceRecorder_LogIndicatorCall_DisambiguatesDifferentParamsSameCycle(t *testing.T) {
 	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 14.0}, []float64{20.0})
-	rec.LogIndicatorCall(strategies.Context{}, "rsi", map[string]any{"arg1": 21.0}, []float64{45.0})
+	rec.LogIndicatorCall(strategies.Context{}, "ema", map[string]any{"arg1": 9.0}, []float64{100.0})
+	rec.LogIndicatorCall(strategies.Context{}, "ema", map[string]any{"arg1": 21.0}, []float64{95.0})
+
+	out := rec.Record()
+	require.Len(t, out.Plots, 2, "both EMA calls must produce distinct plot points")
+
+	byName := map[string]PlotPoint{}
+	for _, p := range out.Plots {
+		byName[p.Name] = p
+	}
+
+	ema9, ok := byName["ema(9)"]
+	require.True(t, ok, "expected ema(9) in Plots, got names: %v", plotNames(out.Plots))
+	assert.Equal(t, 100.0, ema9.Value)
+	assert.True(t, ema9.Overlay, "ema is a price-scale indicator")
+	assert.NotEmpty(t, ema9.Color)
+
+	ema21, ok := byName["ema(21)"]
+	require.True(t, ok, "expected ema(21) in Plots, got names: %v", plotNames(out.Plots))
+	assert.Equal(t, 95.0, ema21.Value)
+	assert.True(t, ema21.Overlay)
+	assert.NotEmpty(t, ema21.Color)
+	assert.NotEqual(t, ema9.Color, ema21.Color, "two distinct lines should get distinct palette colors")
+}
+
+// TestTraceRecorder_LogIndicatorCall_SingleCallKeepsBareName verifies the
+// common case (an indicator called exactly once per cycle) is unaffected by
+// disambiguation - it still plots under the plain "ema" name, not "ema(9)".
+func TestTraceRecorder_LogIndicatorCall_SingleCallKeepsBareName(t *testing.T) {
+	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
+	rec.LogIndicatorCall(strategies.Context{}, "ema", map[string]any{"arg1": 9.0}, []float64{100.0})
 
 	out := rec.Record()
 	require.Len(t, out.Plots, 1)
-	assert.Equal(t, 45.0, out.Plots[0].Value)
+	assert.Equal(t, "ema", out.Plots[0].Name)
+	assert.Equal(t, 100.0, out.Plots[0].Value)
+}
+
+// TestTraceRecorder_LogIndicatorCall_SameParamsCollapseToOnePoint verifies a
+// genuine duplicate call (same indicator, identical params, called twice in
+// one cycle - e.g. a script branch that happens to call ind.ema(9) from two
+// code paths in the same cycle) still collapses to one point: there is
+// nothing to disambiguate, so last-value-wins remains correct there.
+func TestTraceRecorder_LogIndicatorCall_SameParamsCollapseToOnePoint(t *testing.T) {
+	rec := NewTraceRecorder(time.Now(), exchange.Candle{})
+	rec.LogIndicatorCall(strategies.Context{}, "ema", map[string]any{"arg1": 9.0}, []float64{100.0})
+	rec.LogIndicatorCall(strategies.Context{}, "ema", map[string]any{"arg1": 9.0}, []float64{101.0})
+
+	out := rec.Record()
+	require.Len(t, out.Plots, 1)
+	assert.Equal(t, "ema", out.Plots[0].Name)
+	assert.Equal(t, 101.0, out.Plots[0].Value)
+}
+
+func plotNames(plots []PlotPoint) []string {
+	names := make([]string, len(plots))
+	for i, p := range plots {
+		names[i] = p.Name
+	}
+	return names
 }
 
 // TestTraceRecorder_PlotCap_SharedBetweenAutoAndExplicit verifies

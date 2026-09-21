@@ -45,6 +45,12 @@ export default defineConfig({
       '/settings': apiProxy(),
       '/candles': apiProxy(),
       '/api': apiProxy(),
+      // Backend agent routes are POST/GET /agent/runs[...] - the client-side
+      // SPA routes /agent and /agent/history never share that exact path
+      // (they have no /runs segment), so this needs no accept-header
+      // disambiguation like /settings or /backtest above; XHR calls to
+      // /agent/runs simply proxy straight through.
+      '/agent/runs': apiProxy(),
     },
   },
   build: {

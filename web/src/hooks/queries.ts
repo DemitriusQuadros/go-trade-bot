@@ -12,6 +12,7 @@ import {
   ImportScheduleCreateRequest,
   ImportSchedule,
   FastRerunRequest,
+  AgentHistoryTurn,
 } from '@/api/types';
 
 export const QUERY_KEYS = {
@@ -30,6 +31,8 @@ export const QUERY_KEYS = {
   settings: ['settings'],
   candleImportJob: (jobId: string | null) => ['candleImportJob', jobId],
   importSchedules: ['importSchedules'],
+  agentRuns: (strategyId?: number) => ['agentRuns', strategyId],
+  agentRun: (id: number) => ['agentRuns', 'detail', id],
 };
 
 export function useAccount() {
@@ -90,6 +93,43 @@ export function useBacktest(id: number) {
   });
 }
 
+// AI Strategy Agent (frontend-01/02)
+export function useAgentRuns(strategyId?: number, limit = 20) {
+  return useQuery({
+    queryKey: QUERY_KEYS.agentRuns(strategyId),
+    queryFn: ({ signal }) =>
+      strategyId
+        ? api.listAgentRunsForStrategy(strategyId, limit, { signal })
+        : api.listAgentRuns(limit, { signal }),
+  });
+}
+
+export function useAgentRun(id: number) {
+  return useQuery({
+    queryKey: QUERY_KEYS.agentRun(id),
+    queryFn: ({ signal }) => api.getAgentRun(id, { signal }),
+    enabled: !!id,
+  });
+}
+
+export function useSendAgentMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      input,
+      strategyId,
+      history,
+    }: {
+      input: string;
+      strategyId?: number;
+      history?: AgentHistoryTurn[];
+    }) => api.sendAgentMessage(input, strategyId, history),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agentRuns() });
+    },
+  });
+}
+
 // Mutations
 export function useCreateStrategy() {
   const queryClient = useQueryClient();
@@ -108,6 +148,16 @@ export function useUpdateStrategy(id: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategies });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategy(id) });
+    },
+  });
+}
+
+export function useDeleteStrategy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteStrategy(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategies });
     },
   });
 }

@@ -12,11 +12,14 @@ import { Positions } from '@/pages/Positions';
 import { BacktestLauncher } from '@/pages/BacktestLauncher';
 import { Optimization } from '@/pages/Optimization';
 import { ExecutionLog } from '@/pages/ExecutionLog';
+import { AgentHistory } from '@/pages/AgentHistory';
+import { AgentCopilotWidget } from '@/components/domain/AgentCopilotWidget';
 import { Settings } from '@/pages/Settings';
 import { CandleImport } from '@/pages/CandleImport';
 import { Help } from '@/pages/Help';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Walkthrough, WALKTHROUGH_STORAGE_KEY } from '@/components/domain/Walkthrough';
+import { EditorBridgeProvider } from '@/context/EditorBridgeContext';
 
 export function App() {
   const [showWalkthrough, setShowWalkthrough] = useState(false);
@@ -45,6 +48,7 @@ export function App() {
   return (
     <AuthGate>
       <BrowserRouter>
+      <EditorBridgeProvider>
         <AppLayout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -67,6 +71,12 @@ export function App() {
             <Route path="/backtest" element={<BacktestLauncher />} />
             <Route path="/optimization" element={<Optimization />} />
             <Route path="/execution" element={<ExecutionLog />} />
+            {/* /agent (standalone full-page chat) is gone - replaced by the
+                floating AgentCopilotWidget mounted below, alongside these
+                Routes. /agent/history stays: still a legitimate read-only
+                audit view, reachable from the widget's header and from
+                Strategies.tsx's per-row "Agent History" deep link. */}
+            <Route path="/agent/history" element={<AgentHistory />} />
             <Route path="/candles" element={<CandleImport />} />
             <Route path="/settings" element={<Settings />} />
             <Route
@@ -75,12 +85,14 @@ export function App() {
             />
           </Routes>
         </AppLayout>
+        <AgentCopilotWidget />
         {showWalkthrough && (
           <Walkthrough
             onComplete={handleWalkthroughComplete}
             onSkip={handleWalkthroughSkip}
           />
         )}
+      </EditorBridgeProvider>
       </BrowserRouter>
     </AuthGate>
   );

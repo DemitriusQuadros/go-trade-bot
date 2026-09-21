@@ -501,3 +501,46 @@ export interface ScriptVersion {
   source: string;
   created_at: string;
 }
+
+// AI Strategy Agent (docs/specs/ai-strategy-agent). AgentToolCall mirrors
+// app/handler/web/agent's actual toolCallResponse DTO shape - the real
+// persisted shape (tool/args/result/error/timestamp) rather than the
+// {tool,args,result_summary} shape frontend-01's spec originally assumed
+// before the backend was implemented.
+export interface AgentToolCall {
+  tool: string;
+  args?: Record<string, unknown>;
+  result?: string;
+  error?: string;
+  timestamp?: string;
+}
+
+// AgentHistoryTurn is the request-side shape sent as `history` on every
+// POST /agent/runs call - the copilot widget builds this from its own
+// prior turns of the current session (see app/usecase/agent.PriorTurn)
+// so the agent has real conversational memory: without this, every message
+// started a brand-new, context-free RunToolLoop with no idea what an
+// earlier message in the same chat had discussed or drafted.
+export interface AgentHistoryTurn {
+  input: string;
+  tool_calls?: AgentToolCall[];
+  response_text?: string;
+}
+
+export type AgentRunStatus = 'ok' | 'error';
+export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor';
+
+export interface AgentRun {
+  id: number;
+  provider: string;
+  model: string;
+  trigger: AgentRunTrigger | string;
+  status: AgentRunStatus;
+  error_message?: string;
+  input_summary: string;
+  response_text?: string;
+  tool_calls: AgentToolCall[];
+  strategy_id?: number;
+  started_at: string;
+  finished_at?: string;
+}

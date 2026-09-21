@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go-trade-bot/app/entities"
 	account "go-trade-bot/app/handler/web/account"
+	agenthandler "go-trade-bot/app/handler/web/agent"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
 	candleimport "go-trade-bot/app/handler/web/candleimport"
@@ -56,6 +57,7 @@ func main() {
 		modules.CandleImportModule,
 		modules.SettingsModule,
 		modules.ScriptModule,
+		modules.AgentModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
@@ -69,6 +71,7 @@ func main() {
 			AsRoute(candleimport.NewCandleImportHandler),
 			AsRoute(settings.NewSettingsHandler),
 			AsRoute(scripthandler.NewScriptHandler),
+			AsRoute(agenthandler.NewAgentHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`, ``),
@@ -159,6 +162,8 @@ func Migrate(db *gorm.DB) error {
 		&entities.ImportJob{},
 		&entities.ImportSchedule{},
 		&entities.ScriptState{},
+		&entities.AgentInstruction{},
+		&entities.AgentRun{},
 	); err != nil {
 		return err
 	}

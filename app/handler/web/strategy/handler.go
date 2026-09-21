@@ -24,6 +24,7 @@ type UseCase interface {
 	UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error)
 	GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error)
 	RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error
+	Delete(ctx context.Context, id uint) error
 }
 type StrategyHandler struct {
 	UseCase UseCase
@@ -87,6 +88,11 @@ func (h *StrategyHandler) Handlers() []handler.Configuration {
 			Pattern: "/strategy/{id}",
 			Action:  h.GetById,
 			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/strategy/{id:[0-9]+}",
+			Action:  h.Delete,
+			Method:  http.MethodDelete,
 		},
 	}
 }
@@ -272,6 +278,26 @@ func (h *StrategyHandler) GetVersions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(versions)
+}
+
+// Delete permanently removes a strategy and everything that references it
+// (see usecase.Delete / repository.Delete's doc comments for the full
+// cascade and the two safety guards). No confirmation step at this layer -
+// the frontend is responsible for confirming with the operator before ever
+// issuing this request, since there is no undo once it succeeds.
+func (h *StrategyHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.UseCase.Delete(r.Context(), uint(id)); err != nil {
+		customerror.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *StrategyHandler) RevertVersion(w http.ResponseWriter, r *http.Request) {

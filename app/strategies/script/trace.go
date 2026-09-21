@@ -2,6 +2,10 @@ package script
 
 import (
 	"encoding/json"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"go-trade-bot/app/strategies"
@@ -200,14 +204,25 @@ type TraceRecorder struct {
 	signal     *strategies.Signal
 	log        []LogEntry
 	plots      []PlotPoint
-	// autoPlots/autoPlotOrder back LogIndicatorCall's auto-plot fallback
-	// (see its doc comment): one point per distinct ind.* name actually
-	// called this cycle, last-value-wins if called more than once, emitted
-	// in Record() only for names the script didn't already plot() itself.
-	autoPlots     map[string]PlotPoint
-	autoPlotOrder []string
-	plotNamesSeen map[string]int // name -> palette slot index, first-seen order
-	plotCapHit    bool           // true once the 13th distinct name has been dropped, guards the one-time warning
+	// autoPlots/autoPlotOrder/autoPlotSigsByName back LogIndicatorCall's
+	// auto-plot fallback (see its doc comment): one point per distinct
+	// (ind.* name, param signature) pair actually called this cycle, keyed
+	// by "name\x00sig" so calling the same indicator twice with DIFFERENT
+	// params (e.g. ind.ema(9) and ind.ema(21) in the same cycle) plots both,
+	// each claiming its own color-palette slot in true call order (matching
+	// how an explicit plot() call claims a slot) - calling it twice with the
+	// SAME params still collapses to one entry (a genuine duplicate, nothing
+	// to disambiguate, last-value-wins is correct there). autoPlotSigsByName
+	// tracks every distinct signature seen per bare name so Record() can
+	// decide, per entry, whether to render under the bare name (only one
+	// signature ever seen) or the disambiguated "name(sig)" form (more than
+	// one) - emitted in Record() only for (disambiguated) names the script
+	// didn't already plot() itself.
+	autoPlots          map[string]autoPlotEntry
+	autoPlotOrder      []string // composite "name\x00sig" keys, first-seen order
+	autoPlotSigsByName map[string][]string
+	plotNamesSeen      map[string]int // name -> palette slot index, first-seen order
+	plotCapHit         bool           // true once the 13th distinct name has been dropped, guards the one-time warning
 }
 
 // maxDistinctPlotNames is the soft cap from blueprint §1/ADR-026 - generous
@@ -246,17 +261,32 @@ func (t *TraceRecorder) LogIndicatorCall(cctx strategies.Context, name string, p
 	}
 	t.indicators = append(t.indicators, IndicatorCall{Name: name, Params: params, Value: values[0]})
 
+	sig := paramSignature(params)
 	labels := multiIndicatorSubLabels[name]
 	if len(labels) != len(values) {
 		// Single-return indicator (or a name/arity we don't have a sub-label
 		// mapping for) - plot under the bare name, first value only, same as
 		// the original single-value behavior.
-		t.autoPlotValue(name, values[0])
+		t.autoPlotValue(name, sig, values[0])
 		return
 	}
 	for i, label := range labels {
-		t.autoPlotValue(name+"."+label, values[i])
+		t.autoPlotValue(name+"."+label, sig, values[i])
 	}
+}
+
+// autoPlotEntry is one (name, param signature) pair's auto-plot state.
+// Color/slot is resolved immediately (see autoPlotValue) in true call
+// order, matching how an explicit plot() call claims its slot - only the
+// final display Name (bare vs. disambiguated) is decided later, in
+// Record(), since that depends on how many distinct signatures the bare
+// name ended up with by the end of the cycle.
+type autoPlotEntry struct {
+	name    string // bare indicator/sub-label name, e.g. "ema" or "bollinger.upper"
+	sig     string
+	value   float64
+	overlay bool
+	color   string
 }
 
 // autoPlotValue is the auto-plot fallback shared by every LogIndicatorCall
@@ -266,27 +296,82 @@ func (t *TraceRecorder) LogIndicatorCall(cctx strategies.Context, name string, p
 // operator no longer has to remember a matching plot() call for each
 // indicator they use, and an indicator the script never calls never appears
 // (no dead RSI line left over from an earlier version of the script). An
-// explicit plot() call under the exact same name always wins over this (see
-// Record()): this is a fallback for indicators the script computes but
-// doesn't bother plotting itself, not an override of intentional plot()
-// calls (e.g. a script that plots a smoothed/offset version of the raw
-// indicator value under the same name).
-func (t *TraceRecorder) autoPlotValue(plotName string, value float64) {
-	color, ok := t.resolvePlotSlot(plotName)
+// explicit plot() call under the exact same (possibly disambiguated) name
+// always wins over this (see Record()): this is a fallback for indicators
+// the script computes but doesn't bother plotting itself, not an override
+// of intentional plot() calls.
+//
+// paramSig distinguishes calls to the same plotName with different
+// arguments in the same cycle (e.g. ind.ema(9) vs ind.ema(21)): each
+// distinct (plotName, paramSig) pair is keyed separately here and claims
+// its own color-palette slot immediately, in call order - so two EMAs at
+// different periods both survive to Record() (with two different colors),
+// instead of the second call silently overwriting the first. A repeated
+// call with the IDENTICAL signature reuses the same key, so it still
+// collapses to one entry (nothing to disambiguate - a genuine duplicate,
+// and last-value-wins is correct there).
+func (t *TraceRecorder) autoPlotValue(plotName, paramSig string, value float64) {
+	key := plotName + "\x00" + paramSig
+	if _, seen := t.autoPlots[key]; !seen {
+		t.autoPlotOrder = append(t.autoPlotOrder, key)
+		if t.autoPlotSigsByName == nil {
+			t.autoPlotSigsByName = make(map[string][]string)
+		}
+		t.autoPlotSigsByName[plotName] = append(t.autoPlotSigsByName[plotName], paramSig)
+	}
+	color, ok := t.resolvePlotSlot(key)
 	if !ok {
-		return
+		return // 13th+ distinct (name, params) pair this cycle: silently dropped, per ADR-026
 	}
 	if t.autoPlots == nil {
-		t.autoPlots = make(map[string]PlotPoint)
+		t.autoPlots = make(map[string]autoPlotEntry)
 	}
-	if _, seen := t.autoPlots[plotName]; !seen {
-		t.autoPlotOrder = append(t.autoPlotOrder, plotName)
+	t.autoPlots[key] = autoPlotEntry{name: plotName, sig: paramSig, value: value, overlay: overlayIndicators[plotName], color: color}
+}
+
+// disambiguatedPlotName returns the name a given (plotName, paramSig) entry
+// should render under: the bare plotName if it was only ever called with one
+// distinct param signature this cycle (preserves the original, simpler
+// label for the common case), or "plotName(sig)" if the script called it
+// more than once with different params - e.g. two EMAs with different
+// periods become "ema(9)" and "ema(21)" instead of colliding on "ema".
+func disambiguatedPlotName(plotName, paramSig string, distinctSigCount int) string {
+	if distinctSigCount <= 1 || paramSig == "" {
+		return plotName
 	}
-	// Last call wins if the same indicator (sub-)name is called more than
-	// once this cycle with different params (e.g. two different RSI
-	// periods) - a script that wants both visible distinctly should plot()
-	// them under different names itself.
-	t.autoPlots[plotName] = PlotPoint{Name: plotName, Value: value, Color: color, Overlay: overlayIndicators[plotName]}
+	return plotName + "(" + paramSig + ")"
+}
+
+// paramSignature renders an indicator call's positional numeric args
+// (luaArgsAsParams' arg1, arg2, ... keys) as a stable, human-readable
+// signature for disambiguatedPlotName, e.g. {"arg1": 9.0} -> "9" or
+// {"arg1": 12.0, "arg2": 26.0, "arg3": 9.0} -> "12,26,9". Lexicographic key
+// sort is safe here since every real ind.* closure takes at most a handful
+// of positional args (macd's 3 is the max today) - well short of "arg10"
+// ever sorting ahead of "arg2".
+func paramSignature(params map[string]any) string {
+	if len(params) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if f, ok := params[k].(float64); ok {
+			parts = append(parts, formatParamNumber(f))
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatParamNumber(f float64) string {
+	if f == math.Trunc(f) {
+		return strconv.FormatInt(int64(f), 10)
+	}
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 // multiIndicatorSubLabels maps a multi-return ind.* name to the labels used
@@ -422,11 +507,17 @@ func (t *TraceRecorder) Record() TraceRecord {
 		for _, p := range t.plots {
 			explicitlyPlotted[p.Name] = true
 		}
-		for _, name := range t.autoPlotOrder {
-			if explicitlyPlotted[name] {
+		for _, key := range t.autoPlotOrder {
+			entry, ok := t.autoPlots[key]
+			if !ok {
+				continue // dropped at call time (cap hit) - see autoPlotValue
+			}
+			distinct := len(t.autoPlotSigsByName[entry.name])
+			finalName := disambiguatedPlotName(entry.name, entry.sig, distinct)
+			if explicitlyPlotted[finalName] {
 				continue // the script's own plot() call under this name wins
 			}
-			plots = append(plots, t.autoPlots[name])
+			plots = append(plots, PlotPoint{Name: finalName, Value: entry.value, Color: entry.color, Overlay: entry.overlay})
 		}
 	}
 	return TraceRecord{Timestamp: t.timestamp, Candle: t.candle, Indicators: t.indicators, Signal: t.signal, Log: t.log, Plots: plots}
