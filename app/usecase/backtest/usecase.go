@@ -32,8 +32,10 @@ type BacktestRepository interface {
 	Create(ctx context.Context, run *entities.BacktestRun) error
 	GetByID(ctx context.Context, id uint) (entities.BacktestRun, error)
 	ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error)
+	ListRecent(ctx context.Context, limit int) ([]entities.BacktestRun, error)
 	ListRunsWithReport(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error)
 	Update(ctx context.Context, run entities.BacktestRun) error
+	Delete(ctx context.Context, id uint) error
 }
 
 type ThresholdPolicy struct {
@@ -223,6 +225,11 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		return entities.BacktestRun{}, fmt.Errorf("failed to persist backtest run: %w", err)
 	}
 
+	// Not persisted (the association is already saved) - just lets the
+	// immediate response include the strategy's name without a second
+	// round trip to reload it via the repository's Preload("Strategy").
+	run.Strategy = strat
+
 	u.pruneReports(ctx, strat.ID)
 	return run, nil
 }
@@ -349,6 +356,8 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		return entities.BacktestRun{}, fmt.Errorf("failed to persist walk-forward run: %w", err)
 	}
 
+	run.Strategy = strat
+
 	u.pruneReports(ctx, strat.ID)
 	return run, nil
 }
@@ -392,6 +401,35 @@ func (u *BacktestUseCase) GetByID(ctx context.Context, id uint) (entities.Backte
 
 func (u *BacktestUseCase) ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error) {
 	return u.backtestRepo.ListByStrategy(ctx, strategyID)
+}
+
+// ListRecentDefaultLimit caps the cross-strategy "Recent Runs" panel so it
+// doesn't pull every backtest ever run (each row carries an equity curve).
+const ListRecentDefaultLimit = 20
+
+func (u *BacktestUseCase) ListRecent(ctx context.Context) ([]entities.BacktestRun, error) {
+	return u.backtestRepo.ListRecent(ctx, ListRecentDefaultLimit)
+}
+
+// DeleteBacktest permanently removes a backtest run's row (trade log,
+// equity curve, execution trace, cached Monte Carlo result - all of it) and,
+// if one was generated, its HTML report file on disk. Returns
+// ErrBacktestRunNotFound if the run doesn't exist.
+func (u *BacktestUseCase) DeleteBacktest(ctx context.Context, id uint) error {
+	run, err := u.backtestRepo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrBacktestRunNotFound, err)
+	}
+
+	if err := u.backtestRepo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete backtest run: %w", err)
+	}
+
+	if run.HTMLReportPath != "" {
+		_ = os.Remove(run.HTMLReportPath)
+	}
+
+	return nil
 }
 
 const (
@@ -556,7 +594,6 @@ func (u *BacktestUseCase) executeReplay(
 	}
 
 	driver := engine.NewReplayDriver(replayFeed, simExchange, eng, stratImpl, strat, symbol, strategies.ModeBacktest, signalRepo)
-	driver.WarmupSource = engine.NewCandleRepoWarmupSource(u.candleRepo, from)
 	return driver.Run(ctx)
 }
 

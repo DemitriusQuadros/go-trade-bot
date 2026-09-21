@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -153,6 +155,15 @@ func (m *mockBacktestRepo) ListByStrategy(ctx context.Context, strategyID uint) 
 	return res, nil
 }
 
+func (m *mockBacktestRepo) ListRecent(ctx context.Context, limit int) ([]entities.BacktestRun, error) {
+	res := make([]entities.BacktestRun, len(m.runs))
+	copy(res, m.runs)
+	if limit > 0 && len(res) > limit {
+		res = res[:limit]
+	}
+	return res, nil
+}
+
 func (m *mockBacktestRepo) ListRunsWithReport(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error) {
 	var res []entities.BacktestRun
 	for _, r := range m.runs {
@@ -161,6 +172,16 @@ func (m *mockBacktestRepo) ListRunsWithReport(ctx context.Context, strategyID ui
 		}
 	}
 	return res, nil
+}
+
+func (m *mockBacktestRepo) Delete(ctx context.Context, id uint) error {
+	for i, r := range m.runs {
+		if r.ID == id {
+			m.runs = append(m.runs[:i], m.runs[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("backtest run %d not found", id)
 }
 
 func (m *mockBacktestRepo) Update(ctx context.Context, run entities.BacktestRun) error {
@@ -634,4 +655,65 @@ func TestBacktest_ExecutionTrace_EmptyForNonScriptStrategy(t *testing.T) {
 	uc, candles := newScriptBacktestUseCaseWithSource(t, "notrace", "")
 	run := runScriptBacktest(t, uc, candles)
 	assert.Empty(t, run.ExecutionTraceJSON, "non-traceable strategy must not persist an execution trace")
+}
+
+func TestBacktestUseCase_Run_PopulatesStrategyNameOnReturn(t *testing.T) {
+	candles := generateCandles(100)
+	candleRepo := &mockCandleRepo{candles: candles}
+	stratRepo := &mockStrategyRepo{
+		strategy: entities.Strategy{ID: 1, Name: "RSI Momentum", StrategyName: "script", ScriptSource: noTradeScript},
+	}
+	backtestRepo := &mockBacktestRepo{}
+	metricsProvider := &mockMetricsProvider{}
+
+	uc := backtest.NewBacktestUseCase(
+		candleRepo, backtestRepo, stratRepo, metricsProvider,
+		backtest.ThresholdPolicy{}, t.TempDir(), 20,
+	)
+
+	run, err := uc.Run(context.Background(), backtest.RunRequest{
+		StrategyID: 1,
+		Symbol:     "BTCUSDT",
+		Timeframe:  "1m",
+		StartDate:  candles[0].OpenTime,
+		EndDate:    candles[len(candles)-1].OpenTime.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "RSI Momentum", run.Strategy.Name, "the returned run should carry the strategy's name without a second lookup")
+}
+
+func TestBacktestUseCase_DeleteBacktest_RemovesRowAndReport(t *testing.T) {
+	reportPath := t.TempDir() + "/report.html"
+	require.NoError(t, os.WriteFile(reportPath, []byte("<html></html>"), 0644))
+
+	backtestRepo := &mockBacktestRepo{
+		runs: []entities.BacktestRun{
+			{ID: 1, StrategyID: 1, Symbol: "BTCUSDT", HTMLReportPath: reportPath},
+		},
+	}
+	uc := backtest.NewBacktestUseCase(
+		&mockCandleRepo{}, backtestRepo, &mockStrategyRepo{}, &mockMetricsProvider{},
+		backtest.ThresholdPolicy{}, t.TempDir(), 20,
+	)
+
+	err := uc.DeleteBacktest(context.Background(), 1)
+	require.NoError(t, err)
+
+	_, err = backtestRepo.GetByID(context.Background(), 1)
+	assert.Error(t, err, "run should no longer exist after deletion")
+
+	_, statErr := os.Stat(reportPath)
+	assert.True(t, os.IsNotExist(statErr), "the HTML report file should be removed alongside the row")
+}
+
+func TestBacktestUseCase_DeleteBacktest_NotFound(t *testing.T) {
+	backtestRepo := &mockBacktestRepo{}
+	uc := backtest.NewBacktestUseCase(
+		&mockCandleRepo{}, backtestRepo, &mockStrategyRepo{}, &mockMetricsProvider{},
+		backtest.ThresholdPolicy{}, t.TempDir(), 20,
+	)
+
+	err := uc.DeleteBacktest(context.Background(), 999)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, backtest.ErrBacktestRunNotFound))
 }

@@ -71,7 +71,17 @@ this project's spec-driven, agent-delegated workflow operates.
   performance-history CRUD, real order execution, and serves the embedded web frontend (`cmd/api/webui/`,
   `go:embed`) with SPA fallback routing. Runs DB migrations on startup via GORM `AutoMigrate`. Every route
   except `/metrics` and static asset serving requires `Authorization: Bearer <API_TOKEN>`
-  (`internal/middleware/auth_middleware.go`).
+  (`internal/middleware/auth_middleware.go`). Every handler-declared route is mounted under `/api`
+  (`NewServeMux` in `cmd/api/main.go`, an `apiRouter := router.PathPrefix("/api").Subrouter()`) — this
+  keeps the backend's path space completely disjoint from the SPA's client-side routes, several of which
+  share a bare name with a backend route (`/backtest`, `/strategy`, `/settings`, ...). Before this, a full
+  page load/refresh on one of those SPA routes hit the backend's exact-match API route instead of falling
+  through to `index.html`, because gorilla/mux matches in registration order and the API routes were
+  registered before the SPA catch-all — refreshing `/backtest` in the browser returned the JSON run list
+  instead of the page. `/metrics` (Prometheus scrape target) and the embedded static assets stay
+  unprefixed. Frontend handler `Pattern` strings themselves stay bare (`/backtest`, `/script/repl`, ...);
+  the `/api` prefix is added once, by the subrouter and by `web/src/api/client.ts`'s `request()` helper —
+  don't hardcode it into an individual handler's `Pattern` or an individual frontend call site.
 - **worker** — Asynq async task processor that executes trading strategies on their configured cycles via
   the pluggable `Strategy` interface (see below). Serves the Asynqmon monitoring UI + `/metrics` at port
   9191. Refuses to start with `MODE=live` unless `CONFIRM_LIVE=true`, and unless `Testnet=false` (a live
@@ -186,8 +196,9 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
 
 ### Frontend (`web/`)
 React + TypeScript + Vite SPA, built with `make web-build` and embedded into `cmd/api`'s binary via
-`go:embed` (`cmd/api/webui/`). Talks to `cmd/api` over the same REST surface described above, plus a
-consolidated SSE stream (`GET /stream/dashboard`) for live prices/positions. Auth token lives in
+`go:embed` (`cmd/api/webui/`). Talks to `cmd/api` over the same REST surface described above (all under
+`/api`), plus a consolidated SSE stream (`GET /api/stream/dashboard`) for live prices/positions. Auth token
+lives in
 `localStorage`, attached as `Authorization: Bearer <token>` (query-param fallback for the SSE endpoint and
 the backtest HTML report iframe, since browsers can't attach custom headers to those requests).
 

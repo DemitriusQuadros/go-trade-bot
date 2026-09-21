@@ -29,7 +29,62 @@ export function Optimization() {
 
   // Launcher state
   const { data: strategies = [] } = useStrategies();
-  const [strategyId, setStrategyId] = useState<number>(strategies[0]?.id || 1);
+  // strategies is empty on first render (useStrategies is async), so this
+  // initial value is always the literal fallback `1` - and never re-synced
+  // once real data arrives, unlike BacktestLauncher's equivalent state. In
+  // this dev environment strategy id 1 happens to be a leftover
+  // strategy_name="template" row with no matching registry entry (see
+  // CLAUDE.md), so every user who opened this page and hit "Start
+  // Parameter Sweep" without first touching the Strategy dropdown
+  // submitted against a strategy that can never succeed.
+  const [strategyId, setStrategyId] = useState<number>(0);
+
+  useEffect(() => {
+    if (strategyId === 0 && strategies.length > 0) {
+      setStrategyId(strategies[0].id);
+    }
+  }, [strategies, strategyId]);
+
+  const selectedStrategy = useMemo(
+    () => strategies.find((s: any) => s.id === strategyId),
+    [strategies, strategyId]
+  );
+
+  // What can actually be swept for the selected strategy. The optimizer
+  // merges param_grid keys directly onto the top-level Configuration
+  // object (see app/usecase/optimize/usecase.go's Run), so:
+  //  - any flat numeric field already in Configuration is fair game
+  //    (e.g. stop_loss_pct) - a nested one like position_sizing.value is
+  //    NOT, since the merge only touches the top level;
+  //  - a "script" strategy's Lua source can also read arbitrary keys via
+  //    ctx.config.<name> even before they exist in Configuration, so those
+  //    are worth surfacing too.
+  // Without this, nothing tells you which parameter names actually do
+  // anything for this specific strategy - sweeping a name the strategy
+  // never reads (e.g. "grid_levels" against an RSI script) silently
+  // produces identical results for every combination.
+  const availableParams = useMemo(() => {
+    if (!selectedStrategy) return [];
+    const names = new Set<string>();
+
+    const cfg = (selectedStrategy as any).configuration;
+    if (cfg && typeof cfg === 'object') {
+      for (const [k, v] of Object.entries(cfg)) {
+        if (typeof v === 'number') names.add(k);
+      }
+    }
+
+    const source = (selectedStrategy as any).script_source;
+    if ((selectedStrategy as any).strategy_name === 'script' && source) {
+      const re = /ctx\.config\.([A-Za-z_][A-Za-z0-9_]*)/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(source))) {
+        names.add(m[1]);
+      }
+    }
+
+    return Array.from(names).sort();
+  }, [selectedStrategy]);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [startDate, setStartDate] = useState(() => {
@@ -52,13 +107,38 @@ export function Optimization() {
 
   // Active run state
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
-  const { data: statusData, refetch: refetchStatus } = useQuery({ queryKey: ['optStatus', activeRunId], queryFn: () => api.getOptimizationStatus(activeRunId as number, {}), enabled: !!activeRunId, refetchInterval: 2000 });
+  const { data: statusData, refetch: refetchStatus } = useQuery({
+    queryKey: ['optStatus', activeRunId],
+    queryFn: () => api.getOptimizationStatus(activeRunId as number, {}),
+    enabled: !!activeRunId,
+    // Stop polling once the run reaches a terminal state instead of
+    // hitting the API every 2s forever.
+    refetchInterval: (query) => {
+      const st = (query.state.data as any)?.status;
+      return st === 'completed' || st === 'failed' ? false : 2000;
+    },
+  });
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Status polling for active run
-  
+
   const isCompleted = (statusData as any)?.status === "completed";
+  const isFailed = (statusData as any)?.status === "failed";
+  const isTerminal = isCompleted || isFailed;
+
+  // statusData.progress is a raw count of combinations completed so far
+  // (the backend increments it once per grid point, e.g. 0, 1, 2, ...), not
+  // a 0-1 fraction - it must be divided by total_combinations to get a
+  // percentage. Multiplying it by 100 directly (the previous bug here) made
+  // the bar jump to (and clip at, via the container's overflow-hidden) 100%
+  // width after just the very first combination finished, then sit there
+  // unchanged - looking exactly like a frozen/fire-and-forget progress bar
+  // - for the rest of the sweep.
+  const progressPct =
+    statusData && statusData.total_combinations > 0
+      ? Math.min(100, Math.round((statusData.progress / statusData.total_combinations) * 100))
+      : 0;
 
 
   // Results fetch
@@ -184,6 +264,23 @@ export function Optimization() {
                     </option>
                   ))}
                 </select>
+                {selectedStrategy && (
+                  availableParams.length > 0 ? (
+                    <p className="text-[11px] text-green-700 mt-1.5">
+                      Sweepable for this strategy: {availableParams.map((p, i) => (
+                        <React.Fragment key={p}>
+                          {i > 0 && ', '}
+                          <code className="text-green-500 font-mono">{p}</code>
+                        </React.Fragment>
+                      ))}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-500 mt-1.5">
+                      No numeric config fields detected for this strategy - sweeping an arbitrary
+                      name will produce identical results for every combination.
+                    </p>
+                  )
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -250,6 +347,7 @@ export function Optimization() {
                   value={param1Name}
                   onChange={(e) => setParam1Name(e.target.value)}
                   className="form-input text-xs font-mono mb-2"
+                  list="optimize-param-suggestions"
                 />
                 <div className="grid grid-cols-3 gap-2">
                   <div>
@@ -303,6 +401,7 @@ export function Optimization() {
                   value={param2Name}
                   onChange={(e) => setParam2Name(e.target.value)}
                   className="form-input text-xs font-mono mb-2"
+                  list="optimize-param-suggestions"
                 />
                 <div className="grid grid-cols-3 gap-2">
                   <div>
@@ -343,16 +442,24 @@ export function Optimization() {
 
               <button
                 type="submit"
-                disabled={launching || (!!activeRunId && !isCompleted)}
+                disabled={launching || (!!activeRunId && !isTerminal)}
                 className="w-full bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-green-600 py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
               >
                 <Play className="w-4 h-4" />
                 <span>
-                  {launching || (!!activeRunId && !isCompleted)
+                  {launching || (!!activeRunId && !isTerminal)
                     ? 'Optimization in progress...'
-                    : 'Start Parameter Sweep'}
+                    : isFailed
+                      ? 'Retry Parameter Sweep'
+                      : 'Start Parameter Sweep'}
                 </span>
               </button>
+
+              <datalist id="optimize-param-suggestions">
+                {availableParams.map((p) => (
+                  <option key={p} value={p} />
+                ))}
+              </datalist>
             </form>
           </Card>
         </div>
@@ -369,25 +476,26 @@ export function Optimization() {
                   </span>
                   <StatusBadge status={statusData?.status || 'running'} />
                 </div>
-                <span className="text-xs font-mono text-green-600">
-                  {statusData ? `${Math.round(statusData.progress * 100)}%` : '0%'}
-                </span>
+                <span className="text-xs font-mono text-green-600">{progressPct}%</span>
               </div>
 
               {/* Progress Bar */}
               <div className="w-full bg-green-950/20 rounded-full h-2 overflow-hidden border border-green-900/30">
                 <div
                   className="bg-green-800 h-full transition-all duration-300 rounded-full"
-                  style={{ width: `${(statusData?.progress || 0) * 100}%` }}
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-green-700 mt-2">
-                <span>Total Combinations: {statusData?.total_combinations || '—'}</span>
-                {!isCompleted && (
+                <span>
+                  Total Combinations: {statusData?.total_combinations ?? '—'}
+                  {statusData ? ` (${statusData.progress}/${statusData.total_combinations} done)` : ''}
+                </span>
+                {!isTerminal && (
                   <span className="flex items-center gap-1 text-green-500">
                     <Spinner size="sm" />
-                    <span>Evaluating backtest candidates in parallel...</span>
+                    <span>Evaluating backtest candidates sequentially...</span>
                   </span>
                 )}
                 {isCompleted && (
@@ -396,7 +504,23 @@ export function Optimization() {
                     <span>Sweep Completed</span>
                   </span>
                 )}
+                {isFailed && (
+                  <span className="flex items-center gap-1 text-rose-400 font-semibold">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>Sweep Failed</span>
+                  </span>
+                )}
               </div>
+
+              {isFailed && (
+                <div className="mt-3 p-3 bg-red-950/60 border border-red-800 text-red-300 rounded text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {(statusData as any)?.error_message ||
+                      'The sweep failed. Check that the selected strategy is still registered (e.g. not a retired algorithm) and that its parameters are valid.'}
+                  </span>
+                </div>
+              )}
             </Card>
           )}
 

@@ -10,6 +10,7 @@ import (
 
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/strategies"
 	"go-trade-bot/internal/metrics_provider"
 
 	"gorm.io/datatypes"
@@ -36,6 +37,15 @@ var (
 	// enqueued (spec AC#3).
 	ErrGridTooLarge = errors.New("param_grid combination count exceeds the maximum allowed")
 	ErrRunNotFound  = errors.New("optimization run not found")
+	// ErrStrategyNotRegistered is returned by Create when the strategy's
+	// StrategyName has no matching entry in the strategies registry (e.g. a
+	// leftover row from a retired algorithm - see CLAUDE.md's note on the
+	// "template" strategy_name from before the scripting cutover). Checked
+	// up front so a request fails in milliseconds instead of only after
+	// every grid combination has been evaluated and failed identically
+	// (each one hits the same "not registered" error deep inside
+	// BacktestRunner.RunEphemeral).
+	ErrStrategyNotRegistered = errors.New("strategy is not registered")
 )
 
 // ParamRange describes one config field's search range: min, min+step,
@@ -236,6 +246,14 @@ func (u *OptimizeUseCase) Create(ctx context.Context, req CreateRequest) (entiti
 		return entities.OptimizationRun{}, fmt.Errorf("%w: %d combinations requested, max is %d", ErrGridTooLarge, total, u.maxCombinations)
 	}
 
+	strat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
+	if err != nil {
+		return entities.OptimizationRun{}, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
+	}
+	if !strategies.Exists(strat.StrategyName) {
+		return entities.OptimizationRun{}, fmt.Errorf("%w: %q (strategy id %d)", ErrStrategyNotRegistered, strat.StrategyName, req.StrategyID)
+	}
+
 	candleCount, err := u.candleChecker.CountInRange(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate)
 	if err != nil {
 		return entities.OptimizationRun{}, fmt.Errorf("failed to check candle data availability: %w", err)
@@ -298,6 +316,9 @@ func (u *OptimizeUseCase) Run(ctx context.Context, runID uint) error {
 	strat, err := u.strategyRepo.GetByID(ctx, run.StrategyID)
 	if err != nil {
 		return u.fail(ctx, run, fmt.Sprintf("failed to load strategy %d: %v", run.StrategyID, err))
+	}
+	if !strategies.Exists(strat.StrategyName) {
+		return u.fail(ctx, run, fmt.Sprintf("strategy %q (id %d) is not registered", strat.StrategyName, run.StrategyID))
 	}
 
 	var grid ParamGrid

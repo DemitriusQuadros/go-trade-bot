@@ -54,6 +54,14 @@ func (m *mockUseCase) ListByStrategy(ctx context.Context, strategyID uint) ([]en
 	return m.listRuns, m.runErr
 }
 
+func (m *mockUseCase) ListRecent(ctx context.Context) ([]entities.BacktestRun, error) {
+	return m.listRuns, m.runErr
+}
+
+func (m *mockUseCase) DeleteBacktest(ctx context.Context, id uint) error {
+	return m.runErr
+}
+
 func TestBacktestHandler_RunBacktest(t *testing.T) {
 	mockUC := &mockUseCase{
 		runResult: entities.BacktestRun{
@@ -123,6 +131,54 @@ func TestBacktestHandler_List(t *testing.T) {
 	h := handler.NewBacktestHandler(mockUC)
 
 	req := httptest.NewRequest(http.MethodGet, "/backtest?strategy_id=1", nil)
+	rec := httptest.NewRecorder()
+
+	h.List(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp []handler.BacktestRunResponse
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Len(t, resp, 2)
+}
+
+func TestBacktestHandler_List_IncludesStrategyName(t *testing.T) {
+	mockUC := &mockUseCase{
+		listRuns: []entities.BacktestRun{
+			{
+				ID:         1,
+				StrategyID: 7,
+				Strategy:   entities.Strategy{ID: 7, Name: "RSI Momentum"},
+				Symbol:     "BTCUSDT",
+				CreatedAt:  time.Now(),
+			},
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest?strategy_id=7", nil)
+	rec := httptest.NewRecorder()
+
+	h.List(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp []handler.BacktestRunResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	assert.Equal(t, uint(7), resp[0].StrategyID)
+	assert.Equal(t, "RSI Momentum", resp[0].StrategyName)
+}
+
+func TestBacktestHandler_List_NoStrategyID_ListsRecentAcrossAllStrategies(t *testing.T) {
+	mockUC := &mockUseCase{
+		listRuns: []entities.BacktestRun{
+			{ID: 1, StrategyID: 1, Symbol: "BTCUSDT", CreatedAt: time.Now()},
+			{ID: 2, StrategyID: 2, Symbol: "ETHUSDT", CreatedAt: time.Now()},
+		},
+	}
+	h := handler.NewBacktestHandler(mockUC)
+
+	req := httptest.NewRequest(http.MethodGet, "/backtest", nil)
 	rec := httptest.NewRecorder()
 
 	h.List(rec, req)
@@ -361,4 +417,30 @@ func TestToRunResponse_ExecutionTraceOptIn(t *testing.T) {
 	optedIn, err := json.Marshal(handler.ToRunResponse(run, true))
 	assert.NoError(t, err)
 	assert.Contains(t, string(optedIn), "execution_trace")
+}
+
+func TestBacktestHandler_DeleteBacktest_Success(t *testing.T) {
+	mockUC := &mockUseCase{}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}", h.DeleteBacktest).Methods(http.MethodDelete)
+
+	req := httptest.NewRequest(http.MethodDelete, "/backtest/1", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestBacktestHandler_DeleteBacktest_NotFound(t *testing.T) {
+	mockUC := &mockUseCase{runErr: usecase.ErrBacktestRunNotFound}
+	h := handler.NewBacktestHandler(mockUC)
+	r := mux.NewRouter()
+	r.HandleFunc("/backtest/{id:[0-9]+}", h.DeleteBacktest).Methods(http.MethodDelete)
+
+	req := httptest.NewRequest(http.MethodDelete, "/backtest/999", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

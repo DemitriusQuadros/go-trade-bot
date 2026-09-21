@@ -10,6 +10,7 @@ import (
 
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/strategies"
 	usecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/app/usecase/optimize/mocks"
 	"go-trade-bot/internal/metrics_provider"
@@ -130,7 +131,9 @@ func TestOptimizeUseCase_Create_GridTooLarge_RejectsBeforePersist(t *testing.T) 
 // must be rejected with ErrNoCandleData BEFORE any row is created.
 func TestOptimizeUseCase_Create_NoCandleData_RejectsBeforePersist(t *testing.T) {
 	optimizeRepo := mocks.NewOptimizationRepository(t)
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 0}, 0)
+	strategyRepo := mocks.NewStrategyRepository(t)
+	strategyRepo.On("GetByID", mock.Anything, uint(1)).Return(baseStrategy(), nil)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{count: 0}, 0)
 
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
@@ -151,7 +154,9 @@ func TestOptimizeUseCase_Create_NoCandleData_RejectsBeforePersist(t *testing.T) 
 // zero-count rejection).
 func TestOptimizeUseCase_Create_CandleCheckError_PropagatesAsError(t *testing.T) {
 	optimizeRepo := mocks.NewOptimizationRepository(t)
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{err: errors.New("db unavailable")}, 0)
+	strategyRepo := mocks.NewStrategyRepository(t)
+	strategyRepo.On("GetByID", mock.Anything, uint(1)).Return(baseStrategy(), nil)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{err: errors.New("db unavailable")}, 0)
 
 	_, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
@@ -173,7 +178,9 @@ func TestOptimizeUseCase_Create_Success_PersistsPendingRunWithTotalCombinations(
 		run.ID = 42
 	})
 
-	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), mocks.NewStrategyRepository(t), optimizeRepo, &mockCandleChecker{count: 1}, 0)
+	strategyRepo := mocks.NewStrategyRepository(t)
+	strategyRepo.On("GetByID", mock.Anything, uint(1)).Return(baseStrategy(), nil)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
 
 	run, err := u.Create(context.Background(), usecase.CreateRequest{
 		StrategyID: 1,
@@ -190,7 +197,56 @@ func TestOptimizeUseCase_Create_Success_PersistsPendingRunWithTotalCombinations(
 	assert.Equal(t, 55, run.TotalCombinations)
 }
 
+// TestOptimizeUseCase_Create_UnregisteredStrategy_RejectsBeforePersist covers
+// the fail-fast fix for a strategy row whose StrategyName has no matching
+// registry entry (e.g. a leftover "template" row from before the scripting
+// cutover, see CLAUDE.md) - Create must reject immediately with
+// ErrStrategyNotRegistered rather than persisting a run and letting the
+// worker burn through every grid combination only to fail identically on
+// each one (each hits the same "not registered" error deep inside
+// RunEphemeral).
+func TestOptimizeUseCase_Create_UnregisteredStrategy_RejectsBeforePersist(t *testing.T) {
+	optimizeRepo := mocks.NewOptimizationRepository(t)
+	strategyRepo := mocks.NewStrategyRepository(t)
+	strategyRepo.On("GetByID", mock.Anything, uint(1)).Return(entities.Strategy{
+		ID:           1,
+		StrategyName: "template",
+	}, nil)
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
+
+	_, err := u.Create(context.Background(), usecase.CreateRequest{
+		StrategyID: 1,
+		Symbol:     "BTCUSDT",
+		ParamGrid:  usecase.ParamGrid{"x": {Min: 1, Max: 2, Step: 1}},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, usecase.ErrStrategyNotRegistered)
+	optimizeRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
 // ---- Run (backend-02 AC#1, AC#3, AC#5, AC#6, AC#8) ----
+
+// stubStrategy backs the "bollinger" registration below - Run() now checks
+// strategies.Exists(strat.StrategyName) up front (fail-fast instead of
+// letting every mocked RunEphemeral call implicitly stand in for a real,
+// registered strategy), so these Run tests need an actual registry entry
+// even though BacktestRunner itself is mocked and never invokes it.
+type stubStrategy struct{}
+
+func (stubStrategy) Name() string                                         { return "bollinger" }
+func (stubStrategy) Before(strategies.Context)                            {}
+func (stubStrategy) ShouldLong(strategies.Context) bool                   { return false }
+func (stubStrategy) GoLong(strategies.Context) strategies.Signal          { return strategies.Signal{} }
+func (stubStrategy) ShouldShort(strategies.Context) bool                  { return false }
+func (stubStrategy) GoShort(strategies.Context) strategies.Signal         { return strategies.Signal{} }
+func (stubStrategy) UpdatePosition(strategies.Context) *strategies.Signal { return nil }
+func (stubStrategy) After(strategies.Context)                             {}
+func (stubStrategy) Terminate(strategies.Context)                         {}
+
+func init() {
+	strategies.Register("bollinger", func(_ entities.Strategy) strategies.Strategy { return stubStrategy{} })
+}
 
 func baseStrategy() entities.Strategy {
 	return entities.Strategy{
@@ -343,6 +399,36 @@ func TestOptimizeUseCase_Run_AllCombinationsFail_MarksFailed(t *testing.T) {
 	assert.Equal(t, entities.OptimizationFailed, last.Status)
 	assert.NotEmpty(t, last.ErrorMessage)
 	assert.NotNil(t, last.CompletedAt)
+}
+
+// TestOptimizeUseCase_Run_UnregisteredStrategy_FailsFastWithoutLooping is
+// Run()'s defense-in-depth counterpart to the Create-time check: even if an
+// unregistered strategy somehow reaches Run (e.g. the registry changed
+// between Create and worker pickup), it must fail immediately after loading
+// the strategy - never call RunEphemeral (mock has no expectations set, so
+// any call would fail the test) or iterate the grid.
+func TestOptimizeUseCase_Run_UnregisteredStrategy_FailsFastWithoutLooping(t *testing.T) {
+	grid := usecase.ParamGrid{"x": {Min: 1, Max: 5, Step: 1}}
+	run := gridRun(13, grid)
+
+	strategyRepo := mocks.NewStrategyRepository(t)
+	strategyRepo.On("GetByID", mock.Anything, uint(1)).Return(entities.Strategy{
+		ID:           1,
+		StrategyName: "template",
+	}, nil)
+
+	optimizeRepo := mocks.NewOptimizationRepository(t)
+	optimizeRepo.On("GetByID", mock.Anything, uint(13)).Return(run, nil).Once()
+	optimizeRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	u := usecase.NewOptimizeUseCase(mocks.NewBacktestRunner(t), strategyRepo, optimizeRepo, &mockCandleChecker{count: 1}, 0)
+	err := u.Run(context.Background(), 13)
+	require.Error(t, err)
+
+	calls := optimizeRepo.Calls
+	last := calls[len(calls)-1].Arguments.Get(1).(entities.OptimizationRun)
+	assert.Equal(t, entities.OptimizationFailed, last.Status)
+	assert.Equal(t, 0, last.Progress, "must fail before evaluating any combination")
 }
 
 // TestOptimizeUseCase_Run_NeverInvokesFullBacktestPersistence documents

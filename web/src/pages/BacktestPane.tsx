@@ -163,6 +163,10 @@ export function BacktestPane() {
             )}
           </div>
           <p className="text-xs text-green-700">
+            Strategy #{run.strategy_id}
+            {run.strategy_name ? ` — ${run.strategy_name}` : ''}
+          </p>
+          <p className="text-xs text-green-700">
             {new Date(run.start_date).toLocaleDateString()} — {new Date(run.end_date).toLocaleDateString()}
           </p>
         </div>

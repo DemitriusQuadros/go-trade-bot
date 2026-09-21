@@ -18,7 +18,7 @@ import (
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&entities.BacktestRun{}))
+	require.NoError(t, db.AutoMigrate(&entities.Strategy{}, &entities.BacktestRun{}))
 	return db
 }
 
@@ -108,4 +108,58 @@ func TestBacktestRepository_ListByStrategy_And_RetentionQuery(t *testing.T) {
 	updatedWithReport, err := repo.ListRunsWithReport(ctx, 10)
 	require.NoError(t, err)
 	assert.Len(t, updatedWithReport, 1)
+
+	recent, err := repo.ListRecent(ctx, 3)
+	require.NoError(t, err)
+	assert.Len(t, recent, 3)
+	// spans strategies, ordered by created_at desc, capped at the limit
+	assert.True(t, recent[0].CreatedAt.After(recent[1].CreatedAt))
+	assert.True(t, recent[1].CreatedAt.After(recent[2].CreatedAt))
+}
+
+func TestBacktestRepository_PreloadsStrategyName(t *testing.T) {
+	db := setupTestDB(t)
+	repo := backtest.NewBacktestRepository(db)
+	ctx := context.Background()
+
+	require.NoError(t, db.Create(&entities.Strategy{ID: 42, Name: "RSI Momentum"}).Error)
+
+	run := &entities.BacktestRun{StrategyID: 42, Symbol: "BTCUSDT"}
+	require.NoError(t, repo.Create(ctx, run))
+
+	byID, err := repo.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "RSI Momentum", byID.Strategy.Name)
+
+	byStrategy, err := repo.ListByStrategy(ctx, 42)
+	require.NoError(t, err)
+	require.Len(t, byStrategy, 1)
+	assert.Equal(t, "RSI Momentum", byStrategy[0].Strategy.Name)
+
+	recent, err := repo.ListRecent(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, recent, 1)
+	assert.Equal(t, "RSI Momentum", recent[0].Strategy.Name)
+}
+
+func TestBacktestRepository_Delete(t *testing.T) {
+	db := setupTestDB(t)
+	repo := backtest.NewBacktestRepository(db)
+	ctx := context.Background()
+
+	run := &entities.BacktestRun{StrategyID: 1, Symbol: "BTCUSDT"}
+	require.NoError(t, repo.Create(ctx, run))
+
+	require.NoError(t, repo.Delete(ctx, run.ID))
+
+	_, err := repo.GetByID(ctx, run.ID)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestBacktestRepository_Delete_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	repo := backtest.NewBacktestRepository(db)
+
+	err := repo.Delete(context.Background(), 999)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }

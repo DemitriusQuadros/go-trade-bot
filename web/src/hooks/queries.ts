@@ -90,6 +90,16 @@ export function useBacktest(id: number) {
   });
 }
 
+export function useDeleteBacktest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteBacktest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.backtests() });
+    },
+  });
+}
+
 // Mutations
 export function useCreateStrategy() {
   const queryClient = useQueryClient();

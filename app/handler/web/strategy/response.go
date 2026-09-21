@@ -17,8 +17,15 @@ type StrategyResponseDTO struct {
 	MonitoredSymbols []string        `json:"monitored_symbols"`
 	Cycle            int             `json:"cycle"`
 	Configuration    json.RawMessage `json:"configuration"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	// ScriptSource carries the Lua source for a "script" StrategyName row
+	// (empty for native Go strategies). Previously omitted from every
+	// response here (list and single-fetch alike) even though the web
+	// frontend's WorkbenchShell already expected it on the fetched
+	// Strategy - silently falling back to a blank template every time an
+	// existing script strategy was opened for editing.
+	ScriptSource string    `json:"script_source,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func ToStrategyResponse(s entities.Strategy) StrategyResponseDTO {
@@ -40,6 +47,7 @@ func ToStrategyResponse(s entities.Strategy) StrategyResponseDTO {
 		MonitoredSymbols: symbols,
 		Cycle:            int(s.StrategyConfiguration.Cycle),
 		Configuration:    configJSON,
+		ScriptSource:     s.ScriptSource,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}

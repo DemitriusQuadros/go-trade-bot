@@ -122,11 +122,21 @@ func NewHTTPServer(
 	return srv
 }
 
+// NewServeMux mounts every handler-declared route under "/api" so the
+// backend's path space can never collide with the frontend SPA's
+// client-side routes (both used bare names like "/backtest", "/settings" -
+// a full-page load/refresh on one of those SPA routes used to hit this
+// router's exact-match API route instead of falling through to the SPA's
+// index.html, since mux matches routes in registration order and the API
+// routes were registered before the catch-all). "/metrics" (Prometheus
+// scrape target) and the embedded SPA's static assets stay unprefixed.
 func NewServeMux(routes []Route, cfg *config.Configuration) *mux.Router {
 	router := mux.NewRouter()
+
+	apiRouter := router.PathPrefix("/api").Subrouter()
 	for _, route := range routes {
 		for _, h := range route.Handlers() {
-			router.HandleFunc(h.Pattern, middleware.RequireAuth(cfg, h.Action)).Methods(h.Method)
+			apiRouter.HandleFunc(h.Pattern, middleware.RequireAuth(cfg, h.Action)).Methods(h.Method)
 		}
 	}
 

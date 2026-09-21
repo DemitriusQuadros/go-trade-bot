@@ -31,6 +31,14 @@ import { ScriptVersion,
 
 const TOKEN_STORAGE_KEY = 'gtb_api_token';
 
+// Every backend route lives under "/api" (see cmd/api/main.go's
+// NewServeMux) so it can never collide with an SPA client-side route of the
+// same bare name (e.g. "/backtest", "/settings") - a full-page load on one
+// of those used to hit the backend's JSON handler instead of the SPA. Call
+// sites below pass bare paths ("/backtest", not "/api/backtest"); this is
+// the one place that adds the prefix.
+export const API_PREFIX = '/api';
+
 export class ApiError extends Error {
   constructor(public status: number, public body: string) {
     super(`HTTP ${status}: ${body}`);
@@ -76,7 +84,7 @@ async function request<T>(
 
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(`${API_PREFIX}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -196,20 +204,24 @@ export const api = {
     const query = strategyId ? `?strategy_id=${strategyId}` : '';
     return api.get<BacktestRun[]>(`/backtest${query}`, opts);
   },
+  deleteBacktest: (id: number) => api.delete<void>(`/backtest/${id}`),
   runMonteCarlo: (runId: number, iterations = 1000) =>
     api.post<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, { iterations }),
   getMonteCarlo: (runId: number, opts?: { signal?: AbortSignal }) =>
     api.get<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, opts),
   getReportUrl: (runId: number) => {
     const token = getToken();
-    return `/backtest/${runId}/report${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    return `${API_PREFIX}/backtest/${runId}/report${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   },
 
   // Optimization
   startOptimization: (req: CreateOptimizationRequest) =>
     api.post<{ id: number }>('/optimize', req),
+  // GET /optimize/{id} (not /optimize/{id}/status - see
+  // app/handler/web/optimize/handler.go's GetByID doc comment: this route
+  // itself is the poll target) returns the StatusResponse shape.
   getOptimizationStatus: (id: number, opts?: { signal?: AbortSignal }) =>
-    api.get<OptimizationStatusResponse>(`/optimize/${id}/status`, opts),
+    api.get<OptimizationStatusResponse>(`/optimize/${id}`, opts),
   getOptimizationResults: (id: number, opts?: { signal?: AbortSignal }) =>
     api.get<OptimizationResults>(`/optimize/${id}/results`, opts),
 
@@ -223,7 +235,7 @@ export const api = {
 
   // Strategy Scripting & REPL (frontend-02)
   fastRerun: (req: FastRerunRequest, opts?: { signal?: AbortSignal }) =>
-    api.post<FastRerunResponse>('/api/script/fast-rerun', req, opts),
+    api.post<FastRerunResponse>('/script/fast-rerun', req, opts),
   repl: (req: ReplRequest, opts?: { signal?: AbortSignal }) =>
-    api.post<ReplResponse>('/api/script/repl', req, opts),
+    api.post<ReplResponse>('/script/repl', req, opts),
 };

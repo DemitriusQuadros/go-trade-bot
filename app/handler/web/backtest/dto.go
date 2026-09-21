@@ -64,6 +64,7 @@ func (dto WalkForwardRequestDTO) ToUseCase() usecase.WalkForwardRequest {
 type BacktestRunResponse struct {
 	ID             uint                          `json:"id"`
 	StrategyID     uint                          `json:"strategy_id"`
+	StrategyName   string                        `json:"strategy_name"`
 	Symbol         string                        `json:"symbol"`
 	StartDate      time.Time                     `json:"start_date"`
 	EndDate        time.Time                     `json:"end_date"`
@@ -94,6 +95,7 @@ func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunRe
 	res := BacktestRunResponse{
 		ID:             run.ID,
 		StrategyID:     run.StrategyID,
+		StrategyName:   run.Strategy.Name,
 		Symbol:         run.Symbol,
 		StartDate:      run.StartDate,
 		EndDate:        run.EndDate,

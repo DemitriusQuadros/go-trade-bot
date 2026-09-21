@@ -30,12 +30,12 @@ func NewScriptHandler(u UseCase) *ScriptHandler {
 func (h *ScriptHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/api/script/repl",
+			Pattern: "/script/repl",
 			Action:  h.Repl,
 			Method:  http.MethodPost,
 		},
 		{
-			Pattern: "/api/script/fast-rerun",
+			Pattern: "/script/fast-rerun",
 			Action:  h.FastRerun,
 			Method:  http.MethodPost,
 		},

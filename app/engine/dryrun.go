@@ -28,7 +28,7 @@ func NewDryRunDriver(
 	}
 	simExchange := NewSimulatedFillExchange(dataSource, policy)
 
-	driver := NewReplayDriver(
+	return NewReplayDriver(
 		liveFeed,
 		simExchange,
 		eng,
@@ -38,6 +38,4 @@ func NewDryRunDriver(
 		strategies.ModeDryRun,
 		signalRepo,
 	)
-	driver.WarmupSource = NewExchangeWarmupSource(realExchange)
-	return driver
 }

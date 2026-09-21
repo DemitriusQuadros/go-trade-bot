@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '@/api/client';
-import { useStrategies, useBacktests } from '@/hooks/queries';
+import { useStrategies, useBacktests, useDeleteBacktest } from '@/hooks/queries';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
@@ -9,6 +9,7 @@ import {
   Play,
   Calendar,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 
 export function BacktestLauncher() {
@@ -18,6 +19,15 @@ export function BacktestLauncher() {
 
   const { data: strategies = [] } = useStrategies();
   const { data: recentRuns = [] } = useBacktests();
+  const deleteBacktest = useDeleteBacktest();
+
+  const handleDeleteRun = (e: React.MouseEvent, runId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.confirm(`Delete backtest run #${runId}? This cannot be undone.`)) {
+      deleteBacktest.mutate(runId);
+    }
+  };
 
   // Form State
   const [selectedStrategyId, setSelectedStrategyId] = useState<number>(1);
@@ -423,14 +433,29 @@ export function BacktestLauncher() {
                         <span className="font-mono font-bold text-xs text-green-400 group-hover:text-green-500">
                           #{run.id} {run.symbol}
                         </span>
-                        <span
-                          className={`font-mono text-xs font-bold ${
-                            isPositive ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
-                        >
-                          {isPositive ? '+' : ''}
-                          {run.total_return_pct.toFixed(2)}%
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`font-mono text-xs font-bold ${
+                              isPositive ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {isPositive ? '+' : ''}
+                            {run.total_return_pct.toFixed(2)}%
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteRun(e, run.id)}
+                            title="Delete this backtest run"
+                            className="text-green-800 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-green-600 mb-1 truncate">
+                        Strategy #{run.strategy_id}
+                        {run.strategy_name ? ` — ${run.strategy_name}` : ''}
                       </div>
 
                       <div className="flex items-center justify-between text-[11px] text-green-700">

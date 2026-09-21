@@ -151,6 +151,7 @@ export interface DrawdownPoint {
 export interface BacktestRun {
   id: number;
   strategy_id: number;
+  strategy_name: string;
   symbol: string;
   start_date: string;
   end_date: string;

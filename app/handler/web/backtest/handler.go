@@ -23,6 +23,8 @@ type UseCase interface {
 	RunWalkForward(ctx context.Context, req usecase.WalkForwardRequest) (entities.BacktestRun, error)
 	GetByID(ctx context.Context, id uint) (entities.BacktestRun, error)
 	ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error)
+	ListRecent(ctx context.Context) ([]entities.BacktestRun, error)
+	DeleteBacktest(ctx context.Context, id uint) error
 	RunMonteCarlo(ctx context.Context, runID uint, iterations int) (engine.MonteCarloResult, error)
 	GetMonteCarlo(ctx context.Context, runID uint) (engine.MonteCarloResult, error)
 }
@@ -53,6 +55,11 @@ func (h *BacktestHandler) Handlers() []handler.Configuration {
 			Pattern: "/backtest/{id:[0-9]+}",
 			Action:  h.GetByID,
 			Method:  http.MethodGet,
+		},
+		{
+			Pattern: "/backtest/{id:[0-9]+}",
+			Action:  h.DeleteBacktest,
+			Method:  http.MethodDelete,
 		},
 		{
 			Pattern: "/backtest/{id:[0-9]+}/report",
@@ -152,20 +159,47 @@ func (h *BacktestHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// DeleteBacktest permanently removes a backtest run (trade log, equity
+// curve, execution trace, cached Monte Carlo result, HTML report file).
+// 404 if the run doesn't exist, 204 on success.
+func (h *BacktestHandler) DeleteBacktest(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseBacktestID(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.useCase.DeleteBacktest(r.Context(), id); err != nil {
+		if errors.Is(err, usecase.ErrBacktestRunNotFound) {
+			http.Error(w, "backtest run not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *BacktestHandler) List(w http.ResponseWriter, r *http.Request) {
 	stratIDStr := r.URL.Query().Get("strategy_id")
+
+	var runs []entities.BacktestRun
+	var err error
+
 	if stratIDStr == "" {
-		http.Error(w, "strategy_id query param is required", http.StatusBadRequest)
-		return
+		// No strategy filter: the web frontend's cross-strategy "Recent
+		// Runs" panel wants the most recent runs across every strategy.
+		runs, err = h.useCase.ListRecent(r.Context())
+	} else {
+		var stratID uint64
+		stratID, err = strconv.ParseUint(stratIDStr, 10, 32)
+		if err != nil {
+			http.Error(w, "invalid strategy_id", http.StatusBadRequest)
+			return
+		}
+		runs, err = h.useCase.ListByStrategy(r.Context(), uint(stratID))
 	}
 
-	stratID, err := strconv.ParseUint(stratIDStr, 10, 32)
-	if err != nil {
-		http.Error(w, "invalid strategy_id", http.StatusBadRequest)
-		return
-	}
-
-	runs, err := h.useCase.ListByStrategy(r.Context(), uint(stratID))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

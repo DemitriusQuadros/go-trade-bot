@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getToken } from '@/api/client';
+import { getToken, API_PREFIX } from '@/api/client';
 import { RealtimePriceEvent, RealtimePositionEvent } from '@/api/types';
 import { QUERY_KEYS } from './queries';
 
@@ -27,7 +27,7 @@ export function useSSE(enabled = true): RealtimeState {
     if (!enabled) return;
 
     const token = getToken();
-    const url = `/stream/dashboard${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const url = `${API_PREFIX}/stream/dashboard${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     let es: EventSource | null = null;
     let retryTimer: ReturnType<typeof setTimeout>;
     let heartbeatTimer: ReturnType<typeof setTimeout>;
