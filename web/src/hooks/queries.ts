@@ -134,8 +134,18 @@ export function useSendAgentMessage() {
       strategyId?: number;
       history?: AgentHistoryTurn[];
     }) => api.sendAgentMessage(input, strategyId, history),
-    onSuccess: () => {
+    onSuccess: (run) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agentRuns() });
+      // A tool call in this run (e.g. save_strategy_script) may have written
+      // straight to the DB out from under any cached strategy data - without
+      // this, the Workbench's `useStrategy(id)` stays on the pre-agent
+      // snapshot until the next full navigation, so the editor never reflects
+      // what the agent just persisted, and a later "Save Changes" click
+      // clobbers the agent's write with that stale snapshot.
+      if (run.strategy_id != null) {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategy(run.strategy_id) });
+      }
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategies });
     },
   });
 }
