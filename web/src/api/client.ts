@@ -1,0 +1,275 @@
+// web/src/api/client.ts
+import { ScriptVersion, 
+  Account,
+  Strategy,
+  StrategyCreateRequest,
+  StrategyUpdateRequest,
+  Signal,
+  TickerPrice,
+  Candle,
+  BacktestRun,
+  RunBacktestRequest,
+  WalkForwardRequest,
+  MonteCarloSummary,
+  OptimizationStatusResponse,
+  OptimizationResults,
+  CreateOptimizationRequest,
+  StrategyPerformance,
+  PerformanceSnapshot,
+  PlatformSettings,
+  PlatformSettingsUpdateRequest,
+  PlatformSettingsUpdateResponse,
+  CandleImportRequest,
+  CandleImportJob,
+  ImportSchedule,
+  ImportScheduleCreateRequest,
+  FastRerunRequest,
+  FastRerunResponse,
+  ReplRequest,
+  ReplResponse,
+  AgentRun,
+  AgentHistoryTurn,
+} from './types';
+
+const TOKEN_STORAGE_KEY = 'gtb_api_token';
+
+// Every backend route lives under "/api" (see cmd/api/main.go's
+// NewServeMux) so it can never collide with an SPA client-side route of the
+// same bare name (e.g. "/backtest", "/settings") - a full-page load on one
+// of those used to hit the backend's JSON handler instead of the SPA. Call
+// sites below pass bare paths ("/backtest", not "/api/backtest"); this is
+// the one place that adds the prefix.
+export const API_PREFIX = '/api';
+
+export class ApiError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`HTTP ${status}: ${body}`);
+    this.name = 'ApiError';
+  }
+}
+
+export class NetworkError extends Error {
+  constructor(public cause: unknown) {
+    super('Network request failed');
+    this.name = 'NetworkError';
+  }
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void): void {
+  onUnauthorized = fn;
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { signal?: AbortSignal }
+): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_PREFIX}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: opts?.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
+    throw new NetworkError(err);
+  }
+
+  if (res.status === 401) {
+    onUnauthorized?.();
+    throw new ApiError(401, await res.text().catch(() => ''));
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, await res.text().catch(() => ''));
+  }
+  if (res.status === 204) {
+    return null as T;
+  }
+  const text = await res.text();
+  if (!text) {
+    return null as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Failed to parse response body from ${method} ${path}`);
+  }
+}
+
+export const api = {
+  get: <T>(path: string, opts?: { signal?: AbortSignal }) =>
+    request<T>('GET', path, undefined, opts),
+  post: <T>(path: string, body?: unknown, opts?: { signal?: AbortSignal }) =>
+    request<T>('POST', path, body, opts),
+  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
+  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
+  delete: <T>(path: string, opts?: { signal?: AbortSignal }) =>
+    request<T>('DELETE', path, undefined, opts),
+
+  // Account
+  getAccount: (opts?: { signal?: AbortSignal }) =>
+    api.get<Account>('/account', opts),
+
+  // Strategies
+  getStrategies: (opts?: { signal?: AbortSignal }) =>
+    api.get<Strategy[]>('/strategy', opts),
+  getStrategy: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<Strategy>(`/strategy/${id}`, opts),
+  createStrategy: (data: StrategyCreateRequest) =>
+    api.post<Strategy>('/strategy', data),
+  updateStrategy: (id: number, data: StrategyUpdateRequest) =>
+    api.put<Strategy>(`/strategy/${id}`, data),
+  // Permanently removes the strategy AND everything that references it
+  // (signals, orders, executions, backtests, optimization runs,
+  // performance snapshots, script state/versions, agent chat history -
+  // see app/repository/strategy.Delete's doc comment). No undo. The
+  // backend blocks this with a 409 for a productive strategy or one with
+  // open positions - surfaced to the caller as a thrown ApiError.
+  deleteStrategy: (id: number) => api.delete<void>(`/strategy/${id}`),
+  patchStrategyStatus: (id: number, status: string) =>
+    api.patch<Strategy>(`/strategy/${id}/status`, { status }),
+  patchStrategyMode: (id: number, mode: string) =>
+    api.patch<Strategy>(`/strategy/${id}/mode`, { mode }),
+  enqueueStrategy: () =>
+    api.post<{ status: string }>('/strategy/enqueue'),
+  previewRuleSummary: (ruleDefinition: unknown) =>
+    api.post<{ summary: string }>('/strategy/template/preview', { rule_definition: ruleDefinition }),
+  getStrategySummary: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<{ summary: string }>(`/strategy/${id}/summary`, opts),
+  getScriptVersions: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<ScriptVersion[]>(`/strategy/${id}/versions`, opts),
+  revertScriptVersion: (id: number, versionId: number) =>
+    api.post<{ message: string }>(`/strategy/${id}/versions/${versionId}/revert`),
+
+
+  // Platform Settings
+  getSettings: (opts?: { signal?: AbortSignal }) =>
+    api.get<PlatformSettings>('/settings', opts),
+  updateSettings: (data: PlatformSettingsUpdateRequest) =>
+    api.put<PlatformSettingsUpdateResponse>('/settings', data),
+
+  // Candle Import & Scheduling
+  startCandleImport: (req: CandleImportRequest) =>
+    api.post<{ job_id: string; status: 'pending' }>('/candles/import', req),
+  getCandleImportJob: (jobId: string, opts?: { signal?: AbortSignal }) =>
+    api.get<CandleImportJob>(`/candles/import/${jobId}`, opts),
+  listImportSchedules: (opts?: { signal?: AbortSignal }) =>
+    api.get<ImportSchedule[]>('/candles/schedule', opts),
+  createImportSchedule: (req: ImportScheduleCreateRequest) =>
+    api.post<ImportSchedule>('/candles/schedule', req),
+  patchImportSchedule: (id: number, patch: Partial<Pick<ImportSchedule, 'enabled' | 'cron_spec'>>) =>
+    api.patch<ImportSchedule>(`/candles/schedule/${id}`, patch),
+  deleteImportSchedule: (id: number) =>
+    api.delete<void>(`/candles/schedule/${id}`),
+
+  // Signals / Positions
+  getSignals: (status?: 'open' | 'closed', opts?: { signal?: AbortSignal }) => {
+    const query = status ? `?status=${status}` : '';
+    return api.get<Signal[]>(`/signal${query}`, opts);
+  },
+  getSignal: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<Signal>(`/signal/${id}`, opts),
+
+  // Market data
+  getTickerPrices: (symbol?: string, opts?: { signal?: AbortSignal }) => {
+    const query = symbol ? `?symbol=${symbol}` : '';
+    return api.get<TickerPrice[]>(`/broker/prices${query}`, opts);
+  },
+  getKlines: (symbol: string, interval = '1m', limit = 100, opts?: { signal?: AbortSignal }) =>
+    api.get<Candle[]>(`/broker/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, opts),
+
+  // Backtest
+  runBacktest: (req: RunBacktestRequest) =>
+    api.post<BacktestRun>('/backtest', req),
+  runWalkForward: (req: WalkForwardRequest) =>
+    api.post<BacktestRun>('/backtest/walkforward', req),
+  getBacktest: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<BacktestRun>(`/backtest/${id}`, opts),
+  listBacktests: (strategyId?: number, opts?: { signal?: AbortSignal }) => {
+    const query = strategyId ? `?strategy_id=${strategyId}` : '';
+    return api.get<BacktestRun[]>(`/backtest${query}`, opts);
+  },
+  deleteBacktest: (id: number) => api.delete<void>(`/backtest/${id}`),
+  runMonteCarlo: (runId: number, iterations = 1000) =>
+    api.post<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, { iterations }),
+  getMonteCarlo: (runId: number, opts?: { signal?: AbortSignal }) =>
+    api.get<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, opts),
+  getReportUrl: (runId: number) => {
+    const token = getToken();
+    return `${API_PREFIX}/backtest/${runId}/report${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  // Optimization
+  startOptimization: (req: CreateOptimizationRequest) =>
+    api.post<{ id: number }>('/optimize', req),
+  // GET /optimize/{id} (not /optimize/{id}/status - see
+  // app/handler/web/optimize/handler.go's GetByID doc comment: this route
+  // itself is the poll target) returns the StatusResponse shape.
+  getOptimizationStatus: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<OptimizationStatusResponse>(`/optimize/${id}`, opts),
+  getOptimizationResults: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<OptimizationResults>(`/optimize/${id}/results`, opts),
+
+  // Performance
+  getPerformanceHistory: (opts?: { signal?: AbortSignal }) =>
+    api.get<StrategyPerformance[]>('/performance', opts),
+  getPerformanceSnapshots: (strategyId?: number, opts?: { signal?: AbortSignal }) => {
+    const query = strategyId ? `?strategy_id=${strategyId}` : '';
+    return api.get<PerformanceSnapshot[]>(`/performance/snapshots${query}`, opts);
+  },
+
+  // Strategy Scripting & REPL (frontend-02)
+  fastRerun: (req: FastRerunRequest, opts?: { signal?: AbortSignal }) =>
+    api.post<FastRerunResponse>('/script/fast-rerun', req, opts),
+  repl: (req: ReplRequest, opts?: { signal?: AbortSignal }) =>
+    api.post<ReplResponse>('/script/repl', req, opts),
+
+  // AI Strategy Agent (frontend-01/02) - a second transport onto the same
+  // AgentUseCase.RunToolLoop cmd/mcp exposes over MCP. sendAgentMessage
+  // blocks until the full RunToolLoop turn completes (no streaming in v1).
+  // strategyId is an optional additive hint (see app/handler/web/agent's
+  // sendMessageRequest.StrategyID) - sent by the floating copilot widget
+  // when it's open inside the strategy workbench, so the agent's answers
+  // can be strategy-aware without the operator repeating "for strategy #N".
+  // history is every prior turn of the CURRENT session (built by the
+  // widget from its own transcript) - without it, every message started a
+  // brand-new RunToolLoop with zero memory of anything discussed or
+  // drafted earlier in the same chat, which made iterating on a script
+  // ("draft this, now tighten the stop loss") impossible.
+  sendAgentMessage: (
+    input: string,
+    strategyId?: number,
+    history?: AgentHistoryTurn[],
+    opts?: { signal?: AbortSignal },
+  ) => api.post<AgentRun>('/agent/runs', { input, strategy_id: strategyId, history }, opts),
+  listAgentRuns: (limit = 20, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(`/agent/runs?limit=${limit}`, opts),
+  listAgentRunsForStrategy: (strategyId: number, limit = 20, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(`/agent/runs?strategy_id=${strategyId}&limit=${limit}`, opts),
+  getAgentRun: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun>(`/agent/runs/${id}`, opts),
+};

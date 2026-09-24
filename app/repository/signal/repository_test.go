@@ -190,4 +190,14 @@ func TestSignalRepository_GetAll(t *testing.T) {
 		assert.NotNil(t, s.Orders)
 		assert.True(t, len(s.Orders) > 0)
 	}
+
+	openSignals, err := repo.GetAllOpenSignals()
+	assert.NoError(t, err)
+	assert.Len(t, openSignals, 1)
+	assert.Equal(t, "BTCUSDT", openSignals[0].Symbol)
+
+	closedSignals, err := repo.GetAllClosedSignals()
+	assert.NoError(t, err)
+	assert.Len(t, closedSignals, 1)
+	assert.Equal(t, "ETHUSDT", closedSignals[0].Symbol)
 }

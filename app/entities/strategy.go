@@ -6,14 +6,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-type Algorithm string
-
-const (
-	Grid      = "grid"
-	Scalping  = "scalping"
-	Bollinger = "bollinger"
-)
-
 type ExecutionStatus string
 
 const (
@@ -24,17 +16,28 @@ const (
 type StrategyStatus string
 
 const (
-	Productive = "productive"
-	Testing    = "testing"
-	Disabled   = "disabled"
+	Productive StrategyStatus = "productive"
+	Testing    StrategyStatus = "testing"
+	Disabled   StrategyStatus = "disabled"
 )
 
 type Strategy struct {
-	ID                    uint `gorm:"primaryKey"`
-	Name                  string
-	Description           string
-	Algorithm             Algorithm
-	Status                StrategyStatus
+	ID          uint `gorm:"primaryKey"`
+	Name        string
+	Description string
+	// StrategyName is the registry-validated free-form strategy key (Spec 06,
+	// ADR-005) that resolves the strategy against the plugin registry. The old
+	// closed Algorithm enum was fully removed in backend-05.
+	StrategyName string
+	Status       StrategyStatus
+	// ScriptSource is the Lua source for a "script" StrategyName (backend-04).
+	// Empty for every native Go strategy; required (non-empty) for script
+	// strategies, enforced in the strategy usecase's validateStrategy.
+	ScriptSource string `gorm:"type:text"`
+	// Mode is the per-strategy persisted execution-mode tier (Spec 10,
+	// ADR-002): "backtest" | "dryrun" | "paper" | "live". New AND existing
+	// rows default to "dryrun" via migration - never "live".
+	Mode                  string                      `gorm:"default:'dryrun'"`
 	MonitoredSymbols      datatypes.JSONSlice[string] `gorm:"type:jsonb"`
 	StrategyConfiguration StrategyConfiguration       `gorm:"embedded"`
 	CreatedAt             time.Time
@@ -66,9 +69,9 @@ const (
 	OneHour        Cycle = 60
 )
 
-func IsValidAlgorithm(algo string) bool {
-	switch Algorithm(algo) {
-	case Grid, Bollinger, Scalping:
+func IsValidStatus(status string) bool {
+	switch StrategyStatus(status) {
+	case Productive, Testing, Disabled:
 		return true
 	default:
 		return false

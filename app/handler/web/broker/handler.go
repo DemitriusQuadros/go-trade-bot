@@ -3,19 +3,25 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"go-trade-bot/internal/broker"
+	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/handler"
 	"net/http"
 	"strconv"
 )
 
+// BrokerHandler is kept as a thin, read-only proxy over the ExchangeClient
+// ACL (Spec 01) - routes and response shape are otherwise unchanged, per the
+// blueprint's "rename package/route to exchange or keep as read-only proxy"
+// option. This is the last app/handler/web call site that used to depend on
+// the concrete internal/broker.Broker type; prices are now float64 (Spec 01
+// AC#4) rather than unparsed strings.
 type BrokerHandler struct {
-	Broker broker.Broker
+	Exchange exchange.ExchangeClient
 }
 
-func NewBrokerHandler(b broker.Broker) *BrokerHandler {
+func NewBrokerHandler(e exchange.ExchangeClient) *BrokerHandler {
 	return &BrokerHandler{
-		Broker: b,
+		Exchange: e,
 	}
 }
 
@@ -41,7 +47,7 @@ func (h *BrokerHandler) ListPrices(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Symbol is required", http.StatusBadRequest)
 		return
 	}
-	prices, err := h.Broker.ListTickerPrices(r.Context(), "BTCUSDT")
+	prices, err := h.Exchange.ListTickerPrices(r.Context(), symbol)
 	if err != nil {
 		http.Error(w, "Error fetching prices", http.StatusInternalServerError)
 		return
@@ -74,7 +80,7 @@ func (h *BrokerHandler) ListKlines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	klines, err := h.Broker.ListKline(r.Context(), symbol, interval, limitInt)
+	klines, err := h.Exchange.ListKline(r.Context(), symbol, interval, limitInt)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error fetching klines: %v", err), http.StatusInternalServerError)
 		return

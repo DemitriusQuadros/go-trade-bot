@@ -1,2 +1,17 @@
 config.yml
 .vscode
+.DS_Store
+.tmpbin/
+reports/
+/api
+/worker
+web/node_modules/
+web/dist/
+cmd/api/webui/dist/*
+!cmd/api/webui/dist/.placeholder
+
+# Docs specs, PRDs, and architecture
+docs/specs/
+docs/prd/
+docs/architecture/
+docs/architecture.drawio

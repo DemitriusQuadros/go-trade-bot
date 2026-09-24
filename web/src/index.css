@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 33% 6%;
+    --foreground: 0 0% 90%;
+
+    --card: 210 25% 8%;
+    --card-foreground: 0 0% 90%;
+
+    --popover: 210 25% 8%;
+    --popover-foreground: 0 0% 90%;
+
+    --primary: 80 100% 47%; /* Neon Green */
+    --primary-foreground: 216 33% 6%;
+
+    --secondary: 225 28% 14%;
+    --secondary-foreground: 0 0% 90%;
+
+    --muted: 225 28% 14%;
+    --muted-foreground: 218 17% 35%;
+
+    --accent: 225 28% 14%;
+    --accent-foreground: 80 100% 47%;
+
+    --destructive: 0 100% 60%;
+    --destructive-foreground: 0 0% 90%;
+
+    --border: 225 28% 14%;
+    --input: 225 28% 14%;
+    --ring: 80 100% 47%;
+
+    --radius: 0.3rem; /* slightly squarer for terminal vibe */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-mono antialiased;
+  }
+}
+
+@layer components {
+  .form-group {
+    @apply mb-4 flex flex-col gap-1.5;
+  }
+  .form-label {
+    @apply text-sm font-medium text-muted-foreground mb-1 block;
+  }
+  .form-input, .form-select, .form-textarea {
+    @apply flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-foreground transition-colors;
+  }
+  .form-textarea {
+    @apply min-h-[80px];
+  }
+  .form-input[type="number"] {
+    @apply font-mono;
+  }
+}
