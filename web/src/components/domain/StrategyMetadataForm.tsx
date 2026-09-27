@@ -26,33 +26,33 @@ export function StrategyMetadataForm({
     <>
       <div className="grid grid-cols-1 gap-4 text-xs">
         <div className="space-y-1">
-          <label className="block text-[11px] text-green-700 uppercase font-semibold">Strategy Name *</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Strategy Name *</label>
           <input
             type="text"
             value={draft.name}
             onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
             placeholder="e.g. BTC Trend Follower"
-            className="w-full bg-black border border-green-950 rounded px-2.5 py-1.5 text-green-300 text-xs focus:outline-none focus:border-green-600"
+            className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-[11px] text-green-700 uppercase font-semibold">Description</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Description</label>
           <input
             type="text"
             value={draft.description}
             onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
             placeholder="Brief rationale or indicator note"
-            className="w-full bg-black border border-green-950 rounded px-2.5 py-1.5 text-green-300 text-xs focus:outline-none focus:border-green-600"
+            className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-[11px] text-green-700 uppercase font-semibold">Execution Cycle</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Execution Cycle</label>
           <select
             value={draft.cycleMinutes}
             onChange={(e) =>
               setDraft((prev) => ({ ...prev, cycleMinutes: Number(e.target.value) as typeof prev.cycleMinutes }))
             }
-            className="w-full bg-black border border-green-950 rounded px-2.5 py-1.5 text-green-300 text-xs focus:outline-none focus:border-green-600"
+            className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           >
             {[1, 5, 10, 15, 30, 60].map((c) => (
               <option key={c} value={c}>
@@ -63,7 +63,7 @@ export function StrategyMetadataForm({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <label className="block text-[11px] text-green-700 uppercase font-semibold">Stop Loss %</label>
+            <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Stop Loss %</label>
             <input
               type="number"
               step="0.1"
@@ -72,11 +72,11 @@ export function StrategyMetadataForm({
                 setDraft((prev) => ({ ...prev, stopLossPct: e.target.value ? Number(e.target.value) : null }))
               }
               placeholder="e.g. 2.5"
-              className="w-full bg-black border border-green-950 rounded px-2 py-1.5 text-green-300 text-xs focus:outline-none focus:border-green-600"
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
             />
           </div>
           <div className="space-y-1">
-            <label className="block text-[11px] text-green-700 uppercase font-semibold">
+            <label className="block text-[11px] text-muted-foreground uppercase font-semibold">
               Size ({draft.positionSizing.type === 'pct_capital' ? '%' : '$'})
             </label>
             <input
@@ -90,21 +90,21 @@ export function StrategyMetadataForm({
                 }))
               }
               placeholder="10"
-              className="w-full bg-black border border-green-950 rounded px-2 py-1.5 text-green-300 text-xs focus:outline-none focus:border-green-600"
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
             />
           </div>
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-green-950 flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-[11px] text-green-700 uppercase font-semibold">Monitored Symbols:</span>
+      <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-[11px] text-muted-foreground uppercase font-semibold">Monitored Symbols:</span>
         {draft.symbols.map((sym) => (
           <span
             key={sym}
-            className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-950/40 border border-green-800/40 text-green-300 rounded text-xs"
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-card/40 border border-border/40 text-foreground rounded text-xs"
           >
             <span>{sym}</span>
-            <button onClick={() => onRemoveSymbol(sym)} className="text-green-700 hover:text-rose-400 font-bold ml-0.5">
+            <button onClick={() => onRemoveSymbol(sym)} className="text-muted-foreground hover:text-destructive font-bold ml-0.5">
               ×
             </button>
           </span>
@@ -121,21 +121,21 @@ export function StrategyMetadataForm({
               }
             }}
             placeholder="+ Add symbol (ETHUSDT)"
-            className="bg-black border border-green-950 rounded px-2 py-0.5 text-xs text-green-300 uppercase focus:outline-none focus:border-green-600 w-44"
+            className="bg-background border border-border rounded px-2 py-0.5 text-xs text-foreground uppercase focus:outline-none focus:border-primary w-44"
           />
           <button
             onClick={onAddSymbol}
-            className="px-2 py-0.5 bg-green-950 border border-green-800 text-green-400 rounded text-xs hover:bg-green-900"
+            className="px-2 py-0.5 bg-card border border-border text-foreground rounded text-xs hover:bg-secondary"
           >
             Add
           </button>
         </div>
 
-        <span className="ml-auto text-[11px] text-green-700 uppercase font-semibold">Preview Symbol:</span>
+        <span className="ml-auto text-[11px] text-muted-foreground uppercase font-semibold">Preview Symbol:</span>
         <select
           value={draft.previewSymbol}
           onChange={(e) => setDraft((prev) => ({ ...prev, previewSymbol: e.target.value }))}
-          className="bg-black text-green-300 font-bold px-2 py-0.5 rounded border border-green-950 text-xs focus:outline-none focus:border-green-600"
+          className="bg-background text-foreground font-bold px-2 py-0.5 rounded border border-border text-xs focus:outline-none focus:border-primary"
         >
           {draft.symbols.map((sym) => (
             <option key={sym} value={sym}>

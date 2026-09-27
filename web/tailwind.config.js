@@ -7,8 +7,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['"Fira Code"', '"Fira Code"', 'monospace'],
-        sans: ['"Fira Code"', '"Fira Code"', 'monospace'], // Hacker theme: everything is monospace
+        // UI chrome, labels, nav - IBM Plex Sans. Data, figures, code -
+        // IBM Plex Mono (opt in explicitly with font-mono; body no longer
+        // defaults every element to monospace).
+        sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -27,6 +30,14 @@ export default {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",

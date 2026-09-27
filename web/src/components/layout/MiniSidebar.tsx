@@ -3,10 +3,8 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Cpu,
-  Layers,
   History,
   TrendingUp,
-  FileSpreadsheet,
   Activity,
   Download,
   Settings,
@@ -25,27 +23,35 @@ export function MiniSidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-black border-r border-green-900/30 transition-all duration-300 z-50 flex flex-col ${
+      className={`fixed left-0 top-0 h-screen bg-card border-r border-border transition-all duration-300 z-50 flex flex-col ${
         expanded ? 'w-48' : 'w-14'
       }`}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
-      <div className="flex items-center gap-2.5 h-14 px-3 border-b border-green-900/30 overflow-hidden shrink-0">
-        <div className="p-1.5 bg-green-600 rounded-lg text-black shrink-0">
-          <Activity className="w-4 h-4" />
-        </div>
+      <div className="flex items-center gap-2.5 h-14 px-3 border-b border-border overflow-hidden shrink-0">
+        <img src="/gopher-face.png" alt="" className="w-8 h-8 rounded-md object-cover shrink-0" />
         <span
-          className={`font-bold text-sm tracking-tight text-green-100 font-mono whitespace-nowrap transition-opacity duration-300 ${
+          className={`font-semibold text-sm tracking-tight text-foreground whitespace-nowrap transition-opacity duration-300 ${
             expanded ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          GTB <span className="text-green-500 font-sans font-normal text-xs">v2.0</span>
+          GTB <span className="text-muted-foreground font-mono font-normal text-xs">v2.0</span>
         </span>
       </div>
 
-      <nav className="flex-1 py-4 flex flex-col gap-1.5 overflow-y-auto px-2">
-        <NavItem to="/" icon={<LayoutDashboard className="w-5 h-5" />} label="Overview" expanded={expanded} />
+      {/* Grouped by workflow (Overview / Trade / Analyze / Manage) instead
+          of one flat list - see the IA review this replaced: ten equally-
+          weighted items with no way to tell "used constantly" from
+          "touched once a quarter" apart. Script REPL and the standalone
+          Backtest launcher are gone from here entirely (folded into the
+          per-strategy Workbench's own tabs); Positions/Execution Log/Agent
+          History collapsed into one Activity entry. */}
+      <nav className="flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto px-2">
+        <GroupLabel expanded={expanded}>Overview</GroupLabel>
+        <NavItem to="/" icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" expanded={expanded} />
+
+        <GroupLabel expanded={expanded}>Trade</GroupLabel>
         <NavItem
           to="/strategies"
           icon={<Cpu className="w-5 h-5" />}
@@ -53,27 +59,19 @@ export function MiniSidebar() {
           expanded={expanded}
           dataWalkthrough="nav-strategies"
         />
-        <NavItem
-          to="/scripts/repl"
-          icon={<Terminal className="w-5 h-5" />}
-          label="Script REPL"
-          expanded={expanded}
-        />
-        <NavItem to="/positions" icon={<Layers className="w-5 h-5" />} label="Positions" expanded={expanded} />
+        <NavItem to="/activity" icon={<Activity className="w-5 h-5" />} label="Activity" expanded={expanded} />
+
+        <GroupLabel expanded={expanded}>Analyze</GroupLabel>
         <NavItem
           to="/backtest"
           icon={<History className="w-5 h-5" />}
-          label="Backtest"
+          label="Backtest Runs"
           expanded={expanded}
           dataWalkthrough="nav-backtest"
         />
         <NavItem to="/optimization" icon={<TrendingUp className="w-5 h-5" />} label="Optimization" expanded={expanded} />
-        <NavItem to="/execution" icon={<FileSpreadsheet className="w-5 h-5" />} label="Execution Log" expanded={expanded} />
-        {/* AI Agent / Agent History were removed from here - the copilot is
-            now a floating widget (AgentCopilotWidget, mounted in App.tsx),
-            not a page you navigate to. /agent/history is still reachable
-            from the widget's own header and from each strategy row's
-            "Agent History" link on Strategies.tsx. */}
+
+        <GroupLabel expanded={expanded}>Manage</GroupLabel>
         <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label="Candle Import" expanded={expanded} />
         <NavItem
           to="/settings"
@@ -92,35 +90,53 @@ export function MiniSidebar() {
 
         {/* Monitoring External Links */}
         {(settings?.prometheus_url || settings?.grafana_url || settings?.asynqmon_url) && (
-          <div className="mt-2 pt-2 border-t border-green-900/30 flex flex-col gap-1">
-            {settings?.prometheus_url && (
-              <ExternalNavItem
-                href={settings.prometheus_url}
-                icon={<BarChart3 className="w-5 h-5" />}
-                label="Prometheus"
-                expanded={expanded}
-              />
-            )}
-            {settings?.grafana_url && (
-              <ExternalNavItem
-                href={settings.grafana_url}
-                icon={<LineChart className="w-5 h-5" />}
-                label="Grafana"
-                expanded={expanded}
-              />
-            )}
-            {settings?.asynqmon_url && (
-              <ExternalNavItem
-                href={settings.asynqmon_url}
-                icon={<ListChecks className="w-5 h-5" />}
-                label="Asynqmon"
-                expanded={expanded}
-              />
-            )}
-          </div>
+          <>
+            <GroupLabel expanded={expanded}>Monitoring</GroupLabel>
+            <div className="flex flex-col gap-1">
+              {settings?.prometheus_url && (
+                <ExternalNavItem
+                  href={settings.prometheus_url}
+                  icon={<BarChart3 className="w-5 h-5" />}
+                  label="Prometheus"
+                  expanded={expanded}
+                />
+              )}
+              {settings?.grafana_url && (
+                <ExternalNavItem
+                  href={settings.grafana_url}
+                  icon={<LineChart className="w-5 h-5" />}
+                  label="Grafana"
+                  expanded={expanded}
+                />
+              )}
+              {settings?.asynqmon_url && (
+                <ExternalNavItem
+                  href={settings.asynqmon_url}
+                  icon={<ListChecks className="w-5 h-5" />}
+                  label="Asynqmon"
+                  expanded={expanded}
+                />
+              )}
+            </div>
+          </>
         )}
       </nav>
     </aside>
+  );
+}
+
+// Collapsed (icon-only rail): no room for a label, so this renders nothing
+// and a border does the separating instead - a text label would either
+// wrap or get clipped at 56px wide. Expanded: a small uppercase caption,
+// the same role the artifact's IA review's section headers played.
+function GroupLabel({ expanded, children }: { expanded: boolean; children: React.ReactNode }) {
+  if (!expanded) {
+    return <div className="my-1.5 mx-1 border-t border-border/60" />;
+  }
+  return (
+    <div className="mt-3 mb-1 px-2 text-[10px] font-mono font-semibold uppercase tracking-wider text-muted-foreground/70 first:mt-0">
+      {children}
+    </div>
   );
 }
 
@@ -145,8 +161,8 @@ function NavItem({
       className={({ isActive }) =>
         `flex items-center gap-3 px-2 py-2 rounded-md transition-colors overflow-hidden ${
           isActive
-            ? 'bg-green-950/60 text-green-400 font-semibold'
-            : 'text-green-700 hover:text-green-300 hover:bg-green-950/30'
+            ? 'bg-accent text-accent-foreground font-semibold'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
         }`
       }
       title={expanded ? undefined : label}
@@ -180,7 +196,7 @@ function ExternalNavItem({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`${label} (opens in new tab)`}
-      className="flex items-center gap-3 px-2 py-2 rounded-md text-green-700 hover:text-green-300 hover:bg-green-950/30 overflow-hidden transition-colors"
+      className="flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 overflow-hidden transition-colors"
       title={expanded ? undefined : label}
     >
       <div className="shrink-0">{icon}</div>

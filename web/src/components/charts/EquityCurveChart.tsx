@@ -107,7 +107,7 @@ export function EquityCurveChart({
 
   if (!points || points.length < 2) {
     return (
-      <div className="flex items-center justify-center p-8 text-xs text-green-700 bg-black rounded-lg border border-green-900/30 font-mono">
+      <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
         Not enough data points to chart equity curve.
       </div>
     );

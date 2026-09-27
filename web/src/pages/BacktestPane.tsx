@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useOutletContext, useParams, Link } from 'react-router-dom';
+import { useOutletContext, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useBacktest } from '@/hooks/queries';
 import { MonteCarloSummary, DrawdownPoint } from '@/api/types';
-import { Card, MetricCard } from '@/components/ui/Card';
+import { Card, CardHeader, MetricCard } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart';
 import { DrawdownChart } from '@/components/charts/DrawdownChart';
 import { MonteCarloDistribution } from '@/components/charts/MonteCarloDistribution';
+import { BacktestLaunchForm } from '@/components/domain/BacktestLaunchForm';
 import { WorkbenchContext } from './WorkbenchShell';
 import {
   Download,
@@ -25,6 +26,8 @@ import {
 export function BacktestPane() {
   const ctx = useOutletContext<WorkbenchContext>();
   const { runId } = useParams<{ runId?: string }>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setBacktestRun, setActiveTraceSource, strategyId, appendConsoleEntry } = ctx;
 
   const numericRunId = runId ? Number(runId) : 0;
@@ -113,19 +116,28 @@ export function BacktestPane() {
   };
 
   if (!runId) {
-    // "No run selected yet" state, scoped to this strategy - links out to
-    // the existing standalone launcher rather than embedding a mini-
-    // launcher (frontend-01's resolved open question).
+    // Launching a backtest for THIS strategy used to mean leaving the
+    // Workbench for a standalone /backtest page (frontend-01's original
+    // "link out" resolution) - a page-per-object detour both TradingView
+    // and MetaTrader avoid (one workspace, tabs for every action on the
+    // open object). Embedded here instead; /backtest is now a pure
+    // cross-strategy run history browser (BacktestRuns.tsx).
+    if (strategyId == null) {
+      return (
+        <div className="p-8 text-center text-xs text-muted-foreground">
+          Save this strategy before running a backtest.
+        </div>
+      );
+    }
     return (
-      <div className="p-8 text-center space-y-3">
-        <p className="text-sm text-green-400">No backtest run selected for this strategy yet.</p>
-        <Link
-          to={`/backtest?strategy_id=${strategyId ?? ''}`}
-          className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs inline-flex items-center gap-1.5 px-4 py-2"
-        >
-          Launch a new backtest
-        </Link>
-      </div>
+      <Card>
+        <CardHeader title="Launch Historical Simulation" subtitle="Configure the test range, symbol & fill assumptions for this strategy" />
+        <BacktestLaunchForm
+          strategyId={strategyId}
+          initialSymbol={searchParams.get('symbol') || undefined}
+          onLaunched={(newRunId) => navigate(`/strategies/${strategyId}/edit/backtest/${newRunId}`)}
+        />
+      </Card>
     );
   }
 
@@ -135,7 +147,7 @@ export function BacktestPane() {
 
   if (!run) {
     return (
-      <div className="p-8 text-center text-xs text-red-300 bg-red-950/40 border border-red-800 rounded-lg">
+      <div className="p-8 text-center text-xs text-destructive bg-destructive/15 border border-destructive/40 rounded-lg">
         Backtest run #{runId} not found.
       </div>
     );
@@ -152,30 +164,30 @@ export function BacktestPane() {
       <div className="flex flex-col gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <h2 className="text-lg font-bold text-green-500 font-mono">
+            <h2 className="text-lg font-bold text-foreground font-mono">
               Backtest #{run.id} — {run.symbol}
             </h2>
             <StatusBadge status={run.passed ? 'passed' : 'failed'} />
             {run.is_walk_forward && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-purple-900/40 text-purple-300 border-purple-700/40">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-accent text-accent-foreground border-border">
                 Walk-Forward
               </span>
             )}
           </div>
-          <p className="text-xs text-green-700">
+          <p className="text-xs text-muted-foreground">
             Strategy #{run.strategy_id}
             {run.strategy_name ? ` — ${run.strategy_name}` : ''}
           </p>
-          <p className="text-xs text-green-700">
+          <p className="text-xs text-muted-foreground">
             {new Date(run.start_date).toLocaleDateString()} — {new Date(run.end_date).toLocaleDateString()}
           </p>
         </div>
 
-        <div className="bg-green-950/20 p-1 rounded-lg border border-green-900/30 flex items-center gap-1 w-fit">
+        <div className="bg-card/20 p-1 rounded-lg border border-border/30 flex items-center gap-1 w-fit">
           <button
             onClick={() => setActiveTab('analytics')}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold ${
-              activeTab === 'analytics' ? 'bg-green-800 text-white shadow' : 'text-green-700 hover:text-green-400'
+              activeTab === 'analytics' ? 'bg-secondary text-white shadow' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Analytics
@@ -183,7 +195,7 @@ export function BacktestPane() {
           <button
             onClick={() => setActiveTab('report')}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 ${
-              activeTab === 'report' ? 'bg-green-800 text-white shadow' : 'text-green-700 hover:text-green-400'
+              activeTab === 'report' ? 'bg-secondary text-white shadow' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
@@ -203,38 +215,38 @@ export function BacktestPane() {
           value={`${isReturnPositive ? '+' : ''}${run.total_return_pct.toFixed(2)}%`}
           isPositive={isReturnPositive}
           subtitle={`Trades executed: ${run.total_trades}`}
-          icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}
+          icon={<TrendingUp className="w-4 h-4 text-success" />}
         />
         <MetricCard
           title="Sharpe Ratio"
           value={run.sharpe.toFixed(2)}
           subtitle={run.sharpe >= 1.5 ? 'Strong risk-adjusted return' : 'Moderate'}
-          icon={<Activity className="w-4 h-4 text-green-500" />}
+          icon={<Activity className="w-4 h-4 text-foreground" />}
         />
         <MetricCard
           title="Max Drawdown"
           value={`${run.max_drawdown_pct.toFixed(2)}%`}
           isPositive={false}
           subtitle="Peak-to-trough decline"
-          icon={<AlertTriangle className="w-4 h-4 text-rose-400" />}
+          icon={<AlertTriangle className="w-4 h-4 text-destructive" />}
         />
         <MetricCard
           title="Win Rate / Profit Factor"
           value={`${run.win_rate_pct.toFixed(1)}%`}
           subtitle={`Profit Factor: ${run.profit_factor}`}
-          icon={<Percent className="w-4 h-4 text-amber-400" />}
+          icon={<Percent className="w-4 h-4 text-warning" />}
         />
       </div>
 
       {activeTab === 'report' ? (
         <Card className="p-0 overflow-hidden">
-          <div className="p-3 bg-green-950/20 border-b border-green-900/30 flex items-center justify-between">
-            <span className="text-xs font-semibold text-green-600">Interactive HTML Simulation Report</span>
+          <div className="p-3 bg-card/20 border-b border-border/30 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">Interactive HTML Simulation Report</span>
             <a
               href={api.getReportUrl(run.id)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-green-500 hover:text-green-300 flex items-center gap-1 font-medium"
+              className="text-xs text-foreground hover:text-foreground flex items-center gap-1 font-medium"
             >
               <span>Open in new tab</span>
               <ExternalLink className="w-3 h-3" />
@@ -243,7 +255,7 @@ export function BacktestPane() {
           <iframe
             src={api.getReportUrl(run.id)}
             title={`Backtest ${run.id} Report`}
-            className="w-full h-[800px] border-none bg-black"
+            className="w-full h-[800px] border-none bg-background"
           />
         </Card>
       ) : (
@@ -270,15 +282,15 @@ export function BacktestPane() {
               <button
                 onClick={handleRunMonteCarlo}
                 disabled={mcLoading}
-                className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
+                className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
               >
-                <Dices className="w-3.5 h-3.5 text-green-500" />
+                <Dices className="w-3.5 h-3.5 text-foreground" />
                 <span>{mcLoading ? 'Simulating...' : 'Run Monte Carlo'}</span>
               </button>
             }
           >
             {mcError && (
-              <div className="mb-4 p-3 bg-red-950/50 border border-red-800 text-red-300 text-xs rounded">{mcError}</div>
+              <div className="mb-4 p-3 bg-destructive/15 border border-destructive/40 text-destructive text-xs rounded">{mcError}</div>
             )}
             {monteCarlo ? (
               <MonteCarloDistribution
@@ -289,7 +301,7 @@ export function BacktestPane() {
                 height={220}
               />
             ) : (
-              <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg">
+              <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
                 Click "Run Monte Carlo" for 1,000 randomized resamplings of this trade log.
               </div>
             )}
@@ -304,7 +316,7 @@ export function BacktestPane() {
               run.trade_log && Array.isArray(run.trade_log) && run.trade_log.length > 0 ? (
                 <button
                   onClick={handleExportCSV}
-                  className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
+                  className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Export CSV</span>
@@ -313,7 +325,7 @@ export function BacktestPane() {
             }
           >
             {!run.trade_log || !Array.isArray(run.trade_log) || run.trade_log.length === 0 ? (
-              <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg">
+              <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
                 No individual trade logs recorded for this run.
               </div>
             ) : (
@@ -324,29 +336,29 @@ export function BacktestPane() {
               // Real Tailwind now: whitespace-nowrap cells + horizontal
               // scroll instead of wrapping, compact abbreviated headers, and
               // a shorter timestamp format so the column doesn't dominate.
-              <div className="max-h-96 overflow-auto rounded border border-green-950/60">
+              <div className="max-h-96 overflow-auto rounded border border-border/60">
                 <table className="w-full text-xs border-collapse">
-                  <thead className="sticky top-0 bg-green-950/60">
+                  <thead className="sticky top-0 bg-card/60">
                     <tr>
-                      <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Entry
                       </th>
-                      <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Exit
                       </th>
-                      <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Entry Price
                       </th>
-                      <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Exit Price
                       </th>
-                      <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Qty
                       </th>
-                      <th className="px-2 py-1.5 text-right text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Profit
                       </th>
-                      <th className="px-2 py-1.5 text-left text-green-500 uppercase text-[10px] font-semibold whitespace-nowrap">
+                      <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
                         Reason
                       </th>
                     </tr>
@@ -364,11 +376,11 @@ export function BacktestPane() {
                             })
                           : '—';
                       return (
-                        <tr key={idx} className="border-t border-green-950/40 hover:bg-green-950/10">
-                          <td className="px-2 py-1.5 text-green-700 font-mono whitespace-nowrap">
+                        <tr key={idx} className="border-t border-border/40 hover:bg-card/10">
+                          <td className="px-2 py-1.5 text-muted-foreground font-mono whitespace-nowrap">
                             {formatTs(trade.entry_time)}
                           </td>
-                          <td className="px-2 py-1.5 text-green-700 font-mono whitespace-nowrap">
+                          <td className="px-2 py-1.5 text-muted-foreground font-mono whitespace-nowrap">
                             {formatTs(trade.exit_time)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
@@ -382,14 +394,14 @@ export function BacktestPane() {
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
                             {trade.profit !== undefined ? (
-                              <span className={`font-semibold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
                                 {isProfit ? '+' : ''}${Number(trade.profit).toFixed(2)}
                               </span>
                             ) : (
                               '—'
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-green-700 max-w-[200px] truncate" title={trade.exit_reason || ''}>
+                          <td className="px-2 py-1.5 text-muted-foreground max-w-[200px] truncate" title={trade.exit_reason || ''}>
                             {trade.exit_reason || '—'}
                           </td>
                         </tr>

@@ -171,7 +171,7 @@ export function Settings() {
 
   if (isError) {
     return (
-      <div className="flex items-center gap-2 p-12 text-red-400">
+      <div className="flex items-center gap-2 p-12 text-destructive">
         <AlertCircle className="w-6 h-6 shrink-0" />
         <span>
           Failed to load platform configuration: {humanizeSettingsError(loadError)}
@@ -182,7 +182,7 @@ export function Settings() {
 
   if (isLoading || !loadedSettings) {
     return (
-      <div className="flex items-center justify-center p-12 text-green-600">
+      <div className="flex items-center justify-center p-12 text-muted-foreground">
         <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading platform configuration...
       </div>
     );
@@ -194,18 +194,18 @@ export function Settings() {
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-green-500 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           Platform Settings
         </h1>
-        <p className="text-xs text-green-600 mt-1">
+        <p className="text-xs text-muted-foreground mt-1">
           Configure broker exchange API keys, trading modes, safety guards, and monitoring endpoints.
         </p>
       </div>
 
       {/* Notifications */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-800 text-xs text-emerald-300 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="p-4 rounded-xl bg-success/15 border border-success/40 text-xs text-success flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
@@ -259,7 +259,7 @@ export function Settings() {
         <div className="p-6 pt-0 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 Operating Mode Ceiling
                 <HelpTooltip>
                   Global mode ceiling. Individual strategies cannot exceed this operating mode.
@@ -273,7 +273,7 @@ export function Settings() {
                     mode: e.target.value as PlatformSettings['mode'],
                   })
                 }
-                className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
+                className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
               >
                 <option value="backtest">Backtest (backtest)</option>
                 <option value="dryrun">Dry Run (dryrun)</option>
@@ -288,9 +288,9 @@ export function Settings() {
                   type="checkbox"
                   checked={formState.testnet}
                   onChange={(e) => setFormState({ ...formState, testnet: e.target.checked })}
-                  className="w-4 h-4 rounded border-green-950 text-green-600 focus:ring-green-500 focus:ring-offset-green-950"
+                  className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-ring focus:ring-offset-background"
                 />
-                <span className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   Use Exchange Testnet
                   <HelpTooltip>
                     When enabled, connects to Binance Testnet endpoints rather than production exchanges.
@@ -300,13 +300,13 @@ export function Settings() {
             </div>
           </div>
 
-          <div className="pt-2 border-t border-green-900">
-            <h4 className="text-xs font-bold text-green-300 uppercase tracking-wider mb-3">
+          <div className="pt-2 border-t border-border">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
               Dry-Run & Paper Simulation Frictions
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-green-600 flex items-center gap-1">
+                <label className="text-xs text-muted-foreground flex items-center gap-1">
                   Slippage (%) <HelpTooltip>Simulated adverse execution slippage per fill</HelpTooltip>
                 </label>
                 <input
@@ -323,12 +323,12 @@ export function Settings() {
                       },
                     })
                   }
-                  className="px-3 py-1.5 rounded bg-black border border-green-950 text-xs text-green-300 focus:outline-none focus:border-green-600"
+                  className="px-3 py-1.5 rounded bg-background border border-border text-xs text-foreground focus:outline-none focus:border-primary"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-green-600 flex items-center gap-1">
+                <label className="text-xs text-muted-foreground flex items-center gap-1">
                   Fee (%) <HelpTooltip>Simulated exchange commission fee per trade</HelpTooltip>
                 </label>
                 <input
@@ -345,12 +345,12 @@ export function Settings() {
                       },
                     })
                   }
-                  className="px-3 py-1.5 rounded bg-black border border-green-950 text-xs text-green-300 focus:outline-none focus:border-green-600"
+                  className="px-3 py-1.5 rounded bg-background border border-border text-xs text-foreground focus:outline-none focus:border-primary"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-green-600 flex items-center gap-1">
+                <label className="text-xs text-muted-foreground flex items-center gap-1">
                   Fill Delay (ms) <HelpTooltip>Simulated network & queue latency before fill</HelpTooltip>
                 </label>
                 <input
@@ -367,7 +367,7 @@ export function Settings() {
                       },
                     })
                   }
-                  className="px-3 py-1.5 rounded bg-black border border-green-950 text-xs text-green-300 focus:outline-none focus:border-green-600"
+                  className="px-3 py-1.5 rounded bg-background border border-border text-xs text-foreground focus:outline-none focus:border-primary"
                 />
               </div>
             </div>
@@ -383,13 +383,13 @@ export function Settings() {
         />
         <div className="p-6 pt-0">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-green-300">Webhook URL</label>
+            <label className="text-xs font-semibold text-foreground">Webhook URL</label>
             <input
               type="url"
               value={formState.webhook_url}
               placeholder="https://discord.com/api/webhooks/..."
               onChange={(e) => setFormState({ ...formState, webhook_url: e.target.value })}
-              className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>
         </div>
@@ -403,35 +403,35 @@ export function Settings() {
         />
         <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-green-300">Prometheus URL</label>
+            <label className="text-xs font-semibold text-foreground">Prometheus URL</label>
             <input
               type="url"
               value={formState.prometheus_url}
               placeholder="http://localhost:9090"
               onChange={(e) => setFormState({ ...formState, prometheus_url: e.target.value })}
-              className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-green-300">Grafana Dashboard URL</label>
+            <label className="text-xs font-semibold text-foreground">Grafana Dashboard URL</label>
             <input
               type="url"
               value={formState.grafana_url}
               placeholder="http://localhost:3000"
               onChange={(e) => setFormState({ ...formState, grafana_url: e.target.value })}
-              className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-green-300">Asynqmon URL</label>
+            <label className="text-xs font-semibold text-foreground">Asynqmon URL</label>
             <input
               type="url"
               value={formState.asynqmon_url}
               placeholder="http://localhost:9191/tasks/monitoring"
               onChange={(e) => setFormState({ ...formState, asynqmon_url: e.target.value })}
-              className="px-3 py-2 rounded-lg bg-black border border-green-950 text-sm text-green-300 focus:outline-none focus:border-green-600"
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>
         </div>
@@ -443,7 +443,7 @@ export function Settings() {
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="px-5 py-2.5 rounded-lg bg-green-700 hover:bg-green-600 text-sm font-semibold text-white shadow-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+          className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary text-sm font-semibold text-white shadow-lg flex items-center gap-2 transition-colors disabled:opacity-50"
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           <span>Save Settings</span>
@@ -471,10 +471,10 @@ function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | n
   if (phase === 'saving-risk') {
     return (
       <div
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl bg-green-950/95 border border-green-800 text-xs text-green-300 shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl bg-card/95 border border-border text-xs text-foreground shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2"
         aria-live="polite"
       >
-        <Loader2 className="w-4 h-4 animate-spin text-green-400 shrink-0" />
+        <Loader2 className="w-4 h-4 animate-spin text-foreground shrink-0" />
         <span>
           Applying in-process — waiting for active trading cycles to drain before swapping credentials/mode.
           This can take up to 30 seconds.
@@ -486,10 +486,10 @@ function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | n
   if (phase === 'saving-safe') {
     return (
       <div
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-green-950/95 border border-green-950 text-xs text-green-300 shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-card/95 border border-border text-xs text-foreground shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2"
         aria-live="polite"
       >
-        <Loader2 className="w-3.5 h-3.5 animate-spin text-green-400 shrink-0" />
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground shrink-0" />
         <span>Applying settings…</span>
       </div>
     );
@@ -498,10 +498,10 @@ function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | n
   if (phase === 'error' && error) {
     return (
       <div
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-xl px-4 py-3 rounded-xl bg-rose-950/95 border border-rose-800 text-xs text-rose-200 shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-xl px-4 py-3 rounded-xl bg-destructive/15 border border-destructive/40 text-xs text-destructive shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2"
         aria-live="polite"
       >
-        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+        <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
         <span>{error}</span>
       </div>
     );
@@ -545,14 +545,14 @@ function MaskedSecretField({
   };
 
   return (
-    <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-black/70 border border-green-900">
+    <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-background/70 border border-border">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
-          <Key className="w-3 h-3 text-green-700" />
+        <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <Key className="w-3 h-3 text-muted-foreground" />
           {label}
         </label>
         {isDirty && (
-          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800">
+          <span className="text-[10px] font-bold text-warning uppercase tracking-wider bg-warning/15 px-1.5 py-0.5 rounded border border-warning/40">
             Modified
           </span>
         )}
@@ -566,20 +566,20 @@ function MaskedSecretField({
             value={typedValue}
             onChange={(e) => setTypedValue(e.target.value)}
             placeholder="Paste new secret here"
-            className="w-full px-2.5 py-1.5 rounded bg-green-950 border border-green-950 text-xs text-green-300 focus:outline-none focus:border-green-600 font-mono"
+            className="w-full px-2.5 py-1.5 rounded bg-card border border-border text-xs text-foreground focus:outline-none focus:border-primary font-mono"
           />
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={handleCancel}
-              className="px-2 py-1 rounded text-xs text-green-600 hover:text-green-300"
+              className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleApply}
-              className="px-2.5 py-1 rounded text-xs font-semibold bg-green-700 hover:bg-green-600 text-white"
+              className="px-2.5 py-1 rounded text-xs font-semibold bg-primary hover:bg-primary text-white"
             >
               Confirm New Value
             </button>
@@ -587,7 +587,7 @@ function MaskedSecretField({
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2 pt-0.5">
-          <span className="font-mono text-xs text-green-600 truncate">
+          <span className="font-mono text-xs text-muted-foreground truncate">
             {isDirty ? '•••••••••••••••• (New value queued)' : maskedValue || '(Not configured)'}
           </span>
           <div className="flex items-center gap-1 shrink-0">
@@ -597,7 +597,7 @@ function MaskedSecretField({
                 onClick={handleRevert}
                 aria-label={`Revert ${label}`}
                 title="Revert to original saved value"
-                className="p-1 rounded text-green-600 hover:text-green-300 hover:bg-green-900"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
@@ -606,7 +606,7 @@ function MaskedSecretField({
                 type="button"
                 onClick={() => setEditing(true)}
                 aria-label={`Change ${label}`}
-                className="px-2 py-1 rounded text-xs font-medium text-green-400 hover:text-green-300 hover:bg-green-950/40 border border-green-900/60 flex items-center gap-1"
+                className="px-2 py-1 rounded text-xs font-medium text-foreground hover:text-foreground hover:bg-card/40 border border-border/60 flex items-center gap-1"
               >
                 <Edit3 className="w-3 h-3" /> Change
               </button>

@@ -24,7 +24,7 @@ interface LuaScriptEditorProps {
 // the two can be laid out, collapsed, and reasoned about independently.
 export function LuaScriptEditor({ source, onChange, diagnostics, onCreateEditor, fill = false }: LuaScriptEditorProps) {
   return (
-    <div className={fill ? 'h-full text-sm bg-black/95' : 'text-sm bg-black/95 -m-3'}>
+    <div className={fill ? 'h-full text-sm bg-background/95' : 'text-sm bg-background/95 -m-3'}>
       <CodeMirror
         value={source}
         height={fill ? '100%' : '500px'}

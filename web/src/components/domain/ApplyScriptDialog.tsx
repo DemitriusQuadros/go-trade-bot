@@ -25,53 +25,53 @@ export function ApplyScriptDialog({ currentSource, proposedSource, onConfirm, on
       role="dialog"
       aria-modal="true"
       aria-label="Apply agent script to editor"
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 p-4"
       onClick={onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl max-h-[80vh] flex flex-col bg-black border border-green-800/60 rounded-lg shadow-2xl"
+        className="w-full max-w-2xl max-h-[80vh] flex flex-col bg-background border border-border/60 rounded-lg shadow-2xl"
       >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-green-950/60 shrink-0">
-          <FileDiff className="w-4 h-4 text-green-500" />
-          <h2 className="text-sm font-bold text-green-300">Apply script to editor</h2>
-          <span className="text-[11px] text-green-700 ml-1">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60 shrink-0">
+          <FileDiff className="w-4 h-4 text-foreground" />
+          <h2 className="text-sm font-bold text-foreground">Apply script to editor</h2>
+          <span className="text-[11px] text-muted-foreground ml-1">
             {identical ? 'No changes' : (
               <>
-                <span className="text-emerald-400">+{additions}</span>{' '}
-                <span className="text-rose-400">-{removals}</span>
+                <span className="text-success">+{additions}</span>{' '}
+                <span className="text-destructive">-{removals}</span>
               </>
             )}
           </span>
           <button
             onClick={onCancel}
-            className="ml-auto text-green-700 hover:text-green-400 p-1"
+            className="ml-auto text-muted-foreground hover:text-foreground p-1"
             aria-label="Cancel"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="px-4 pt-3 text-xs text-green-700">
+        <p className="px-4 pt-3 text-xs text-muted-foreground">
           This replaces the Lua source in your open editor buffer with the agent's proposed script. Review the
           diff below before confirming - your current buffer is not saved until you press{' '}
-          <span className="font-mono text-green-500">Save</span>/<span className="font-mono text-green-500">Ctrl+S</span>{' '}
+          <span className="font-mono text-foreground">Save</span>/<span className="font-mono text-foreground">Ctrl+S</span>{' '}
           in the editor yourself.
         </p>
 
-        <div className="flex-1 min-h-0 overflow-y-auto mx-4 my-3 rounded border border-green-950/60 bg-black/60 font-mono text-[11px]">
+        <div className="flex-1 min-h-0 overflow-y-auto mx-4 my-3 rounded border border-border/60 bg-background/60 font-mono text-[11px]">
           {diff.map((line, i) => (
             <div
               key={i}
               className={`whitespace-pre-wrap break-words px-2 py-0.5 ${
                 line.type === 'add'
-                  ? 'bg-emerald-950/40 text-emerald-300'
+                  ? 'bg-success/15 text-success'
                   : line.type === 'remove'
-                  ? 'bg-rose-950/40 text-rose-300'
-                  : 'text-green-700'
+                  ? 'bg-destructive/15 text-destructive'
+                  : 'text-muted-foreground'
               }`}
             >
-              <span className="select-none inline-block w-3 text-green-800">
+              <span className="select-none inline-block w-3 text-muted-foreground">
                 {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}
               </span>
               {line.text || ' '}
@@ -79,17 +79,17 @@ export function ApplyScriptDialog({ currentSource, proposedSource, onConfirm, on
           ))}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-green-950/60 shrink-0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border/60 shrink-0">
           <button
             onClick={onCancel}
-            className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs py-1.5 px-3"
+            className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs py-1.5 px-3"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={identical}
-            className="bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold rounded px-4 py-1.5 flex items-center gap-1.5 text-xs"
+            className="bg-primary hover:bg-primary disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded px-4 py-1.5 flex items-center gap-1.5 text-xs"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Apply to editor</span>

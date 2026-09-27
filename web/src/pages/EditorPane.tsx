@@ -270,7 +270,7 @@ export function EditorPane() {
     const savedId = await saveStrategy('disabled');
     if (savedId) {
       const sym = draft.previewSymbol || draft.symbols[0] || 'BTCUSDT';
-      navigate(`/backtest?strategy_id=${savedId}&symbol=${encodeURIComponent(sym)}`);
+      navigate(`/strategies/${savedId}/edit/backtest?symbol=${encodeURIComponent(sym)}`);
     }
   };
 
@@ -309,12 +309,12 @@ export function EditorPane() {
       <div className="flex flex-col gap-2 shrink-0">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <Code2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-            <span className="text-[11px] text-green-700" title="Auto-runs 600ms after you stop typing">
+            <Code2 className="w-3.5 h-3.5 text-foreground shrink-0" />
+            <span className="text-[11px] text-muted-foreground" title="Auto-runs 600ms after you stop typing">
               Auto-runs on edit
             </span>
           </div>
-          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-green-700 hover:text-green-400">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">
             <input
               type="checkbox"
               checked={liveRefresh}
@@ -327,10 +327,10 @@ export function EditorPane() {
           <button
             onClick={handleRunFullBacktest}
             disabled={createMutation.isPending || updateMutation.isPending}
-            className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+            className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
             title="Save as draft and launch full historical backtest"
           >
-            <Rocket className="w-3.5 h-3.5 text-purple-400" />
+            <Rocket className="w-3.5 h-3.5 text-accent-foreground" />
             <span>Run Full Backtest</span>
           </button>
           {isEdit ? (
@@ -338,7 +338,7 @@ export function EditorPane() {
               onClick={() => saveStrategy()}
               disabled={updateMutation.isPending}
               title="Ctrl+S / ⌘S"
-              className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
+              className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{updateMutation.isPending ? 'Saving...' : 'Save Changes'}</span>
@@ -349,7 +349,7 @@ export function EditorPane() {
                 onClick={() => saveStrategy('disabled')}
                 disabled={createMutation.isPending}
                 title="Ctrl+S / ⌘S"
-                className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+                className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Save as Draft</span>
@@ -357,7 +357,7 @@ export function EditorPane() {
               <button
                 onClick={() => saveStrategy('productive')}
                 disabled={createMutation.isPending}
-                className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
+                className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Save & Enable</span>
@@ -371,8 +371,8 @@ export function EditorPane() {
         <div
           className={`shrink-0 p-3 rounded-lg text-xs flex items-center justify-between border ${
             actionMessage.type === 'error'
-              ? 'bg-red-950/70 border-red-800 text-red-300'
-              : 'bg-green-950/70 border-green-800 text-green-300'
+              ? 'bg-destructive/15 border-destructive/40 text-destructive'
+              : 'bg-card/70 border-border text-foreground'
           }`}
         >
           <span>{actionMessage.text}</span>
@@ -385,18 +385,18 @@ export function EditorPane() {
       {previewError && (
         <div
           role="alert"
-          className="shrink-0 flex items-start justify-between gap-3 p-3 bg-red-950/80 border border-red-800 text-red-300 rounded-lg text-xs"
+          className="shrink-0 flex items-start justify-between gap-3 p-3 bg-destructive/15 border border-destructive/40 text-destructive rounded-lg text-xs"
         >
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <span className="font-bold block text-red-200 uppercase tracking-wide text-[11px]">
+              <span className="font-bold block text-destructive uppercase tracking-wide text-[11px]">
                 Script Execution Error
               </span>
-              <pre className="whitespace-pre-wrap font-mono text-[11px] text-red-300">{previewError}</pre>
+              <pre className="whitespace-pre-wrap font-mono text-[11px] text-destructive">{previewError}</pre>
             </div>
           </div>
-          <button onClick={() => setPreviewError(null)} className="text-red-400 hover:text-red-200 text-xs px-1">
+          <button onClick={() => setPreviewError(null)} className="text-destructive hover:text-destructive text-xs px-1">
             ✕
           </button>
         </div>
@@ -430,7 +430,7 @@ export function EditorPane() {
           <>
             <button
               onClick={handleReRunNow}
-              className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+              className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
               title="Re-run now (skip the debounce wait)"
             >
               <RefreshCw className="w-3 h-3" />
@@ -438,7 +438,7 @@ export function EditorPane() {
             </button>
             <button
               onClick={() => setDraft((prev) => ({ ...prev, source: DEFAULT_LUA_TEMPLATE }))}
-              className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+              className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
               title="Reset to template"
             >
               <RotateCcw className="w-3 h-3" />

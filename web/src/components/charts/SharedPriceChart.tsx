@@ -510,25 +510,25 @@ export function SharedPriceChart({
           positioned box with no width limit sizes to its content and never
           wraps, which is what let the OHLC row run off the right edge of a
           narrow chart instead of dropping to a second line. */}
-      <div className="pointer-events-none absolute top-2 left-2 max-w-[calc(100%-1rem)] z-10 font-mono text-[11px] leading-relaxed bg-black/60 rounded px-2 py-1 backdrop-blur-sm">
+      <div className="pointer-events-none absolute top-2 left-2 max-w-[calc(100%-1rem)] z-10 font-mono text-[11px] leading-relaxed bg-background/60 rounded px-2 py-1 backdrop-blur-sm">
         <div className="flex items-center gap-2 flex-wrap">
-          {symbol && <span className="text-green-300 font-bold">{symbol}</span>}
+          {symbol && <span className="text-foreground font-bold">{symbol}</span>}
           {legendCandle && (
             <>
-              <span className="text-green-700">O</span>
-              <span className={legendCandle.c >= legendCandle.o ? 'text-green-400' : 'text-red-400'}>
+              <span className="text-muted-foreground">O</span>
+              <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
                 {legendCandle.o.toFixed(2)}
               </span>
-              <span className="text-green-700">H</span>
-              <span className={legendCandle.c >= legendCandle.o ? 'text-green-400' : 'text-red-400'}>
+              <span className="text-muted-foreground">H</span>
+              <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
                 {legendCandle.h.toFixed(2)}
               </span>
-              <span className="text-green-700">L</span>
-              <span className={legendCandle.c >= legendCandle.o ? 'text-green-400' : 'text-red-400'}>
+              <span className="text-muted-foreground">L</span>
+              <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
                 {legendCandle.l.toFixed(2)}
               </span>
-              <span className="text-green-700">C</span>
-              <span className={legendCandle.c >= legendCandle.o ? 'text-green-400' : 'text-red-400'}>
+              <span className="text-muted-foreground">C</span>
+              <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
                 {legendCandle.c.toFixed(2)}
               </span>
             </>
@@ -551,7 +551,7 @@ export function SharedPriceChart({
       {plotNames.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-1 px-1 text-[11px] font-mono">
           {plotNames.map((name) => (
-            <label key={name} className="flex items-center gap-1 cursor-pointer select-none text-green-500">
+            <label key={name} className="flex items-center gap-1 cursor-pointer select-none text-foreground">
               <input
                 type="checkbox"
                 checked={!hiddenPlots.has(name)}

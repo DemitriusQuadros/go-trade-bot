@@ -116,7 +116,7 @@ export function MonteCarloDistribution({
 
   if (!distribution || distribution.length === 0) {
     return (
-      <div className="flex items-center justify-center p-8 text-xs text-green-700 bg-black rounded-lg border border-green-900/30 font-mono">
+      <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
         No Monte Carlo simulation data available.
       </div>
     );
@@ -125,28 +125,28 @@ export function MonteCarloDistribution({
   return (
     <div className="w-full flex flex-col gap-3 font-mono">
       <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="p-2 bg-black/60 rounded border border-green-900/30">
-          <span className="text-green-700 block text-[10px] uppercase">Mean Return</span>
-          <span className={`font-mono font-bold ${mean >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+        <div className="p-2 bg-background/60 rounded border border-border/30">
+          <span className="text-muted-foreground block text-[10px] uppercase">Mean Return</span>
+          <span className={`font-mono font-bold ${mean >= 0 ? 'text-success' : 'text-destructive'}`}>
             {mean.toFixed(2)}%
           </span>
         </div>
-        <div className="p-2 bg-black/60 rounded border border-green-900/30">
-          <span className="text-green-700 block text-[10px] uppercase">95% VaR</span>
-          <span className="font-mono font-bold text-amber-400">
+        <div className="p-2 bg-background/60 rounded border border-border/30">
+          <span className="text-muted-foreground block text-[10px] uppercase">95% VaR</span>
+          <span className="font-mono font-bold text-warning">
             {var95.toFixed(2)}%
           </span>
         </div>
-        <div className="p-2 bg-black/60 rounded border border-green-900/30">
-          <span className="text-green-700 block text-[10px] uppercase">Ruin Probability</span>
-          <span className={`font-mono font-bold ${ruinProb > 0.05 ? 'text-rose-400' : 'text-green-300'}`}>
+        <div className="p-2 bg-background/60 rounded border border-border/30">
+          <span className="text-muted-foreground block text-[10px] uppercase">Ruin Probability</span>
+          <span className={`font-mono font-bold ${ruinProb > 0.05 ? 'text-destructive' : 'text-foreground'}`}>
             {(ruinProb * 100).toFixed(2)}%
           </span>
         </div>
       </div>
 
       {hoveredBin && (
-        <div className="text-[11px] text-green-400 flex items-center justify-between px-1">
+        <div className="text-[11px] text-foreground flex items-center justify-between px-1">
           <span>Return Bin: <strong className="text-white">{hoveredBin.bin.toFixed(1)}%</strong></span>
           <span>Simulations: <strong className="text-white">{hoveredBin.count}</strong></span>
         </div>

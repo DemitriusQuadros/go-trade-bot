@@ -226,10 +226,10 @@ export function Optimization() {
     <div className="container-custom space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-green-500 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           Grid Parameter Optimization
         </h1>
-        <p className="text-xs text-green-700 mt-0.5">
+        <p className="text-xs text-muted-foreground mt-0.5">
           Exhaustive multi-dimensional hyperparameter sweep & Sharpe response heatmap
         </p>
       </div>
@@ -244,7 +244,7 @@ export function Optimization() {
             />
 
             {error && (
-              <div className="mb-4 p-3 bg-red-950/60 border border-red-800 text-red-300 rounded text-xs flex items-center gap-2">
+              <div className="mb-4 p-3 bg-destructive/15 border border-destructive/40 text-destructive rounded text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{error}</span>
               </div>
@@ -266,16 +266,16 @@ export function Optimization() {
                 </select>
                 {selectedStrategy && (
                   availableParams.length > 0 ? (
-                    <p className="text-[11px] text-green-700 mt-1.5">
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
                       Sweepable for this strategy: {availableParams.map((p, i) => (
                         <React.Fragment key={p}>
                           {i > 0 && ', '}
-                          <code className="text-green-500 font-mono">{p}</code>
+                          <code className="text-foreground font-mono">{p}</code>
                         </React.Fragment>
                       ))}
                     </p>
                   ) : (
-                    <p className="text-[11px] text-amber-500 mt-1.5">
+                    <p className="text-[11px] text-warning mt-1.5">
                       No numeric config fields detected for this strategy - sweeping an arbitrary
                       name will produce identical results for every combination.
                     </p>
@@ -333,9 +333,9 @@ export function Optimization() {
               </div>
 
               {/* Parameter 1 */}
-              <div className="p-3 bg-green-950/20/60 rounded-lg border border-green-900/30 space-y-2">
+              <div className="p-3 bg-card/20/60 rounded-lg border border-border/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-green-500 flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                     Parameter 1 (X-Axis)
                     <HelpTooltip>First hyperparameter dimension to sweep across (min, max, step increments)</HelpTooltip>
                   </span>
@@ -387,9 +387,9 @@ export function Optimization() {
               </div>
 
               {/* Parameter 2 */}
-              <div className="p-3 bg-green-950/20/60 rounded-lg border border-green-900/30 space-y-2">
+              <div className="p-3 bg-card/20/60 rounded-lg border border-border/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-purple-400 flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-accent-foreground flex items-center gap-1.5">
                     Parameter 2 (Y-Axis)
                     <HelpTooltip>Second hyperparameter dimension to sweep across in grid combinations</HelpTooltip>
                   </span>
@@ -443,7 +443,7 @@ export function Optimization() {
               <button
                 type="submit"
                 disabled={launching || (!!activeRunId && !isTerminal)}
-                className="w-full bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-green-600 py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
+                className="w-full bg-primary hover:bg-primary disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-primary py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
               >
                 <Play className="w-4 h-4" />
                 <span>
@@ -471,41 +471,41 @@ export function Optimization() {
             <Card>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-sm text-green-500">
+                  <span className="font-mono font-bold text-sm text-foreground">
                     Optimization Run #{activeRunId}
                   </span>
                   <StatusBadge status={statusData?.status || 'running'} />
                 </div>
-                <span className="text-xs font-mono text-green-600">{progressPct}%</span>
+                <span className="text-xs font-mono text-muted-foreground">{progressPct}%</span>
               </div>
 
               {/* Progress Bar */}
-              <div className="w-full bg-green-950/20 rounded-full h-2 overflow-hidden border border-green-900/30">
+              <div className="w-full bg-card/20 rounded-full h-2 overflow-hidden border border-border/30">
                 <div
-                  className="bg-green-800 h-full transition-all duration-300 rounded-full"
+                  className="bg-secondary h-full transition-all duration-300 rounded-full"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-green-700 mt-2">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2">
                 <span>
                   Total Combinations: {statusData?.total_combinations ?? '—'}
                   {statusData ? ` (${statusData.progress}/${statusData.total_combinations} done)` : ''}
                 </span>
                 {!isTerminal && (
-                  <span className="flex items-center gap-1 text-green-500">
+                  <span className="flex items-center gap-1 text-foreground">
                     <Spinner size="sm" />
                     <span>Evaluating backtest candidates sequentially...</span>
                   </span>
                 )}
                 {isCompleted && (
-                  <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                  <span className="flex items-center gap-1 text-success font-semibold">
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span>Sweep Completed</span>
                   </span>
                 )}
                 {isFailed && (
-                  <span className="flex items-center gap-1 text-rose-400 font-semibold">
+                  <span className="flex items-center gap-1 text-destructive font-semibold">
                     <AlertCircle className="w-3.5 h-3.5" />
                     <span>Sweep Failed</span>
                   </span>
@@ -513,7 +513,7 @@ export function Optimization() {
               </div>
 
               {isFailed && (
-                <div className="mt-3 p-3 bg-red-950/60 border border-red-800 text-red-300 rounded text-xs flex items-start gap-2">
+                <div className="mt-3 p-3 bg-destructive/15 border border-destructive/40 text-destructive rounded text-xs flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <span>
                     {(statusData as any)?.error_message ||
@@ -528,26 +528,26 @@ export function Optimization() {
           {results && heatmapData ? (
             <div className="space-y-6">
               {/* Best Configuration Callout */}
-              <Card className="border-emerald-500/30 bg-emerald-950/20">
+              <Card className="border-success/40 bg-success/15">
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-green-900/40 text-green-300 border-green-700/40 mb-1">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-secondary/40 text-foreground border-border/40 mb-1">
                       Optimal Parameter Set
                     </span>
-                    <h3 className="text-base font-bold text-green-500 mt-1">
+                    <h3 className="text-base font-bold text-foreground mt-1">
                       Best Discovered Configuration
                     </h3>
                     <div className="flex items-center gap-4 mt-2 text-xs font-mono">
                       {Object.entries(results.best_config || {}).map(([k, v]) => (
-                        <span key={k} className="p-1.5 bg-green-950/20/80 rounded border border-green-900/30">
-                          <strong className="text-emerald-400">{k}:</strong> {v}
+                        <span key={k} className="p-1.5 bg-card/20/80 rounded border border-border/30">
+                          <strong className="text-success">{k}:</strong> {v}
                         </span>
                       ))}
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[11px] text-green-700 block uppercase">Sharpe Ratio</span>
-                    <span className="text-xl font-bold font-mono text-emerald-400">
+                    <span className="text-[11px] text-muted-foreground block uppercase">Sharpe Ratio</span>
+                    <span className="text-xl font-bold font-mono text-success">
                       {Number((results.best_metrics as any)?.sharpe || 0).toFixed(2)}
                     </span>
                   </div>
@@ -581,8 +581,8 @@ export function Optimization() {
                 {/* `.table-container`/`.table` were dead classes (see
                     BacktestPane's trade log fix for the full story) - real
                     Tailwind now via [&_th]/[&_td] arbitrary variants. */}
-                <div className="max-h-80 overflow-auto rounded border border-green-950/60">
-                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-green-500 [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_th]:sticky [&_th]:top-0 [&_th]:bg-green-950/90 [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-green-950/40">
+                <div className="max-h-80 overflow-auto rounded border border-border/60">
+                  <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_th]:sticky [&_th]:top-0 [&_th]:bg-card/90 [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40">
                     <thead>
                       <tr>
                         <th>Rank</th>
@@ -600,22 +600,22 @@ export function Optimization() {
                         .slice(0, 15)
                         .map((cand, idx) => (
                           <tr key={idx}>
-                            <td className="font-mono text-green-800">#{idx + 1}</td>
-                            <td className="font-mono text-xs text-green-400">
+                            <td className="font-mono text-muted-foreground">#{idx + 1}</td>
+                            <td className="font-mono text-xs text-foreground">
                               {Object.entries(cand.params)
                                 .map(([k, v]) => `${k}=${v}`)
                                 .join(', ')}
                             </td>
-                            <td className="font-mono font-bold text-emerald-400">
+                            <td className="font-mono font-bold text-success">
                               {cand.metrics?.sharpe?.toFixed(2) || '—'}
                             </td>
-                            <td className="font-mono text-xs text-green-600">
+                            <td className="font-mono text-xs text-muted-foreground">
                               {cand.metrics?.max_drawdown_pct?.toFixed(1)}%
                             </td>
-                            <td className="font-mono text-xs text-green-600">
+                            <td className="font-mono text-xs text-muted-foreground">
                               {cand.metrics?.win_rate_pct?.toFixed(1)}%
                             </td>
-                            <td className="font-mono text-xs font-semibold text-green-500">
+                            <td className="font-mono text-xs font-semibold text-foreground">
                               {cand.metrics?.total_return_pct?.toFixed(2)}%
                             </td>
                           </tr>
@@ -627,12 +627,12 @@ export function Optimization() {
             </div>
           ) : (
             !activeRunId && (
-              <Card className="p-12 text-center text-green-700">
-                <Grid className="w-10 h-10 text-green-800 mx-auto mb-3" />
-                <h3 className="text-sm font-semibold text-green-400 mb-1">
+              <Card className="p-12 text-center text-muted-foreground">
+                <Grid className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                <h3 className="text-sm font-semibold text-foreground mb-1">
                   No Optimization Results Selected
                 </h3>
-                <p className="text-xs text-green-800 max-w-sm mx-auto">
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                   Configure search parameters and launch a sweep to visualize the 2D performance heatmap.
                 </p>
               </Card>

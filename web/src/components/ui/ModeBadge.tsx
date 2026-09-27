@@ -16,14 +16,14 @@ export function ModeBadge({ mode, className = '' }: ModeBadgeProps) {
 
   switch (normalized) {
     case 'live':
-      return <span className={`${BADGE_BASE} bg-red-900/40 text-red-300 border-red-700/40 ${className}`}>LIVE</span>;
+      return <span className={`${BADGE_BASE} bg-destructive/15 text-destructive border-destructive/40 ${className}`}>LIVE</span>;
     case 'paper':
-      return <span className={`${BADGE_BASE} bg-amber-900/40 text-amber-300 border-amber-700/40 ${className}`}>PAPER</span>;
+      return <span className={`${BADGE_BASE} bg-warning/15 text-warning border-warning/40 ${className}`}>PAPER</span>;
     case 'dryrun':
-      return <span className={`${BADGE_BASE} bg-blue-900/40 text-blue-300 border-blue-700/40 ${className}`}>DRYRUN</span>;
+      return <span className={`${BADGE_BASE} bg-secondary text-muted-foreground border-border ${className}`}>DRYRUN</span>;
     case 'backtest':
-      return <span className={`${BADGE_BASE} bg-purple-900/40 text-purple-300 border-purple-700/40 ${className}`}>BACKTEST</span>;
+      return <span className={`${BADGE_BASE} bg-accent text-accent-foreground border-border ${className}`}>BACKTEST</span>;
     default:
-      return <span className={`${BADGE_BASE} bg-slate-800/60 text-slate-400 border-slate-600/40 ${className}`}>{mode}</span>;
+      return <span className={`${BADGE_BASE} bg-secondary text-muted-foreground border-border ${className}`}>{mode}</span>;
   }
 }

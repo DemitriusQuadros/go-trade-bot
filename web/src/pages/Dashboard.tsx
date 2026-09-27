@@ -124,7 +124,7 @@ export function Dashboard() {
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
             sseConnected 
-              ? 'bg-green-500/10 text-green-500 border-green-500/20' 
+              ? 'bg-success/10 text-success border-success/20'
               : 'bg-destructive/10 text-destructive border-destructive/20'
           }`}>
             <Radio className={`w-3.5 h-3.5 ${sseConnected ? 'animate-pulse' : ''}`} />
@@ -173,7 +173,7 @@ export function Dashboard() {
               title="Open Positions"
               subtitle="Real-time marked-to-market positions"
               action={
-                <Link to="/positions" className="text-sm text-primary hover:underline flex items-center gap-1 font-medium">
+                <Link to="/activity" className="text-sm text-primary hover:underline flex items-center gap-1 font-medium">
                   <span>View all</span>
                   <ExternalLink className="w-4 h-4" />
                 </Link>
@@ -207,7 +207,7 @@ export function Dashboard() {
                       <TableCell>
                         <span
                           className={`font-semibold ${
-                            pos.unrealizedPnL >= 0 ? 'text-green-500' : 'text-destructive'
+                            pos.unrealizedPnL >= 0 ? 'text-foreground' : 'text-destructive'
                           }`}
                         >
                           {pos.unrealizedPnL >= 0 ? '+' : ''}

@@ -414,14 +414,15 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           to their own row. shrink-0 throughout so wrapping is the response
           to tight space, not each item quietly shrinking into an unusable
           sliver first. */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-green-950 pb-3 shrink-0">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border pb-3 shrink-0">
         <button
-          onClick={() => navigate('/strategies')}
-          className="p-1.5 text-green-700 hover:text-green-400 hover:bg-green-950/30 rounded shrink-0"
+          onClick={() => navigate(-1)}
+          title="Back"
+          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-card/30 rounded shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-bold text-green-500 shrink-0 whitespace-nowrap">
+        <h1 className="text-lg font-bold text-foreground shrink-0 whitespace-nowrap">
           {isEdit ? `Strategy Workbench #${strategyId}` : 'New Script Strategy'}
         </h1>
 
@@ -431,7 +432,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             end
             className={({ isActive }) =>
               `px-3 py-1.5 rounded flex items-center gap-1.5 ${
-                isActive ? 'bg-green-800 text-white font-semibold' : 'text-green-700 hover:text-green-400'
+                isActive ? 'bg-secondary text-white font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`
             }
           >
@@ -442,7 +443,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             to={`${tabBase}/repl`}
             className={({ isActive }) =>
               `px-3 py-1.5 rounded flex items-center gap-1.5 ${
-                isActive ? 'bg-green-800 text-white font-semibold' : 'text-green-700 hover:text-green-400'
+                isActive ? 'bg-secondary text-white font-semibold' : 'text-muted-foreground hover:text-foreground'
               }`
             }
           >
@@ -451,7 +452,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           </NavLink>
           {backtestDisabled ? (
             <span
-              className="px-3 py-1.5 rounded flex items-center gap-1.5 text-green-950 cursor-not-allowed"
+              className="px-3 py-1.5 rounded flex items-center gap-1.5 text-muted-foreground cursor-not-allowed"
               title="Save this strategy before running a full backtest"
             >
               <History className="w-3.5 h-3.5" />
@@ -462,7 +463,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               to={`${tabBase}/backtest`}
               className={({ isActive }) =>
                 `px-3 py-1.5 rounded flex items-center gap-1.5 ${
-                  isActive ? 'bg-green-800 text-white font-semibold' : 'text-green-700 hover:text-green-400'
+                  isActive ? 'bg-secondary text-white font-semibold' : 'text-muted-foreground hover:text-foreground'
                 }`
               }
             >
@@ -479,12 +480,12 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             console stays a simple on/off since it's a bottom drawer, not
             competing for the same horizontal space. */}
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          <div className="flex items-center bg-black border border-green-900/40 rounded overflow-hidden">
+          <div className="flex items-center bg-background border border-border/40 rounded overflow-hidden">
             <button
               onClick={() => setContentView('script')}
               title="Full-screen script (Editor/REPL/Backtest content fills the width)"
               className={`p-1.5 ${
-                contentView === 'script' ? 'bg-green-800 text-white' : 'text-green-700 hover:text-green-400 hover:bg-green-950/30'
+                contentView === 'script' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
             >
               <SquareCode className="w-4 h-4" />
@@ -492,8 +493,8 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             <button
               onClick={() => setContentView('split')}
               title="Split view"
-              className={`p-1.5 border-l border-r border-green-900/40 ${
-                contentView === 'split' ? 'bg-green-800 text-white' : 'text-green-700 hover:text-green-400 hover:bg-green-950/30'
+              className={`p-1.5 border-l border-r border-border/40 ${
+                contentView === 'split' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
             >
               <Columns2 className="w-4 h-4" />
@@ -502,7 +503,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               onClick={() => setContentView('chart')}
               title="Full-screen chart"
               className={`p-1.5 ${
-                contentView === 'chart' ? 'bg-green-800 text-white' : 'text-green-700 hover:text-green-400 hover:bg-green-950/30'
+                contentView === 'chart' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
             >
               <ChartCandlestick className="w-4 h-4" />
@@ -511,7 +512,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           <button
             onClick={() => setConsolePanelOpen((o) => !o)}
             title={consolePanelOpen ? 'Hide console' : 'Show console'}
-            className="p-1.5 text-green-700 hover:text-green-400 hover:bg-green-950/30 rounded"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-card/30 rounded"
           >
             {consolePanelOpen ? <PanelBottomClose className="w-4 h-4" /> : <PanelBottomOpen className="w-4 h-4" />}
           </button>
@@ -552,7 +553,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             <div
               onMouseDown={handleDividerDown}
               title="Drag to resize"
-              className="w-1.5 shrink-0 mx-1 cursor-col-resize rounded bg-green-900/20 hover:bg-green-700/50 active:bg-green-600/60 transition-colors"
+              className="w-1.5 shrink-0 mx-1 cursor-col-resize rounded bg-secondary/20 hover:bg-primary/50 active:bg-primary/60 transition-colors"
             />
           )}
 
@@ -562,16 +563,16 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               the side/bottom panels don't claim via SharedPriceChart's fill
               mode (ResizeObserver-driven). */}
           <div className={contentView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
-            <div className="px-1 text-[11px] text-green-700 uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
+            <div className="px-1 text-[11px] text-muted-foreground uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
               <span>Shared Price Chart ({activeTraceSource})</span>
               {loadingMoreHistory && (
-                <span className="normal-case text-green-500 font-normal tracking-normal flex items-center gap-1">
+                <span className="normal-case text-foreground font-normal tracking-normal flex items-center gap-1">
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   Loading more history...
                 </span>
               )}
               {!loadingMoreHistory && !hasMoreHistory && activeTraceSource !== 'backtest' && (
-                <span className="normal-case text-green-800 font-normal tracking-normal">
+                <span className="normal-case text-muted-foreground font-normal tracking-normal">
                   (full available history loaded)
                 </span>
               )}

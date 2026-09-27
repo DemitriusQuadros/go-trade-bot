@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Bot, Send, AlertTriangle, History, X, MessageSquareText, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, AlertTriangle, History, X, MessageSquareText, Maximize2, Minimize2 } from 'lucide-react';
 import { AgentRun } from '@/api/types';
 import { useSendAgentMessage } from '@/hooks/queries';
 import { AgentToolCallCard } from '@/components/domain/AgentToolCallCard';
@@ -123,9 +123,9 @@ export function AgentCopilotWidget() {
           onClick={() => setOpen(true)}
           aria-label="Open AI strategy copilot"
           title="AI Strategy Copilot"
-          className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-green-700 hover:bg-green-600 text-black shadow-lg shadow-black/50 border border-green-500/50 flex items-center justify-center transition-transform hover:scale-105"
+          className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-primary shadow-lg shadow-black/50 border border-primary/50 flex items-center justify-center overflow-hidden transition-transform hover:scale-105"
         >
-          <Bot className="w-6 h-6" />
+          <img src="/gopher-face.png" alt="" className="w-full h-full object-cover" />
         </button>
       )}
 
@@ -133,25 +133,25 @@ export function AgentCopilotWidget() {
         <div
           className={
             expanded
-              ? 'fixed bottom-5 right-5 z-[60] w-[min(64rem,calc(100vw-2.5rem))] h-[calc(100vh-3rem)] flex flex-col bg-black border border-green-800/60 rounded-lg shadow-2xl shadow-black/60'
-              : 'fixed bottom-5 right-5 z-[60] w-[26rem] max-w-[calc(100vw-2.5rem)] h-[36rem] max-h-[calc(100vh-3rem)] flex flex-col bg-black border border-green-800/60 rounded-lg shadow-2xl shadow-black/60'
+              ? 'fixed bottom-5 right-5 z-[60] w-[min(64rem,calc(100vw-2.5rem))] h-[calc(100vh-3rem)] flex flex-col bg-background border border-border/60 rounded-lg shadow-2xl shadow-black/60'
+              : 'fixed bottom-5 right-5 z-[60] w-[26rem] max-w-[calc(100vw-2.5rem)] h-[36rem] max-h-[calc(100vh-3rem)] flex flex-col bg-background border border-border/60 rounded-lg shadow-2xl shadow-black/60'
           }
         >
           {/* Header */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-green-950/60 shrink-0">
-            <Bot className="w-4 h-4 text-green-500 shrink-0" />
-            <span className="text-sm font-bold text-green-300">AI Strategy Copilot</span>
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/60 shrink-0">
+            <img src="/gopher-face.png" alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+            <span className="text-sm font-bold text-foreground">AI Strategy Copilot</span>
             {editorBridge && (
               <span
-                className="text-[10px] font-mono text-green-800 bg-green-950/40 border border-green-900/40 rounded px-1.5 py-0.5"
+                className="text-[10px] font-mono text-muted-foreground bg-card/40 border border-border/40 rounded px-1.5 py-0.5"
                 title="Sent as context with every message"
               >
                 {effectiveStrategyId != null ? `#${effectiveStrategyId}` : 'new strategy'}
               </span>
             )}
             <Link
-              to="/agent/history"
-              className="ml-auto text-green-700 hover:text-green-400 p-1 rounded hover:bg-green-950/30"
+              to="/activity?tab=agent"
+              className="ml-auto text-muted-foreground hover:text-foreground p-1 rounded hover:bg-card/30"
               title="View agent run history"
             >
               <History className="w-4 h-4" />
@@ -160,20 +160,20 @@ export function AgentCopilotWidget() {
               onClick={() => setExpanded((e) => !e)}
               aria-label={expanded ? 'Shrink copilot panel' : 'Expand copilot panel'}
               title={expanded ? 'Shrink panel' : 'Expand panel'}
-              className="text-green-700 hover:text-green-400 p-1 rounded hover:bg-green-950/30"
+              className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-card/30"
             >
               {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
             <button
               onClick={() => setOpen(false)}
               aria-label="Collapse copilot"
-              className="text-green-700 hover:text-green-400 p-1 rounded hover:bg-green-950/30"
+              className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-card/30"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <p className="px-3 pt-2 text-[10px] text-green-800 shrink-0">
+          <p className="px-3 pt-2 text-[10px] text-muted-foreground shrink-0">
             Can only save strategies as <span className="font-mono">testing</span>/
             <span className="font-mono">backtest</span>-or-<span className="font-mono">dryrun</span> - never live.
           </p>
@@ -181,34 +181,34 @@ export function AgentCopilotWidget() {
           {/* Transcript */}
           <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-3">
             {turns.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-center text-green-800 gap-2 py-8">
+              <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-8">
                 <MessageSquareText className="w-8 h-8 opacity-40" />
                 <p className="text-xs">Ask the agent to inspect strategies, run backtests, or draft a script.</p>
-                <p className="text-[11px] font-mono text-green-700 px-2">&ldquo;{EXAMPLE_PROMPT}&rdquo;</p>
+                <p className="text-[11px] font-mono text-muted-foreground px-2">&ldquo;{EXAMPLE_PROMPT}&rdquo;</p>
               </div>
             )}
 
             {turns.map((turn) => (
               <div key={turn.id} className="space-y-2">
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg bg-green-900/30 border border-green-800/40 text-green-100 text-xs px-3 py-2 whitespace-pre-wrap break-words">
+                  <div className="max-w-[85%] rounded-lg bg-secondary/30 border border-border/40 text-foreground text-xs px-3 py-2 whitespace-pre-wrap break-words">
                     {turn.input}
                   </div>
                 </div>
 
                 {!turn.run && !turn.failed && (
-                  <div className="flex items-center gap-2 text-green-700 text-xs pl-1">
+                  <div className="flex items-center gap-2 text-muted-foreground text-xs pl-1">
                     <Spinner size="sm" />
                     <span>Agent is working…</span>
                   </div>
                 )}
 
                 {turn.failed && (
-                  <div className="flex items-start gap-2 rounded border border-rose-900/50 bg-rose-950/20 text-rose-300 text-xs px-3 py-2">
+                  <div className="flex items-start gap-2 rounded border border-destructive/40 bg-destructive/15 text-destructive text-xs px-3 py-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div>
                       <div className="font-semibold">Request failed</div>
-                      <div className="text-rose-400/90 mt-0.5">{turn.failed}</div>
+                      <div className="text-destructive/90 mt-0.5">{turn.failed}</div>
                     </div>
                   </div>
                 )}
@@ -216,11 +216,11 @@ export function AgentCopilotWidget() {
                 {turn.run && (
                   <div className="space-y-2 pl-1">
                     {turn.run.status === 'error' && (
-                      <div className="flex items-start gap-2 rounded border border-rose-900/50 bg-rose-950/20 text-rose-300 text-xs px-3 py-2">
+                      <div className="flex items-start gap-2 rounded border border-destructive/40 bg-destructive/15 text-destructive text-xs px-3 py-2">
                         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                         <div>
                           <div className="font-semibold">Agent run failed</div>
-                          <div className="text-rose-400/90 mt-0.5">
+                          <div className="text-destructive/90 mt-0.5">
                             {turn.run.error_message || 'No error message was recorded for this run.'}
                           </div>
                         </div>
@@ -244,7 +244,7 @@ export function AgentCopilotWidget() {
                         never rendered no matter how many tool calls
                         preceded it. See entities.AgentRun.ResponseText. */}
                     {turn.run.status === 'ok' && turn.run.response_text && (
-                      <div className="max-w-[90%] rounded-lg bg-black/40 border border-green-950/60 text-green-100 px-3 py-2">
+                      <div className="max-w-[90%] rounded-lg bg-background/40 border border-border/60 text-foreground px-3 py-2">
                         <MarkdownMessage content={turn.run.response_text} />
                       </div>
                     )}
@@ -252,7 +252,7 @@ export function AgentCopilotWidget() {
                     {turn.run.status === 'ok' &&
                       !turn.run.response_text &&
                       turn.run.tool_calls.length === 0 && (
-                        <div className="text-xs text-green-700 italic">Agent responded with no text and no tool calls.</div>
+                        <div className="text-xs text-muted-foreground italic">Agent responded with no text and no tool calls.</div>
                       )}
                   </div>
                 )}
@@ -262,7 +262,7 @@ export function AgentCopilotWidget() {
           </div>
 
           {/* Composer */}
-          <form onSubmit={handleSubmit} className="flex items-center gap-2 p-2.5 border-t border-green-950/60 shrink-0">
+          <form onSubmit={handleSubmit} className="flex items-center gap-2 p-2.5 border-t border-border/60 shrink-0">
             <input
               type="text"
               value={input}
@@ -275,7 +275,7 @@ export function AgentCopilotWidget() {
             <button
               type="submit"
               disabled={sendMessage.isPending || !input.trim()}
-              className="bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold rounded px-3 py-1.5 flex items-center gap-1 text-xs shrink-0"
+              className="bg-primary hover:bg-primary disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded px-3 py-1.5 flex items-center gap-1 text-xs shrink-0"
             >
               {sendMessage.isPending ? <Spinner size="sm" /> : <Send className="w-3.5 h-3.5" />}
             </button>

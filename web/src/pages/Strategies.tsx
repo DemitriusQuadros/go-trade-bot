@@ -7,6 +7,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LoadingScreen } from '@/components/ui/Spinner';
+import { DropdownMenu } from '@/components/ui/DropdownMenu';
 import {
   Plus,
   Play,
@@ -148,10 +149,10 @@ export function Strategies() {
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-green-500 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             Strategy Management
           </h1>
-          <p className="text-xs text-green-700 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Configure algorithmic strategies, operating parameters & execution modes
           </p>
         </div>
@@ -159,17 +160,17 @@ export function Strategies() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleEnqueue}
-            className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+            className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5"
             title="Force immediate worker execution pass"
           >
-            <Send className="w-3.5 h-3.5 text-green-500" />
+            <Send className="w-3.5 h-3.5 text-primary" />
             <span>Enqueue Tick</span>
           </button>
 
           <button
             data-walkthrough="new-strategy-btn"
             onClick={() => navigate('/strategies/new')}
-            className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Plus className="w-4 h-4" />
             <span>New Strategy</span>
@@ -182,12 +183,12 @@ export function Strategies() {
         <div
           className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
             actionMessage.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-              : 'bg-rose-950/60 border-rose-800 text-rose-300'
+              ? 'bg-success/15 border-success/40 text-foreground'
+              : 'bg-destructive/15 border-destructive/40 text-foreground'
           }`}
         >
           <span>{actionMessage.text}</span>
-          <button onClick={() => setActionMessage(null)} className="p-0.5 hover:text-white">
+          <button onClick={() => setActionMessage(null)} className="p-0.5 text-muted-foreground hover:text-foreground">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -208,7 +209,7 @@ export function Strategies() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-green-700 font-medium">Status:</span>
+              <span className="text-xs text-muted-foreground font-medium">Status:</span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -222,7 +223,7 @@ export function Strategies() {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs text-green-700 font-medium">Mode:</span>
+              <span className="text-xs text-muted-foreground font-medium">Mode:</span>
               <select
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value)}
@@ -238,7 +239,7 @@ export function Strategies() {
 
             <button
               onClick={() => refetchStrategies()}
-              className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs p-1.5"
+              className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs p-1.5"
               title="Refresh"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -255,50 +256,50 @@ export function Strategies() {
         />
 
         {strategies.length === 0 ? (
-          <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg space-y-3">
+          <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-3">
             <p>No strategies configured.</p>
             <button
               onClick={() => navigate('/strategies/new')}
-              className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs px-3 py-1.5 font-bold"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-3 py-1.5 font-bold"
             >
               + New Strategy
             </button>
           </div>
         ) : filteredStrategies.length === 0 ? (
-          <div className="p-8 text-center text-xs text-green-800 bg-black/40 rounded-lg">
+          <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg">
             No strategies found matching filter criteria.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-green-900/30">
-            <table className="w-full table-fixed border-collapse">
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-green-900/40 bg-green-950/20">
-                  <th className="w-[6%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">ID</th>
-                  <th className="w-[17%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Name</th>
-                  <th className="w-[12%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Algorithm</th>
-                  <th className="w-[21%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Monitored Symbols</th>
-                  <th className="w-[8%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Cycle</th>
-                  <th className="w-[10%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Status</th>
-                  <th className="w-[12%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Mode</th>
-                  <th className="w-[14%] px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-green-700">Actions</th>
+                <tr className="border-b border-border bg-secondary/40">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Strategy</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Symbols</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Mode</th>
+                  <th className="w-10 px-2 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredStrategies.map((strat) => (
-                  <tr key={strat.id} className="border-b border-green-900/20 last:border-b-0 hover:bg-green-950/10">
-                    <td className="px-4 py-3 align-top font-mono text-xs text-green-800">#{strat.id}</td>
-                    <td className="px-4 py-3 align-top">
-                      <div>
-                        <div className="font-semibold text-green-400">{strat.name}</div>
-                        {strat.description && (
-                          <div className="text-[11px] text-green-700 mt-0.5 line-clamp-1">
-                            {strat.description}
-                          </div>
-                        )}
+                  <tr
+                    key={strat.id}
+                    onClick={() => navigate(`/strategies/${strat.id}/edit`)}
+                    className="border-b border-border last:border-b-0 hover:bg-accent/40 cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 align-top max-w-xs">
+                      <div className="font-semibold text-foreground truncate">{strat.name}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 font-mono">
+                        <span>#{strat.id}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{strat.strategy_name}</span>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{strat.cycle}m</span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <span className="font-semibold text-sm text-green-400">{strat.strategy_name}</span>
+                      {strat.description && (
+                        <div className="text-[11px] text-muted-foreground/80 mt-0.5 line-clamp-1">{strat.description}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3 align-top">
                       {strat.monitored_symbols?.length > 0 ? (
@@ -306,30 +307,24 @@ export function Strategies() {
                           {strat.monitored_symbols.map((sym) => (
                             <span
                               key={sym}
-                              className="px-1.5 py-0.5 rounded bg-green-950/50 border border-green-900/50 text-[11px] font-mono text-green-500"
+                              className="px-1.5 py-0.5 rounded bg-secondary border border-border text-[11px] font-mono text-foreground"
                             >
                               {sym}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-green-900 text-xs">—</span>
+                        <span className="text-muted-foreground text-xs">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <span className="text-xs text-green-700 font-mono">
-                        {strat.cycle}
-                        <span className="text-green-900"> min</span>
-                      </span>
                     </td>
                     <td className="px-4 py-3 align-top">
                       <StatusBadge status={strat.status} />
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={strat.mode}
                         onChange={(e) => handleModeChange(strat, e.target.value as StrategyMode)}
-                        className="w-full bg-green-950/20 border border-green-950 text-xs rounded px-2 py-1 text-green-400 focus:outline-none focus:border-green-600 font-medium"
+                        className="bg-secondary border border-border text-xs rounded px-2 py-1 text-foreground focus:outline-none focus:border-primary font-medium"
                       >
                         <option value="dryrun">Dry Run</option>
                         <option value="paper">Paper</option>
@@ -337,57 +332,34 @@ export function Strategies() {
                         <option value="backtest">Backtest</option>
                       </select>
                     </td>
-                    <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col items-start gap-1.5">
-                        <button
-                          onClick={() => navigate(`/strategies/${strat.id}/edit`)}
-                          className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
-                          title="View or edit this strategy's Lua script"
-                        >
-                          <Code2 className="w-3.5 h-3.5 text-green-600" />
-                          <span>View/Edit Script</span>
-                        </button>
-
-                        <button
-                          onClick={() => navigate(`/agent/history?strategy_id=${strat.id}`)}
-                          className="bg-green-950/40 hover:bg-green-900/40 text-green-300 rounded border border-green-800/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
-                          title="View what the AI agent has done to this strategy"
-                        >
-                          <Bot className="w-3.5 h-3.5 text-green-600" />
-                          <span>Agent History</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleToggleStatus(strat)}
-                          className={`rounded border text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap ${
-                            strat.status === 'disabled'
-                              ? 'bg-emerald-900/40 hover:bg-emerald-800/40 text-emerald-300 border-emerald-700/40'
-                              : 'bg-green-950/40 hover:bg-green-900/40 text-green-600 border-green-800/40'
-                          }`}
-                          title={strat.status === 'disabled' ? 'Enable' : 'Disable'}
-                        >
-                          {strat.status === 'disabled' ? (
-                            <>
-                              <Play className="w-3 h-3" />
-                              <span>Enable</span>
-                            </>
-                          ) : (
-                            <>
-                              <Pause className="w-3 h-3" />
-                              <span>Disable</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          onClick={() => handleDelete(strat)}
-                          className="bg-rose-950/30 hover:bg-rose-900/40 text-rose-400 rounded border border-rose-900/40 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap"
-                          title="Permanently delete this strategy and all related data"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
+                    <td className="px-2 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu
+                        label={`Actions for ${strat.name}`}
+                        items={[
+                          {
+                            label: 'View / Edit Script',
+                            icon: <Code2 />,
+                            onClick: () => navigate(`/strategies/${strat.id}/edit`),
+                          },
+                          {
+                            label: 'Agent History',
+                            icon: <Bot />,
+                            onClick: () => navigate(`/activity?tab=agent&strategy_id=${strat.id}`),
+                          },
+                          {
+                            label: strat.status === 'disabled' ? 'Enable' : 'Disable',
+                            icon: strat.status === 'disabled' ? <Play /> : <Pause />,
+                            onClick: () => handleToggleStatus(strat),
+                          },
+                          {
+                            label: 'Delete',
+                            icon: <Trash2 />,
+                            onClick: () => handleDelete(strat),
+                            destructive: true,
+                            separatorBefore: true,
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

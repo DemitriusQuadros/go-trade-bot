@@ -27,20 +27,20 @@ function Collapsible({ label, content }: { label: string; content: string }) {
     <div className="mt-1.5">
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-green-700 hover:text-green-400 font-semibold"
+        className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground font-semibold"
       >
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         {label}
       </button>
       {expanded || content.length > 0 ? (
-        <pre className="mt-1 whitespace-pre-wrap break-words bg-black/50 border border-green-950/60 rounded p-2 text-[11px] text-green-400 font-mono max-h-72 overflow-y-auto">
+        <pre className="mt-1 whitespace-pre-wrap break-words bg-background/50 border border-border/60 rounded p-2 text-[11px] text-foreground font-mono max-h-72 overflow-y-auto">
           {shown}
         </pre>
       ) : null}
       {isLong && (
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="mt-1 text-[10px] text-green-600 hover:text-green-400 underline"
+          className="mt-1 text-[10px] text-muted-foreground hover:text-foreground underline"
         >
           {expanded ? 'Show less' : 'Show full output'}
         </button>
@@ -81,19 +81,19 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
   return (
     <div
       className={`rounded border text-xs ${
-        isError ? 'border-rose-900/50 bg-rose-950/10' : 'border-green-900/40 bg-green-950/10'
+        isError ? 'border-destructive/40 bg-destructive/15' : 'border-border/40 bg-card/10'
       } p-3`}
     >
       <div className="flex items-center gap-2">
         {isError ? (
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
         ) : (
-          <Wrench className="w-3.5 h-3.5 text-green-500 shrink-0" />
+          <Wrench className="w-3.5 h-3.5 text-foreground shrink-0" />
         )}
-        <span className="font-mono font-semibold text-green-300">{call.tool}</span>
-        {isError && <span className="text-[10px] uppercase text-rose-400 font-semibold">failed</span>}
+        <span className="font-mono font-semibold text-foreground">{call.tool}</span>
+        {isError && <span className="text-[10px] uppercase text-destructive font-semibold">failed</span>}
         {call.timestamp && (
-          <span className="ml-auto text-[10px] text-green-800 font-mono">
+          <span className="ml-auto text-[10px] text-muted-foreground font-mono">
             {new Date(call.timestamp).toLocaleTimeString()}
           </span>
         )}
@@ -122,7 +122,7 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
         <div className="mt-2">
           <button
             onClick={() => onApplyToEditor(proposedScriptSource)}
-            className="inline-flex items-center gap-1.5 text-[11px] bg-green-700 hover:bg-green-600 text-black font-semibold rounded px-2.5 py-1"
+            className="inline-flex items-center gap-1.5 text-[11px] bg-primary hover:bg-primary text-primary-foreground font-semibold rounded px-2.5 py-1"
           >
             <FileDiff className="w-3 h-3" />
             Apply to editor
@@ -135,7 +135,7 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
           {strategyId != null && (
             <Link
               to={`/strategies/${strategyId}/edit`}
-              className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+              className="inline-flex items-center gap-1 text-[11px] text-success hover:text-success underline underline-offset-2"
             >
               Open strategy #{strategyId} in editor
               <ArrowUpRight className="w-3 h-3" />
@@ -144,7 +144,7 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
           {backtestId != null && backtestStrategyId != null && (
             <Link
               to={`/strategies/${backtestStrategyId}/edit/backtest/${backtestId}`}
-              className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+              className="inline-flex items-center gap-1 text-[11px] text-success hover:text-success underline underline-offset-2"
             >
               Open backtest #{backtestId}
               <ArrowUpRight className="w-3 h-3" />

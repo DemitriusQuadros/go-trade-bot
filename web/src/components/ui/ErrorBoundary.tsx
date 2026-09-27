@@ -40,11 +40,11 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   render() {
     if (this.state.error) {
       return (
-        <div className="flex items-start gap-3 p-6 m-4 rounded-lg border border-red-900/50 bg-red-950/20 text-red-400">
+        <div className="flex items-start gap-3 p-6 m-4 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive">
           <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-semibold">Something went wrong rendering this page.</p>
-            <p className="text-xs text-red-500/80">{this.state.error.message}</p>
+            <p className="text-xs text-destructive/80">{this.state.error.message}</p>
           </div>
         </div>
       );

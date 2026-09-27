@@ -72,7 +72,7 @@ export function PnlHistoryChart({
 
   if (!points || points.length === 0) {
     return (
-      <div className="flex items-center justify-center p-8 text-xs text-green-700 bg-black rounded-lg border border-green-900/30 font-mono">
+      <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
         No performance history recorded yet.
       </div>
     );

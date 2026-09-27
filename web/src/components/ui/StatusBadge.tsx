@@ -21,17 +21,17 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'open':
     case 'completed':
     case 'passed':
-      return <span className={`${BADGE_BASE} bg-green-900/40 text-green-300 border-green-700/40 ${className}`}>{status}</span>;
+      return <span className={`${BADGE_BASE} bg-success/15 text-success border-success/40 ${className}`}>{status}</span>;
     case 'testing':
     case 'pending':
     case 'running':
-      return <span className={`${BADGE_BASE} bg-amber-900/40 text-amber-300 border-amber-700/40 ${className}`}>{status}</span>;
+      return <span className={`${BADGE_BASE} bg-warning/15 text-warning border-warning/40 ${className}`}>{status}</span>;
     case 'disabled':
     case 'closed':
-      return <span className={`${BADGE_BASE} bg-slate-800/60 text-slate-400 border-slate-600/40 ${className}`}>{status}</span>;
+      return <span className={`${BADGE_BASE} bg-secondary text-muted-foreground border-border ${className}`}>{status}</span>;
     case 'failed':
-      return <span className={`${BADGE_BASE} bg-red-900/40 text-red-300 border-red-700/40 ${className}`}>{status}</span>;
+      return <span className={`${BADGE_BASE} bg-destructive/15 text-destructive border-destructive/40 ${className}`}>{status}</span>;
     default:
-      return <span className={`${BADGE_BASE} bg-blue-900/40 text-blue-300 border-blue-700/40 ${className}`}>{status}</span>;
+      return <span className={`${BADGE_BASE} bg-accent text-accent-foreground border-border ${className}`}>{status}</span>;
   }
 }

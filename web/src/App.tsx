@@ -7,12 +7,9 @@ import { WorkbenchShell } from '@/pages/WorkbenchShell';
 import { EditorPane } from '@/pages/EditorPane';
 import { ReplPane } from '@/pages/ReplPane';
 import { BacktestPane } from '@/pages/BacktestPane';
-import { ScriptRepl } from '@/pages/ScriptRepl';
-import { Positions } from '@/pages/Positions';
-import { BacktestLauncher } from '@/pages/BacktestLauncher';
+import { BacktestRuns } from '@/pages/BacktestRuns';
+import { Activity } from '@/pages/Activity';
 import { Optimization } from '@/pages/Optimization';
-import { ExecutionLog } from '@/pages/ExecutionLog';
-import { AgentHistory } from '@/pages/AgentHistory';
 import { AgentCopilotWidget } from '@/components/domain/AgentCopilotWidget';
 import { Settings } from '@/pages/Settings';
 import { CandleImport } from '@/pages/CandleImport';
@@ -66,17 +63,21 @@ export function App() {
               <Route path="backtest" element={<BacktestPane />} />
               <Route path="backtest/:runId" element={<BacktestPane />} />
             </Route>
-            <Route path="/scripts/repl" element={<ScriptRepl />} />
-            <Route path="/positions" element={<Positions />} />
-            <Route path="/backtest" element={<BacktestLauncher />} />
+            {/* Script REPL and the Backtest launcher used to be standalone
+                pages here - both duplicated a per-strategy Workbench tab
+                (REPL, Backtest) instead of being that tab. /scripts/repl is
+                gone outright (open a new strategy's REPL tab instead);
+                /backtest is now BacktestRuns, a pure cross-strategy run
+                history browser with no launch form of its own. */}
+            <Route path="/backtest" element={<BacktestRuns />} />
             <Route path="/optimization" element={<Optimization />} />
-            <Route path="/execution" element={<ExecutionLog />} />
-            {/* /agent (standalone full-page chat) is gone - replaced by the
-                floating AgentCopilotWidget mounted below, alongside these
-                Routes. /agent/history stays: still a legitimate read-only
-                audit view, reachable from the widget's header and from
-                Strategies.tsx's per-row "Agent History" deep link. */}
-            <Route path="/agent/history" element={<AgentHistory />} />
+            {/* Positions, Execution Log, and Agent History used to be three
+                separate pages - all three are filtered views over the same
+                object (one strategy's trading activity), now tabs on one
+                Activity page instead. /agent (standalone full-page chat) is
+                gone too - replaced by the floating AgentCopilotWidget mounted
+                below, alongside these Routes. */}
+            <Route path="/activity" element={<Activity />} />
             <Route path="/candles" element={<CandleImport />} />
             <Route path="/settings" element={<Settings />} />
             <Route

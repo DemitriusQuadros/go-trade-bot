@@ -39,15 +39,15 @@ function ToastItem({
   }, [toast.id, onDismiss]);
 
   const icons = {
-    success: <CheckCircle2 className="w-5 h-5 text-emerald-400" />,
-    error: <AlertCircle className="w-5 h-5 text-rose-400" />,
-    info: <Info className="w-5 h-5 text-green-400" />,
+    success: <CheckCircle2 className="w-5 h-5 text-success" />,
+    error: <AlertCircle className="w-5 h-5 text-destructive" />,
+    info: <Info className="w-5 h-5 text-primary" />,
   };
 
   const bgStyles = {
-    success: 'bg-emerald-950/90 border-emerald-800 text-emerald-100',
-    error: 'bg-rose-950/90 border-rose-800 text-rose-100',
-    info: 'bg-green-950/90 border-green-800 text-green-100',
+    success: 'bg-card/95 border-success/40 text-foreground',
+    error: 'bg-card/95 border-destructive/40 text-foreground',
+    info: 'bg-card/95 border-primary/40 text-foreground',
   };
 
   return (
@@ -58,7 +58,7 @@ function ToastItem({
       <p className="text-xs font-medium flex-1">{toast.message}</p>
       <button
         onClick={() => onDismiss(toast.id)}
-        className="text-green-600 hover:text-green-300 p-0.5"
+        className="text-muted-foreground hover:text-foreground p-0.5"
       >
         <X className="w-4 h-4" />
       </button>

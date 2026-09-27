@@ -39,19 +39,19 @@ export function CollapsibleSection({
 
   return (
     <div
-      className={`rounded-lg border border-green-900/40 bg-black overflow-hidden ${
+      className={`rounded-lg border border-border bg-card overflow-hidden ${
         fill && open ? 'h-full flex flex-col min-h-0' : ''
       } ${className}`}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-green-950/40 border-b border-green-900/40 text-xs shrink-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-secondary/60 border-b border-border text-xs shrink-0">
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1.5 min-w-0 text-left text-green-400 hover:text-green-300"
+          className="flex items-center gap-1.5 min-w-0 text-left text-foreground hover:text-primary"
           title={open ? `Hide ${title}` : `Show ${title}`}
         >
           {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
           <span className="font-semibold text-[11px] uppercase tracking-wider truncate">{title}</span>
-          {subtitle && <span className="text-[10px] text-green-700 truncate">{subtitle}</span>}
+          {subtitle && <span className="text-[10px] text-muted-foreground truncate">{subtitle}</span>}
         </button>
         {action && (
           <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>

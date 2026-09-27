@@ -62,8 +62,8 @@ export function MetricCard({
         <span className="text-2xl font-bold text-foreground">{value}</span>
         {change && (
           <span
-            className={cn("text-xs font-semibold", 
-              isPositive ? 'text-green-500' : 'text-destructive'
+            className={cn("text-xs font-semibold",
+              isPositive ? 'text-success' : 'text-destructive'
             )}
           >
             {change}

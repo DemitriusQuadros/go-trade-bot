@@ -227,7 +227,7 @@ export function ReplPane() {
             <>
               <button
                 onClick={handleEvaluateNow}
-                className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
                 title="Re-run now (skip the debounce wait)"
               >
                 <RefreshCw className="w-3 h-3" />
@@ -235,7 +235,7 @@ export function ReplPane() {
               </button>
               <button
                 onClick={() => setSource(DEFAULT_SNIPPET)}
-                className="text-[11px] text-green-700 hover:text-green-400 flex items-center gap-1"
+                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
                 title="Reset to template"
               >
                 <RotateCcw className="w-3 h-3" />
@@ -244,7 +244,7 @@ export function ReplPane() {
             </>
           }
         >
-          <div className="text-sm bg-black/95 -m-3">
+          <div className="text-sm bg-background/95 -m-3">
             <CodeMirror
               value={source}
               height="220px"
@@ -257,28 +257,28 @@ export function ReplPane() {
           </div>
         </CollapsibleSection>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-green-700" title="Auto-runs 600ms after you stop typing or change symbol/timeframe">
-          <Terminal className="w-3.5 h-3.5 text-green-500 shrink-0" />
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title="Auto-runs 600ms after you stop typing or change symbol/timeframe">
+          <Terminal className="w-3.5 h-3.5 text-foreground shrink-0" />
           <span>Auto-runs on edit</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded border border-green-900/40">
-            <span className="text-green-700 px-1 text-[11px]">Symbol:</span>
+          <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
+            <span className="text-muted-foreground px-1 text-[11px]">Symbol:</span>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              className="bg-black text-green-300 font-bold px-2 py-1 rounded border border-green-950 text-xs w-24 uppercase focus:outline-none focus:border-green-600"
+              className="bg-background text-foreground font-bold px-2 py-1 rounded border border-border text-xs w-24 uppercase focus:outline-none focus:border-primary"
               placeholder="BTCUSDT"
             />
           </div>
-          <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded border border-green-900/40">
-            <span className="text-green-700 px-1 text-[11px]">TF:</span>
+          <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
+            <span className="text-muted-foreground px-1 text-[11px]">TF:</span>
             <select
               value={timeframe}
               onChange={(e) => setTimeframe(e.target.value)}
-              className="bg-black text-green-300 font-bold px-2 py-1 rounded border border-green-950 text-xs focus:outline-none focus:border-green-600"
+              className="bg-background text-foreground font-bold px-2 py-1 rounded border border-border text-xs focus:outline-none focus:border-primary"
             >
               {TIMEFRAME_OPTIONS.map((tf) => (
                 <option key={tf} value={tf}>
@@ -287,13 +287,13 @@ export function ReplPane() {
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded border border-green-900/40">
-            <span className="text-green-700 px-1 text-[11px]">Window:</span>
+          <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
+            <span className="text-muted-foreground px-1 text-[11px]">Window:</span>
             <input
               type="number"
               value={windowCandles}
               onChange={(e) => setWindowCandles(Number(e.target.value) || 100)}
-              className="bg-black text-green-300 font-bold px-2 py-1 rounded border border-green-950 text-xs w-16 focus:outline-none focus:border-green-600"
+              className="bg-background text-foreground font-bold px-2 py-1 rounded border border-border text-xs w-16 focus:outline-none focus:border-primary"
               min={10}
               max={MAX_WINDOW_CANDLES}
               title="Also grows automatically when you zoom/pan out on the chart"
@@ -302,7 +302,7 @@ export function ReplPane() {
           <button
             onClick={handleEvaluateNow}
             disabled={isEvaluating}
-            className="bg-green-700 hover:bg-green-600 text-white rounded border border-green-600 text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
+            className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>{isEvaluating ? 'Evaluating...' : 'Evaluate'}</span>
@@ -312,18 +312,18 @@ export function ReplPane() {
         {activeError && (
           <div
             role="alert"
-            className="flex items-start justify-between gap-3 p-3 bg-red-950/80 border border-red-800 text-red-300 rounded-lg text-xs"
+            className="flex items-start justify-between gap-3 p-3 bg-destructive/15 border border-destructive/40 text-destructive rounded-lg text-xs"
           >
             <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <span className="font-bold block text-red-200 uppercase tracking-wide text-[11px]">
+                <span className="font-bold block text-destructive uppercase tracking-wide text-[11px]">
                   Evaluation Error
                 </span>
-                <pre className="whitespace-pre-wrap font-mono text-[11px] text-red-300">{activeError}</pre>
+                <pre className="whitespace-pre-wrap font-mono text-[11px] text-destructive">{activeError}</pre>
               </div>
             </div>
-            <button onClick={() => setActiveError(null)} className="text-red-400 hover:text-red-200 text-xs px-1">
+            <button onClick={() => setActiveError(null)} className="text-destructive hover:text-destructive text-xs px-1">
               ✕
             </button>
           </div>
@@ -331,7 +331,7 @@ export function ReplPane() {
 
         <CollapsibleSection id="workbench.repl.history" title="Execution History" subtitle={`(${history.length})`} defaultOpen>
           {history.length === 0 ? (
-            <div className="p-4 text-center text-xs text-green-800 bg-black/40 rounded">
+            <div className="p-4 text-center text-xs text-muted-foreground bg-background/40 rounded">
               No evaluation history yet. Type a snippet above - it runs automatically.
             </div>
           ) : (
@@ -345,23 +345,23 @@ export function ReplPane() {
                     onClick={() => handleSelectHistoryEntry(entry)}
                     className={`w-full text-left p-2 rounded text-xs transition-colors flex items-center justify-between gap-2 border ${
                       isSelected
-                        ? 'bg-green-950/60 border-green-600 text-green-200'
-                        : 'bg-black/60 border-green-950/40 text-green-700 hover:bg-green-950/20 hover:text-green-300'
+                        ? 'bg-card/60 border-primary text-foreground'
+                        : 'bg-background/60 border-border/40 text-muted-foreground hover:bg-card/20 hover:text-foreground'
                     }`}
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
                       {isErr ? (
-                        <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <XCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
                       ) : entry.noData ? (
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <AlertCircle className="w-3.5 h-3.5 text-warning shrink-0" />
                       ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
                       )}
-                      <span className="font-mono truncate text-[11px] text-green-300">
+                      <span className="font-mono truncate text-[11px] text-foreground">
                         {entry.source.split('\n')[0] || '(empty)'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] shrink-0 text-green-700">
+                    <div className="flex items-center gap-2 text-[10px] shrink-0 text-muted-foreground">
                       <span>{entry.symbol}</span>
                       <span>{entry.timeframe}</span>
                       <span>{entry.timestamp}</span>
@@ -378,20 +378,20 @@ export function ReplPane() {
           SharedPriceChart (shell-level) now renders replTrace. */}
       <div className="space-y-4">
         <CollapsibleSection id="workbench.repl.returnValue" title="Return Value" subtitle="(Runner.Eval output)" defaultOpen>
-          <div className="p-3 bg-black/90 rounded border border-green-950/60 text-xs min-h-[70px] overflow-x-auto">
+          <div className="p-3 bg-background/90 rounded border border-border/60 text-xs min-h-[70px] overflow-x-auto">
             {activeNoData ? (
-              <div className="text-amber-400 text-xs flex items-center gap-2">
+              <div className="text-warning text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>
                   No candle data for {symbol} / {timeframe}.
                 </span>
               </div>
             ) : ctx.replResult !== null && ctx.replResult !== undefined ? (
-              <pre className="text-emerald-400 font-mono text-xs">
+              <pre className="text-success font-mono text-xs">
                 {typeof ctx.replResult === 'object' ? JSON.stringify(ctx.replResult, null, 2) : String(ctx.replResult)}
               </pre>
             ) : (
-              <span className="text-green-800 text-xs italic">
+              <span className="text-muted-foreground text-xs italic">
                 {activeError ? 'Evaluation terminated with error' : 'No result (expression yielded nil)'}
               </span>
             )}
