@@ -11,8 +11,10 @@ import (
 	strategy_repo "go-trade-bot/app/repository/strategy"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
+	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	signalusecase "go-trade-bot/app/usecase/signal"
 	strategyusecase "go-trade-bot/app/usecase/strategy"
+	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/modelprovider"
 
@@ -40,6 +42,8 @@ var AgentModule = fx.Module("agent",
 		func(strategyRepo strategy_repo.StrategyRepository, snapshotRepo snapshot_repo.Repository) agentusecase.PerformanceSnapshotUseCase {
 			return snapshotUseCaseAdapter{strategyRepo: strategyRepo, snapshotRepo: snapshotRepo}
 		},
+		func(o *optimizeusecase.OptimizeUseCase) agentusecase.OptimizeUseCase { return o },
+		func(w optimizeworker.OptimizeWorker) agentusecase.OptimizeWorker { return w },
 		func(
 			model modelprovider.ModelProvider,
 			repo repoagent.Repository,
@@ -47,9 +51,13 @@ var AgentModule = fx.Module("agent",
 			backtest agentusecase.BacktestUseCase,
 			signal agentusecase.SignalUseCase,
 			snapshot agentusecase.PerformanceSnapshotUseCase,
+			optimize agentusecase.OptimizeUseCase,
+			optimizeWorker agentusecase.OptimizeWorker,
 			cfg *configuration.Configuration,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
+			uc.Optimize = optimize
+			uc.OptimizeWorker = optimizeWorker
 			uc.Provider = cfg.Agent.Provider
 			if cfg.Agent.Provider == "anthropic" {
 				uc.ModelName = cfg.Agent.AnthropicModel

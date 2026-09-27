@@ -21,6 +21,7 @@ import (
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/agent"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
+	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/modelprovider"
 
 	"gorm.io/datatypes"
@@ -76,6 +77,26 @@ type PerformanceSnapshotUseCase interface {
 	ListByStrategy(ctx context.Context, strategyID uint, limit int) ([]entities.StrategyPerformanceSnapshot, error)
 }
 
+// OptimizeUseCase and OptimizeWorker close the gap the platform's own
+// original design called for ("via the MCP be possible to query results of
+// every state of the platform") - hyperparameter grid-search runs were
+// fully persisted (entities.OptimizationRun) and REST-queryable from day
+// one, but never reachable from the agent/MCP tool registry. Both narrow
+// interfaces mirror BacktestUseCase's pattern: Create starts an async job
+// (mirrors the HTTP handler's create+enqueue, Run() itself can take
+// minutes for a large grid - unlike run_backtest, this cannot block a tool
+// call to completion), GetByID/ListByStrategy read back what's already
+// persisted.
+type OptimizeUseCase interface {
+	Create(ctx context.Context, req optimizeusecase.CreateRequest) (entities.OptimizationRun, error)
+	GetByID(ctx context.Context, id uint) (entities.OptimizationRun, error)
+	ListByStrategy(ctx context.Context, strategyID uint) ([]entities.OptimizationRun, error)
+}
+
+type OptimizeWorker interface {
+	EnqueueOptimizeTask(runID uint) error
+}
+
 // AgentUseCase is the orchestration layer described above. Repository is
 // the exact app/repository/agent.Repository interface (Backend Spec 02) -
 // not re-declared locally, since that package already defines the minimal
@@ -87,6 +108,15 @@ type AgentUseCase struct {
 	Backtest              BacktestUseCase
 	Signal                SignalUseCase
 	Snapshot              PerformanceSnapshotUseCase
+	// Optimize/OptimizeWorker are optional (nil-safe: buildToolRegistry
+	// always registers the tools, but a nil check inside each Execute
+	// closure reports a clear "not available" error rather than panicking)
+	// so existing callers/tests that construct an AgentUseCase without
+	// wiring optimization keep working unchanged - set post-construction,
+	// same as Provider/ModelName below, rather than widening
+	// NewAgentUseCase's signature.
+	Optimize              OptimizeUseCase
+	OptimizeWorker        OptimizeWorker
 	MaxToolLoopIterations int // e.g. 8; hard cap, not configurable per-call
 	// Provider/ModelName are recorded onto every AgentRun for audit
 	// purposes (Backend Spec 02's AgentRun.Provider/Model) - set once at

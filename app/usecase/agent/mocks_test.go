@@ -6,10 +6,41 @@ import (
 
 	"go-trade-bot/app/entities"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
+	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/modelprovider"
 
 	"github.com/stretchr/testify/mock"
 )
+
+// --- app/usecase/agent.OptimizeUseCase / OptimizeWorker ---
+
+type mockOptimizeUseCase struct {
+	mock.Mock
+}
+
+func (m *mockOptimizeUseCase) Create(ctx context.Context, req optimizeusecase.CreateRequest) (entities.OptimizationRun, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(entities.OptimizationRun), args.Error(1)
+}
+
+func (m *mockOptimizeUseCase) GetByID(ctx context.Context, id uint) (entities.OptimizationRun, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(entities.OptimizationRun), args.Error(1)
+}
+
+func (m *mockOptimizeUseCase) ListByStrategy(ctx context.Context, strategyID uint) ([]entities.OptimizationRun, error) {
+	args := m.Called(ctx, strategyID)
+	return args.Get(0).([]entities.OptimizationRun), args.Error(1)
+}
+
+type mockOptimizeWorker struct {
+	mock.Mock
+}
+
+func (m *mockOptimizeWorker) EnqueueOptimizeTask(runID uint) error {
+	args := m.Called(runID)
+	return args.Error(0)
+}
 
 // --- modelprovider.ModelProvider ---
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/strategies"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
+	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/metrics_provider"
 	"go-trade-bot/internal/modelprovider"
 )
@@ -40,6 +42,9 @@ func (u AgentUseCase) buildToolRegistry() []Tool {
 		u.getOpenPositionsTool(),        // read
 		u.getPerformanceSnapshotsTool(), // read
 		u.runBacktestTool(),             // writes a BacktestRun only, never a Strategy row
+		u.listOptimizationsTool(),       // read
+		u.runOptimizationTool(),         // writes an OptimizationRun only, never a Strategy row
+		u.getOptimizationResultsTool(),  // read
 		u.saveStrategyScriptTool(),      // WRITE - the only tool that can touch entities.Strategy
 	}
 }
@@ -410,6 +415,231 @@ func summarizeBacktestForModel(run entities.BacktestRun) string {
 	// Hard bound (Backend Spec 06 AC#3): fall back to a further-truncated
 	// tail if aggregate stats plus per-trade lines still somehow exceed 8KB
 	// (e.g. an unusually verbose exit_reason).
+	const maxBytes = 8 * 1024
+	if len(summary) > maxBytes {
+		summary = summary[:maxBytes] + "\n...(truncated)"
+	}
+	return summary
+}
+
+// --- Optimization (hyperparameter grid search) --------------------------
+//
+// Closes a real gap in the platform's original MCP-exposure goal: grid
+// search runs were fully persisted (entities.OptimizationRun) and
+// REST-queryable from day one, but never reachable through the agent/MCP
+// tool registry - list_optimizations/run_optimization/get_optimization_results
+// bring it to parity with the backtest tools above.
+
+var listOptimizationsSchema = getStrategySchema
+
+func (u AgentUseCase) listOptimizationsTool() Tool {
+	return Tool{
+		Def: modelprovider.ToolDefinition{
+			Name:        "list_optimizations",
+			Description: "List every optimization (hyperparameter grid search) run recorded for a given strategy_id, with status and best Sharpe ratio if completed.",
+			InputSchema: listOptimizationsSchema,
+		},
+		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if u.Optimize == nil {
+				return "", fmt.Errorf("list_optimizations: optimization is not available on this server")
+			}
+			var in struct {
+				StrategyID uint `json:"strategy_id"`
+			}
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return "", fmt.Errorf("list_optimizations: invalid args: %w", err)
+			}
+			runs, err := u.Optimize.ListByStrategy(ctx, in.StrategyID)
+			if err != nil {
+				return "", err
+			}
+			var b strings.Builder
+			for _, r := range runs {
+				fmt.Fprintf(&b, "optimization_run_id=%d status=%s progress=%d/%d", r.ID, r.Status, r.Progress, r.TotalCombinations)
+				if r.Status == entities.OptimizationCompleted {
+					var best metrics_provider.BacktestMetrics
+					_ = json.Unmarshal(r.BestMetricsJSON, &best)
+					fmt.Fprintf(&b, " best_sharpe=%.4f", best.SharpeRatio)
+				}
+				b.WriteString("\n")
+			}
+			if b.Len() == 0 {
+				return "no optimization runs exist yet for this strategy", nil
+			}
+			return b.String(), nil
+		},
+	}
+}
+
+var runOptimizationSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"strategy_id": {"type": "integer"},
+		"symbol": {"type": "string"},
+		"timeframe": {"type": "string", "description": "e.g. 1m, 5m, 15m, 1h"},
+		"start_date": {"type": "string", "description": "RFC3339 timestamp"},
+		"end_date": {"type": "string", "description": "RFC3339 timestamp"},
+		"initial_capital": {"type": "number"},
+		"param_grid": {
+			"type": "object",
+			"description": "Maps a strategy config field name - read by the Lua script as ctx.config.<name>, NOT a hardcoded literal in the script source - to a numeric sweep range. A name the script never reads produces identical results for every combination.",
+			"additionalProperties": {
+				"type": "object",
+				"properties": {
+					"min": {"type": "number"},
+					"max": {"type": "number"},
+					"step": {"type": "number"}
+				},
+				"required": ["min", "max", "step"]
+			}
+		}
+	},
+	"required": ["strategy_id", "symbol", "timeframe", "start_date", "end_date", "param_grid"]
+}`)
+
+// runOptimizationTool is read/simulation-only, same reasoning as
+// runBacktestTool - it only ever writes an OptimizationRun row, never a
+// Strategy row, so it carries no live-trading risk. Unlike run_backtest,
+// it does NOT block until completion: a grid search runs sequentially
+// (app/usecase/optimize's own homelab-memory-motivated design) and can
+// take minutes, far too long for one tool-call turn - it starts the async
+// job (mirroring the HTTP handler's create+enqueue) and returns
+// immediately, so the model is expected to call get_optimization_results
+// again later to check progress.
+func (u AgentUseCase) runOptimizationTool() Tool {
+	return Tool{
+		Def: modelprovider.ToolDefinition{
+			Name:        "run_optimization",
+			Description: "Start a hyperparameter grid search for an existing strategy: sweeps one or more numeric config fields across a range, backtesting every combination and scoring by Sharpe ratio (capped combination count). Runs asynchronously - a large grid can take minutes - so this returns the pending run's id immediately rather than waiting; call get_optimization_results with that id to check progress and read results once complete.",
+			InputSchema: runOptimizationSchema,
+		},
+		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if u.Optimize == nil || u.OptimizeWorker == nil {
+				return "", fmt.Errorf("run_optimization: optimization is not available on this server")
+			}
+			var in struct {
+				StrategyID     uint                      `json:"strategy_id"`
+				Symbol         string                    `json:"symbol"`
+				Timeframe      string                    `json:"timeframe"`
+				StartDate      string                    `json:"start_date"`
+				EndDate        string                    `json:"end_date"`
+				InitialCapital float64                   `json:"initial_capital"`
+				ParamGrid      optimizeusecase.ParamGrid `json:"param_grid"`
+			}
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return "", fmt.Errorf("run_optimization: invalid args: %w", err)
+			}
+			start, err := time.Parse(time.RFC3339, in.StartDate)
+			if err != nil {
+				return "", fmt.Errorf("run_optimization: invalid start_date: %w", err)
+			}
+			end, err := time.Parse(time.RFC3339, in.EndDate)
+			if err != nil {
+				return "", fmt.Errorf("run_optimization: invalid end_date: %w", err)
+			}
+
+			run, err := u.Optimize.Create(ctx, optimizeusecase.CreateRequest{
+				StrategyID:     in.StrategyID,
+				Symbol:         in.Symbol,
+				Timeframe:      in.Timeframe,
+				StartDate:      start,
+				EndDate:        end,
+				InitialCapital: in.InitialCapital,
+				ParamGrid:      in.ParamGrid,
+			})
+			if err != nil {
+				return "", err // e.g. grid too large, no candle data, strategy not registered - fed back as-is so the model can adjust
+			}
+			if err := u.OptimizeWorker.EnqueueOptimizeTask(run.ID); err != nil {
+				return "", fmt.Errorf("run_optimization: created run %d but failed to enqueue it: %w", run.ID, err)
+			}
+			return fmt.Sprintf(
+				"optimization_run_id=%d status=%s total_combinations=%d\nThis runs asynchronously - call get_optimization_results with this id to check progress and see results once complete.",
+				run.ID, run.Status, run.TotalCombinations,
+			), nil
+		},
+	}
+}
+
+var getOptimizationResultsSchema = json.RawMessage(`{"type":"object","properties":{"optimization_run_id":{"type":"integer"}},"required":["optimization_run_id"]}`)
+
+func (u AgentUseCase) getOptimizationResultsTool() Tool {
+	return Tool{
+		Def: modelprovider.ToolDefinition{
+			Name:        "get_optimization_results",
+			Description: "Get one optimization (grid search) run's status by id, and once completed, its best parameter combination and the top results by Sharpe ratio.",
+			InputSchema: getOptimizationResultsSchema,
+		},
+		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if u.Optimize == nil {
+				return "", fmt.Errorf("get_optimization_results: optimization is not available on this server")
+			}
+			var in struct {
+				OptimizationRunID uint `json:"optimization_run_id"`
+			}
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return "", fmt.Errorf("get_optimization_results: invalid args: %w", err)
+			}
+			run, err := u.Optimize.GetByID(ctx, in.OptimizationRunID)
+			if err != nil {
+				return "", err
+			}
+			return summarizeOptimizationForModel(run), nil
+		},
+	}
+}
+
+// maxOptimizationSummaryPoints bounds summarizeOptimizationForModel's
+// output the same way maxBacktestSummaryTradeLines bounds a backtest
+// summary: only the top N combinations by Sharpe, never the full grid
+// (which can hold up to DefaultMaxCombinations/500 entries).
+const maxOptimizationSummaryPoints = 10
+
+func summarizeOptimizationForModel(run entities.OptimizationRun) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "optimization_run_id=%d strategy_id=%d symbol=%s status=%s progress=%d/%d\n",
+		run.ID, run.StrategyID, run.Symbol, run.Status, run.Progress, run.TotalCombinations)
+	if run.ErrorMessage != "" {
+		fmt.Fprintf(&b, "error=%s\n", run.ErrorMessage)
+	}
+	if run.Status != entities.OptimizationCompleted {
+		b.WriteString("Not completed yet - call this tool again later to check progress.\n")
+		return b.String()
+	}
+
+	var bestConfig map[string]float64
+	_ = json.Unmarshal(run.BestConfigJSON, &bestConfig)
+	var bestMetrics metrics_provider.BacktestMetrics
+	_ = json.Unmarshal(run.BestMetricsJSON, &bestMetrics)
+	fmt.Fprintf(&b, "best_params=%v best_sharpe=%.4f best_max_drawdown_pct=%.2f best_total_return_pct=%.2f\n",
+		bestConfig, bestMetrics.SharpeRatio, bestMetrics.MaxDrawdownPct, bestMetrics.TotalReturnPct)
+
+	var grid []optimizeusecase.GridPoint
+	_ = json.Unmarshal(run.ResultsGridJSON, &grid)
+	sort.Slice(grid, func(i, j int) bool {
+		if grid[i].Metrics == nil {
+			return false
+		}
+		if grid[j].Metrics == nil {
+			return true
+		}
+		return grid[i].Metrics.SharpeRatio > grid[j].Metrics.SharpeRatio
+	})
+	top := grid
+	if len(top) > maxOptimizationSummaryPoints {
+		top = top[:maxOptimizationSummaryPoints]
+	}
+	fmt.Fprintf(&b, "top %d of %d combinations by Sharpe:\n", len(top), len(grid))
+	for _, p := range top {
+		if p.Metrics != nil {
+			fmt.Fprintf(&b, "  params=%v sharpe=%.4f max_drawdown_pct=%.2f total_return_pct=%.2f\n",
+				p.Params, p.Metrics.SharpeRatio, p.Metrics.MaxDrawdownPct, p.Metrics.TotalReturnPct)
+		} else {
+			fmt.Fprintf(&b, "  params=%v error=%s\n", p.Params, p.Error)
+		}
+	}
+
+	summary := b.String()
 	const maxBytes = 8 * 1024
 	if len(summary) > maxBytes {
 		summary = summary[:maxBytes] + "\n...(truncated)"

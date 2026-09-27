@@ -42,6 +42,7 @@ func main() {
 		modules.StrategyModule,
 		modules.ScriptModule,
 		modules.BacktestModule,
+		modules.OptimizeModule,
 		modules.ModelProviderModule,
 		modules.AgentModule,
 		modules.McpServerModule,
