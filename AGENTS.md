@@ -23,26 +23,19 @@ four backend phases and one major frontend pivot:
    reporting a fix that only covered part of the actual bug, deviations from frozen interfaces, and outright
    contradicted decisions (see "Known current inconsistency" below).
 
-**Do this too.** If you're picking up work in this repo, don't assume `docs/specs/**/*.md` describes the
-code as it exists today — verify. Don't assume an agent's own final-report summary is complete — check the
-actual diff.
+**Do this too.** Don't assume an agent's own final-report summary is complete — check the actual diff.
 
 ## Where things live
 
+The PRDs, architecture blueprints, and per-phase/per-feature specs that used to live under `docs/prd/`,
+`docs/architecture/`, and `docs/specs/` have been removed — `docs/` now holds only `docs/grafana/`. When
+picking up unfamiliar work, treat the actual code (and `CLAUDE.md`'s architecture section) as the source of
+truth rather than a design document.
+
 ```
-docs/prd/                        Product requirements (the "why")
-docs/architecture/                Blueprints — system-level design + ADRs (the "how, broadly")
-  refactoring-blueprint.md          Backend Phases 1-4
-  web-frontend-blueprint.md         The web frontend pivot (after the TUI was deleted)
-docs/specs/phase-{1,2,3,4}/        Per-phase backend implementation specs
-docs/specs/web-frontend/           Web frontend implementation specs (backend-*.md + frontend-*.md)
 .agents/workflows/*.md            Agent role definitions (software-architect, go-backend-dev,
                                    frontend-specialist, qa-specialist, product-manager-prd)
 ```
-
-Read in that order when picking up unfamiliar work: PRD for why, blueprint for the big picture and ADRs
-(architecture decisions with their rationale — don't relitigate a decision without reading why it was made),
-specs for the exact contract, then the actual code to confirm the specs still hold.
 
 ## Project history at a glance
 
@@ -51,9 +44,7 @@ specs for the exact contract, then the actual code to confirm the specs still ho
    **Phase 4** (hyperparameter optimization, Monte Carlo, gRPC ML strategy adapter).
 2. After Phase 3/4's TUI shipped and got real hands-on use, it was judged too limited — wrong medium
    entirely for how the bot is actually operated — and **removed outright** (not kept as a fallback, which
-   was the first recommendation; overridden by explicit user decision). See `docs/prd/refactoring.md` §10's
-   "Reversed decision" note and `web-frontend-blueprint.md` §8/ADR-011 for the full reasoning and the
-   superseded original recommendation, kept for record rather than deleted.
+   was the first recommendation; overridden by explicit user decision).
 3. A **web frontend** (React/TS/Vite, embedded into `cmd/api` via `go:embed`) was specced and built to
    replace it, reusing the entire existing REST API with zero backend changes for feature parity — one new
    requirement (bearer-token auth) was added deliberately, since a browser-reachable trading control plane

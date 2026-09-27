@@ -5,7 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **This file is kept in sync with the actual current state of the codebase, not with any design document's
 aspirational state.** When specs and code disagree (it happens — this project is built almost entirely by
 delegating implementation to background agents), this file describes what's actually there. See
-`AGENTS.md` for how the project is developed and where the design documents live.
+`AGENTS.md` for how the project is developed.
+
+**`docs/` now holds only `docs/grafana/`** — the PRDs, architecture blueprints, phase/feature specs, and
+strategy-example payloads that used to live under `docs/prd/`, `docs/specs/`, `docs/architecture/`, and
+`docs/strategy-examples/` have been removed.
 
 ## Commands
 
@@ -24,7 +28,7 @@ make web-build         # Build the React app and copy it into cmd/api/webui/dist
 ```
 
 There is no terminal UI anymore — `cmd/console` was built across Phases 3-4, then deleted entirely in favor
-of a web frontend (see `docs/prd/refactoring.md` §10 and `docs/architecture/web-frontend-blueprint.md`).
+of a web frontend.
 
 ### Infrastructure (Docker)
 ```bash
@@ -62,9 +66,7 @@ environment.
 
 A Binance algorithmic trading bot: two Go binaries (`cmd/api`, `cmd/worker`) sharing `app/`/`internal/`
 packages, plus a React SPA (`web/`) embedded into `cmd/api`'s binary. Four backend phases and one frontend
-pivot have landed; see `docs/architecture/refactoring-blueprint.md` and
-`docs/architecture/web-frontend-blueprint.md` for the full history and reasoning, or `AGENTS.md` for how
-this project's spec-driven, agent-delegated workflow operates.
+pivot have landed; see `AGENTS.md` for how this project's agent-delegated workflow operates.
 
 ### Entry Points (`cmd/`)
 - **api** — REST API server (`gorilla/mux`), port 8080. Strategy/account/signal/backtest/optimize/
@@ -121,9 +123,9 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   **frozen** (do not change their signatures — see `interface.go`'s own header comment). `StrategyFactory`
   (`registry.go`) takes the full `entities.Strategy` DB row, not just a name string, so a factory can read
   per-strategy persisted fields (the script factory reads `ScriptSource`/`ID`/`Name`). Registered names:
-  `script`, `mlgrpc` (`grid`/`bollinger`/`scalping` and the old `template/` wizard package are gone — see
-  `docs/specs/strategy-scripting/`, backend-01 through backend-08). `mlgrpc/` delegates hooks to an
-  external process over gRPC (`internal/grpc/`).
+  `script`, `mlgrpc` (`grid`/`bollinger`/`scalping` and the old `template/` wizard package are gone —
+  replaced by the Lua scripting system below). `mlgrpc/` delegates hooks to an external process over gRPC
+  (`internal/grpc/`).
 - **`app/strategies/script/`** — Every strategy is now a **Lua script** run in a sandboxed `gopher-lua`
   VM: `runner.go` (`Eval`, context-cancellable), `bridge.go` (`CallHook` — Context↔Lua value marshaling),
   `indicators.go` (`ind.*` closures over `internal/indicators.IndicatorProvider` — one lowercase closure per
@@ -203,17 +205,16 @@ React + TypeScript + Vite SPA, built with `make web-build` and embedded into `cm
 `go:embed` (`cmd/api/webui/`). Talks to `cmd/api` over the same REST surface described above (all under
 `/api`), plus a consolidated SSE stream (`GET /api/stream/dashboard`) for live prices/positions.
 
-**Design system**: `docs/architecture/design-system.md` is the authoritative reference for the "Console Pro"
-theme (color tokens, typography, component conventions, chart/code-editor theming) — read it before adding
-or restyling any UI. Auth token lives in
+**Design system**: "Console Pro" (color tokens, typography, component conventions, chart/code-editor
+theming) — check existing components for conventions before adding or restyling any UI; the standalone
+design-system doc has been removed. Auth token lives in
 `localStorage`, attached as `Authorization: Bearer <token>` (query-param fallback for the SSE endpoint and
 the backtest HTML report iframe, since browsers can't attach custom headers to those requests).
 
-**Known inconsistency, not yet resolved**: the frontend was originally built matching
-`docs/specs/web-frontend/frontend-*.md` (plain `fetch` wrapper, no React Query, Recharts for charts — these
-were deliberate decisions, see ADR-008 in the web-frontend blueprint). A later, unreviewed "redesign"
+**Known inconsistency, not yet resolved**: the frontend was originally built with a plain `fetch` wrapper,
+no React Query, and Recharts for charts (deliberate decisions at the time). A later, unreviewed "redesign"
 commit introduced `@tanstack/react-query`, Tailwind, Shadcn-style components, and `lightweight-charts`
-without updating the specs or removing the old approach — `package.json` now has **both** `recharts` and
+without removing the old approach — `package.json` now has **both** `recharts` and
 `lightweight-charts` installed, and chart components are split between the two (`MonteCarloDistribution.tsx`
 still uses Recharts; `EquityCurveChart`/`PnlHistoryChart`/`DrawdownChart` use lightweight-charts). Pick one
 and finish the migration before this drifts further. That same commit also left over a dozen throwaway
@@ -228,8 +229,7 @@ committed in the repo root — these aren't part of the application and should b
   frontend.
 
 ### Strategy Algorithm Configuration
-Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfiguration.Configuration`. See
-`docs/strategy-examples/` for reference payloads (grid, bollinger, scalping).
+Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfiguration.Configuration`.
 
 ### Monitoring
 - Prometheus scrapes the API and worker; Alertmanager is also in the docker-compose stack (Phase 2).
