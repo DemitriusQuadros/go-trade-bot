@@ -86,10 +86,14 @@ this project's spec-driven, agent-delegated workflow operates.
   the pluggable `Strategy` interface (see below). Serves the Asynqmon monitoring UI + `/metrics` at port
   9191. Refuses to start with `MODE=live` unless `CONFIRM_LIVE=true`, and unless `Testnet=false` (a live
   process must never point at the testnet exchange adapter).
-- **backtest**, **candleimport** — smaller one-shot CLIs (Phase 2) for running a backtest headlessly and
-  importing historical candle data from Binance, respectively.
 
 Each entry point defines its own `modules/` directory with FX dependency injection modules.
+
+There is no more `cmd/backtest` or `cmd/candleimport` (one-shot CLIs from Phase 2) — both were removed once
+their functionality was fully superseded by the API: backtests run via `POST /backtest`/`/backtest/walkforward`
+(`app/handler/web/backtest/`), and candle imports via `POST /candles/import` plus the recurring
+`/candles/schedule` CRUD (`app/handler/web/candleimport/`), neither of which the CLIs ever had an equivalent
+for.
 
 ### Application Layer (`app/`)
 

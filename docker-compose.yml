@@ -86,7 +86,7 @@ services:
 
   # mcp exposes app/usecase/agent's tools/resources over MCP (Backend Spec
   # 04) to external AI clients - a fifth, independent binary alongside api/
-  # worker/backtest/candleimport, never embedded into any of them (ADR-A2).
+  # worker, never embedded into either of them (ADR-A2).
   # Runs the SAME Lua script runner save_strategy_script/run_backtest can
   # invoke, so it carries the identical runaway-Lua-VM risk the worker's
   # mem_limit exists for - see that comment block above for the full
