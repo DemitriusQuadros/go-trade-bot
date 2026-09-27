@@ -4,9 +4,10 @@ import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { EditorView } from '@codemirror/view';
 import { Diagnostic } from '@codemirror/lint';
-import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
+import { luaEditorDarkTheme, luaEditorLightTheme } from '@/lib/codeMirrorTheme';
 import { luaAutocompletion } from '@/lib/luaCompletions';
 import { luaLintSource } from '@/lib/luaLinting';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 
 interface LuaScriptEditorProps {
   source: string;
@@ -23,14 +24,20 @@ interface LuaScriptEditorProps {
 // The Lua source editor, deliberately separate from StrategyMetadataForm so
 // the two can be laid out, collapsed, and reasoned about independently.
 export function LuaScriptEditor({ source, onChange, diagnostics, onCreateEditor, fill = false }: LuaScriptEditorProps) {
+  const isDark = useIsDarkMode();
   return (
     <div className={fill ? 'h-full text-sm bg-background/95' : 'text-sm bg-background/95 -m-3'}>
       <CodeMirror
         value={source}
         height={fill ? '100%' : '500px'}
-        theme="dark"
+        theme={isDark ? 'dark' : 'light'}
         onCreateEditor={onCreateEditor}
-        extensions={[StreamLanguage.define(lua), luaEditorDarkTheme, luaAutocompletion, luaLintSource(diagnostics)]}
+        extensions={[
+          StreamLanguage.define(lua),
+          isDark ? luaEditorDarkTheme : luaEditorLightTheme,
+          luaAutocompletion,
+          luaLintSource(diagnostics),
+        ]}
         onChange={onChange}
         className={fill ? 'font-mono text-xs h-full' : 'font-mono text-xs'}
         basicSetup={{

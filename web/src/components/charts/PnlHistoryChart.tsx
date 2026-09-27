@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, HistogramSeries } from 'lightweight-charts';
+import { getChartColors } from '@/lib/chartTheme';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 
 export interface PnlHistoryPoint {
   periodStart: string;
@@ -19,41 +21,43 @@ export function PnlHistoryChart({
   height = 220,
 }: PnlHistoryChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const isDark = useIsDarkMode();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length === 0) return;
+    const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#22c55e',
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.muted,
         fontFamily: 'monospace',
       },
       grid: {
-        vertLines: { color: '#0a361b' },
-        horzLines: { color: '#0a361b' },
+        vertLines: { color: c.border },
+        horzLines: { color: c.border },
       },
       timeScale: {
         timeVisible: true,
-        borderColor: '#0a361b',
+        borderColor: c.border,
       },
       rightPriceScale: {
-        borderColor: '#0a361b',
+        borderColor: c.border,
       },
       width: chartContainerRef.current.clientWidth,
       height,
     });
 
     const histogramSeries = chart.addSeries(HistogramSeries, {
-      color: '#22c55e',
+      color: c.success,
     });
 
     const sortedData = [...points].sort((a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime());
-    
+
     histogramSeries.setData(sortedData.map(p => ({
       time: Math.floor(new Date(p.periodStart).getTime() / 1000) as any,
       value: p.profit,
-      color: p.profit >= 0 ? '#22c55e' : '#ef4444',
+      color: p.profit >= 0 ? c.success : c.destructive,
     })));
     chart.timeScale().fitContent();
 
@@ -68,7 +72,7 @@ export function PnlHistoryChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [points, height]);
+  }, [points, height, isDark]);
 
   if (!points || points.length === 0) {
     return (

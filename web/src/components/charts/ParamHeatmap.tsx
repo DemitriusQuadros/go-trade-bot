@@ -36,25 +36,22 @@ export function ParamHeatmap({
   const max = Math.max(...flat);
   const range = max - min || 1;
 
+  // Gradient from destructive (0.0) -> neutral border (0.5) -> success
+  // (1.0), sourced from this theme's own tokens via CSS color-mix() rather
+  // than hardcoded RGB literals (previously literal red-500/slate-500/
+  // emerald-500 regardless of theme) - color-mix responds to the live
+  // custom-property values directly, no JS re-read needed on toggle.
   const getColor = (val: number | null) => {
-    if (val === null || isNaN(val)) return '#1f293d';
+    if (val === null || isNaN(val)) return 'hsl(var(--secondary))';
     const norm = Math.max(0, Math.min(1, (val - min) / range));
     const score = higherIsBetter ? norm : 1 - norm;
 
-    // Gradient from dark red (0.0) -> muted slate (0.5) -> bright emerald (1.0)
     if (score < 0.5) {
-      const t = score / 0.5;
-      const r = Math.round(239 * (1 - t * 0.5));
-      const g = Math.round(68 * (1 + t * 0.5));
-      const b = Math.round(68 * (1 + t));
-      return `rgba(${r}, ${g}, ${b}, 0.65)`;
-    } else {
-      const t = (score - 0.5) / 0.5;
-      const r = Math.round(100 * (1 - t) + 16 * t);
-      const g = Math.round(116 * (1 - t) + 185 * t);
-      const b = Math.round(139 * (1 - t) + 129 * t);
-      return `rgba(${r}, ${g}, ${b}, 0.85)`;
+      const t = Math.round((score / 0.5) * 100);
+      return `color-mix(in srgb, hsl(var(--destructive)) ${100 - t}%, hsl(var(--border)) ${t}%)`;
     }
+    const t = Math.round(((score - 0.5) / 0.5) * 100);
+    return `color-mix(in srgb, hsl(var(--border)) ${100 - t}%, hsl(var(--success)) ${t}%)`;
   };
 
   return (
@@ -108,7 +105,7 @@ export function ParamHeatmap({
                     key={`cell-${yi}-${xi}`}
                     style={{ backgroundColor: getColor(val) }}
                     className={`h-12 flex flex-col items-center justify-center rounded text-xs font-mono transition-all hover:scale-105 hover:z-10 cursor-default ${
-                      isBest ? 'ring-2 ring-ring ring-offset-2 ring-offset-black font-bold text-white' : 'text-foreground'
+                      isBest ? 'ring-2 ring-ring ring-offset-2 ring-offset-background font-bold text-success-foreground' : 'text-foreground'
                     }`}
                     title={`Y: ${yVal}, X: ${xAxisValues[xi]} => ${val !== null ? formatValue(val) : 'N/A'}${isBest ? ' (BEST)' : ''}`}
                   >

@@ -13,6 +13,8 @@ import {
   Time,
 } from 'lightweight-charts';
 import { TraceRecord } from '@/api/types';
+import { getChartColors, withAlpha } from '@/lib/chartTheme';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 
 interface SharedPriceChartProps {
   trace: TraceRecord[];
@@ -56,6 +58,11 @@ const LOAD_MORE_EDGE_BARS = 15;
 // Verbatim copy of the old ExecutionTraceChart.tsx's array - kept manually
 // synchronized with plotColorPalette in app/strategies/script/trace.go.
 const INDICATOR_COLORS = ['#38bdf8', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6', '#eab308'];
+// Take-profit markers need a 4th hue distinct from buy/sell/stop-loss's
+// success/destructive/warning tokens (which cover the semantic set,
+// not a 4th event type) - reusing this categorical palette's first entry
+// keeps one source of truth rather than a second hardcoded blue.
+const TAKE_PROFIT_MARKER_COLOR = INDICATOR_COLORS[0];
 
 // r.candle.t is already Unix SECONDS (backend: exchange.Candle.OpenTime.Unix()) -
 // lightweight-charts' Time type also wants Unix seconds, so it must be used
@@ -97,6 +104,7 @@ export function SharedPriceChart({
   const [hiddenPlots, setHiddenPlots] = useState<Set<string>>(new Set());
   const [legendRecord, setLegendRecord] = useState<TraceRecord | null>(null);
   const [showMarkerText, setShowMarkerText] = useState(true);
+  const isDark = useIsDarkMode();
   const onScrubRef = useRef(onScrub);
   onScrubRef.current = onScrub;
 
@@ -157,38 +165,39 @@ export function SharedPriceChart({
   // zoom/pan.
   useEffect(() => {
     if (!containerRef.current) return;
+    const c = getChartColors();
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#22c55e',
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.muted,
         fontFamily: 'monospace',
       },
       grid: {
-        vertLines: { color: '#0a361b' },
-        horzLines: { color: '#0a361b' },
+        vertLines: { color: c.border },
+        horzLines: { color: c.border },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#14532d',
+          color: c.primary,
+          labelBackgroundColor: c.primary,
         },
         horzLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#14532d',
+          color: c.primary,
+          labelBackgroundColor: c.primary,
         },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#0a361b',
+        borderColor: c.border,
         // TradingView's default bar spacing (~8-10px) reads as noticeably
         // "fatter" candles than lightweight-charts' own default (6px) -
         // this is most of the "candles look too small" gap at a glance.
         barSpacing: 10,
       },
       rightPriceScale: {
-        borderColor: '#0a361b',
+        borderColor: c.border,
         autoScale: true,
         // Reserve headroom at the bottom of the price pane for the volume
         // histogram overlay (see 'volume' price scale below) so volume bars
@@ -204,11 +213,11 @@ export function SharedPriceChart({
     });
     chartRef.current = chart;
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
+      upColor: c.success,
+      downColor: c.destructive,
       borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
+      wickUpColor: c.success,
+      wickDownColor: c.destructive,
     });
 
     // Volume histogram, low-opacity, pinned to the bottom ~20% of the price
@@ -289,6 +298,33 @@ export function SharedPriceChart({
     };
   }, []);
 
+  // Effect 1b: re-style the chart's chrome and candle colors in place when
+  // the theme toggles, via applyOptions rather than tearing down and
+  // recreating the chart (Effect 1 stays mount-once on purpose - see its
+  // own comment - recreating on every theme flip would reset zoom/pan).
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries) return;
+    const c = getChartColors();
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: c.background }, textColor: c.muted },
+      grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
+      crosshair: {
+        vertLine: { color: c.primary, labelBackgroundColor: c.primary },
+        horzLine: { color: c.primary, labelBackgroundColor: c.primary },
+      },
+      timeScale: { borderColor: c.border },
+      rightPriceScale: { borderColor: c.border },
+    });
+    candleSeries.applyOptions({
+      upColor: c.success,
+      downColor: c.destructive,
+      wickUpColor: c.success,
+      wickDownColor: c.destructive,
+    });
+  }, [isDark]);
+
   // Effect 2: push new data into EXISTING series via .setData(), keyed by
   // plot name for stable series identity - the actual fix for "switching
   // tabs doesn't reset my view."
@@ -297,6 +333,7 @@ export function SharedPriceChart({
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
     if (!chart || !candleSeries) return;
+    const colors = getChartColors();
 
     const candleData = recordsWithCandle.map((r) => {
       const c = r.candle!;
@@ -317,7 +354,7 @@ export function SharedPriceChart({
           return {
             time: toChartTimeSeconds(r) as Time,
             value: c.v,
-            color: c.c >= c.o ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.35)',
+            color: c.c >= c.o ? withAlpha(colors.success, 0.35) : withAlpha(colors.destructive, 0.35),
           };
         })
       );
@@ -356,7 +393,7 @@ export function SharedPriceChart({
         markers.push({
           time: timeSec,
           position: 'belowBar',
-          color: '#22c55e',
+          color: colors.success,
           shape: 'arrowUp',
           text: effectiveShowText ? `+${r.signal.buy.qty}` : undefined,
         });
@@ -365,7 +402,7 @@ export function SharedPriceChart({
         markers.push({
           time: timeSec,
           position: 'aboveBar',
-          color: '#ef4444',
+          color: colors.destructive,
           shape: 'arrowDown',
           text: effectiveShowText ? `-${r.signal.sell.qty}` : undefined,
         });
@@ -374,7 +411,7 @@ export function SharedPriceChart({
         markers.push({
           time: timeSec,
           position: 'aboveBar',
-          color: '#f59e0b',
+          color: colors.warning,
           shape: 'circle',
           text: effectiveShowText ? 'SL' : undefined,
         });
@@ -383,7 +420,7 @@ export function SharedPriceChart({
         markers.push({
           time: timeSec,
           position: 'aboveBar',
-          color: '#38bdf8',
+          color: TAKE_PROFIT_MARKER_COLOR,
           shape: 'circle',
           text: effectiveShowText ? 'TP' : undefined,
         });
@@ -470,12 +507,12 @@ export function SharedPriceChart({
       panes[1].setStretchFactor(1);
       // Pane 1's own 'right' price scale is a separate namespace from pane
       // 0's - match the theme border color instead of the library default.
-      chart.priceScale('right', 1).applyOptions({ borderColor: '#0a361b' });
+      chart.priceScale('right', 1).applyOptions({ borderColor: colors.border });
     }
     // hiddenPlots intentionally excluded: visibility is handled by Effect 3
     // below as a pure client-side toggle, not re-derived from data updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trace, recordsWithCandle, showMarkerText, colorForName]);
+  }, [trace, recordsWithCandle, showMarkerText, colorForName, isDark]);
 
   // Effect 3: legend visibility toggle - pure client-side .applyOptions, no
   // data refetch, no chart recreate.

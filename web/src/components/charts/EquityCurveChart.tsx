@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, CrosshairMode, LineSeries } from 'lightweight-charts';
 import { EquityPoint } from '@/api/types';
+import { getChartColors } from '@/lib/chartTheme';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 
 interface EquityCurveChartProps {
   points: EquityPoint[];
@@ -16,45 +18,47 @@ export function EquityCurveChart({
   height = 280,
 }: EquityCurveChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const isDark = useIsDarkMode();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length < 2) return;
+    const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#22c55e',
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.muted,
         fontFamily: 'monospace',
       },
       grid: {
-        vertLines: { color: '#0a361b' },
-        horzLines: { color: '#0a361b' },
+        vertLines: { color: c.border },
+        horzLines: { color: c.border },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#22c55e',
+          color: c.primary,
+          labelBackgroundColor: c.primary,
         },
         horzLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#22c55e',
+          color: c.primary,
+          labelBackgroundColor: c.primary,
         },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#0a361b',
+        borderColor: c.border,
       },
       rightPriceScale: {
-        borderColor: '#0a361b',
+        borderColor: c.border,
       },
       width: chartContainerRef.current.clientWidth,
       height,
     });
 
     const isNetPositive = points[points.length - 1].value >= (startingBalance || points[0].value);
-    const color = isNetPositive ? '#22c55e' : '#ef4444';
+    const color = isNetPositive ? c.success : c.destructive;
 
     const lineSeries = chart.addSeries(LineSeries, {
       color: color,
@@ -84,7 +88,7 @@ export function EquityCurveChart({
     if (startingBalance !== undefined) {
       lineSeries.createPriceLine({
         price: startingBalance,
-        color: '#22c55e',
+        color: c.muted,
         lineWidth: 1,
         lineStyle: 3,
         axisLabelVisible: true,
@@ -103,7 +107,7 @@ export function EquityCurveChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [points, startingBalance, height]);
+  }, [points, startingBalance, height, isDark]);
 
   if (!points || points.length < 2) {
     return (

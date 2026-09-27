@@ -1,158 +1,95 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  createChart,
-  ColorType,
-  CrosshairMode,
-  HistogramSeries,
-  Time,
-} from 'lightweight-charts';
+import React from 'react';
+import { MonteCarloDistributionStats } from '@/api/types';
 
 interface MonteCarloDistributionProps {
-  distribution: Array<{ bin: number; count: number }>;
-  mean: number;
-  var95: number;
-  ruinProb: number;
-  height?: number;
+  totalReturn: MonteCarloDistributionStats;
+  sharpe: MonteCarloDistributionStats;
+  maxDrawdown: MonteCarloDistributionStats;
+  iterations: number;
 }
 
-export function MonteCarloDistribution({
-  distribution,
-  mean,
-  var95,
-  ruinProb,
-  height = 220,
-}: MonteCarloDistributionProps) {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [hoveredBin, setHoveredBin] = useState<{ bin: number; count: number } | null>(null);
-
-  useEffect(() => {
-    if (!chartContainerRef.current || !distribution || distribution.length === 0) return;
-
-    // Sort distribution by bin ascending
-    const sorted = [...distribution].sort((a, b) => a.bin - b.bin);
-
-    // Map each bin to a synthetic sequential day timestamp (2020-01-01 + i days)
-    // to guarantee strict chronological ordering required by lightweight-charts
-    const baseDate = new Date(Date.UTC(2020, 0, 1)).getTime();
-    const dayMs = 86400 * 1000;
-
-    const timeToBinMap = new Map<number, { bin: number; count: number }>();
-    const chartData = sorted.map((item, i) => {
-      const timeSec = Math.floor((baseDate + i * dayMs) / 1000);
-      timeToBinMap.set(timeSec, item);
-      return {
-        time: timeSec as Time,
-        value: item.count,
-        color: item.bin >= 0 ? '#22c55e' : '#ef4444',
-      };
-    });
-
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#22c55e',
-        fontFamily: 'monospace',
-      },
-      grid: {
-        vertLines: { color: '#0a361b' },
-        horzLines: { color: '#0a361b' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#14532d',
-        },
-        horzLine: {
-          color: '#22c55e',
-          labelBackgroundColor: '#14532d',
-        },
-      },
-      timeScale: {
-        timeVisible: false,
-        secondsVisible: false,
-        borderColor: '#0a361b',
-        tickMarkFormatter: (timeSec: number) => {
-          const item = timeToBinMap.get(timeSec);
-          return item ? `${item.bin.toFixed(1)}%` : '';
-        },
-      },
-      rightPriceScale: {
-        borderColor: '#0a361b',
-        autoScale: true,
-      },
-      width: chartContainerRef.current.clientWidth,
-      height,
-    });
-
-    const histogramSeries = chart.addSeries(HistogramSeries, {
-      base: 0,
-    });
-
-    histogramSeries.setData(chartData);
-
-    chart.subscribeCrosshairMove((param) => {
-      if (!param || !param.time) {
-        setHoveredBin(null);
-        return;
-      }
-      const timeNum = typeof param.time === 'number' ? param.time : Number(param.time);
-      const match = timeToBinMap.get(timeNum);
-      setHoveredBin(match || null);
-    });
-
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
-    };
-  }, [distribution, height]);
-
-  if (!distribution || distribution.length === 0) {
-    return (
-      <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
-        No Monte Carlo simulation data available.
+// Was built against a histogram (bin/count) shape the backend has never
+// actually produced - RunMonteCarlo (app/engine/montecarlo.go) reorders
+// the trade log N times and reports percentile summary stats per metric,
+// not per-iteration raw values, so a bar histogram was never renderable
+// from what /backtest/{id}/montecarlo actually returns (the API call
+// itself succeeded every time; nothing ever reached the screen). A range
+// bar - Min/Max as the track ends, a shaded P5-P95 band, ticks at Median
+// and Mean - is what this data can actually support, and it's a more
+// standard way to show a percentile spread than a fabricated histogram
+// would have been anyway.
+export function MonteCarloDistribution({ totalReturn, sharpe, maxDrawdown, iterations }: MonteCarloDistributionProps) {
+  return (
+    <div className="w-full flex flex-col gap-5 font-mono">
+      <div className="text-[11px] text-muted-foreground">
+        {iterations.toLocaleString()} reorderings of this run's own trade log - same trades, shuffled sequence,
+        recomputed each time. Shows how sensitive the result is to the order trades happened to land in.
       </div>
-    );
-  }
+      <RangeMetric label="Total Return" unit="%" stats={totalReturn} invert={false} />
+      <RangeMetric label="Sharpe Ratio" unit="" stats={sharpe} invert={false} />
+      <RangeMetric label="Max Drawdown" unit="%" stats={maxDrawdown} invert />
+    </div>
+  );
+}
+
+// invert: for Max Drawdown, smaller is better - the "good" end of the
+// track is the left (Min) side instead of the right, so the mean/median
+// color-coding flips accordingly (a value near this metric's Min is good).
+function RangeMetric({
+  label,
+  unit,
+  stats,
+  invert,
+}: {
+  label: string;
+  unit: string;
+  stats: MonteCarloDistributionStats;
+  invert: boolean;
+}) {
+  const span = stats.Max - stats.Min || 1;
+  const pct = (v: number) => ((v - stats.Min) / span) * 100;
+  const fmt = (v: number) => `${v.toFixed(2)}${unit}`;
+
+  const meanIsGood = invert ? stats.Mean <= (stats.Min + stats.Max) / 2 : stats.Mean >= 0;
 
   return (
-    <div className="w-full flex flex-col gap-3 font-mono">
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="p-2 bg-background/60 rounded border border-border/30">
-          <span className="text-muted-foreground block text-[10px] uppercase">Mean Return</span>
-          <span className={`font-mono font-bold ${mean >= 0 ? 'text-success' : 'text-destructive'}`}>
-            {mean.toFixed(2)}%
-          </span>
-        </div>
-        <div className="p-2 bg-background/60 rounded border border-border/30">
-          <span className="text-muted-foreground block text-[10px] uppercase">95% VaR</span>
-          <span className="font-mono font-bold text-warning">
-            {var95.toFixed(2)}%
-          </span>
-        </div>
-        <div className="p-2 bg-background/60 rounded border border-border/30">
-          <span className="text-muted-foreground block text-[10px] uppercase">Ruin Probability</span>
-          <span className={`font-mono font-bold ${ruinProb > 0.05 ? 'text-destructive' : 'text-foreground'}`}>
-            {(ruinProb * 100).toFixed(2)}%
-          </span>
-        </div>
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <span className={`text-sm font-bold ${meanIsGood ? 'text-success' : 'text-destructive'}`}>
+          {fmt(stats.Mean)} <span className="text-muted-foreground font-normal text-[10px]">mean</span>
+        </span>
       </div>
 
-      {hoveredBin && (
-        <div className="text-[11px] text-foreground flex items-center justify-between px-1">
-          <span>Return Bin: <strong className="text-white">{hoveredBin.bin.toFixed(1)}%</strong></span>
-          <span>Simulations: <strong className="text-white">{hoveredBin.count}</strong></span>
-        </div>
-      )}
+      <div className="relative h-2.5 rounded-full bg-secondary">
+        {/* P5-P95 band */}
+        <div
+          className="absolute inset-y-0 rounded-full bg-primary/30"
+          style={{ left: `${pct(stats.P5)}%`, width: `${Math.max(pct(stats.P95) - pct(stats.P5), 1)}%` }}
+        />
+        {/* Median tick */}
+        <div
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-4 bg-foreground rounded-full"
+          style={{ left: `${pct(stats.Median)}%` }}
+          title={`Median: ${fmt(stats.Median)}`}
+        />
+        {/* Mean marker */}
+        <div
+          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full ring-2 ring-background ${
+            meanIsGood ? 'bg-success' : 'bg-destructive'
+          }`}
+          style={{ left: `${pct(stats.Mean)}%` }}
+          title={`Mean: ${fmt(stats.Mean)}`}
+        />
+      </div>
 
-      <div ref={chartContainerRef} className="w-full" style={{ height }} />
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>Min {fmt(stats.Min)}</span>
+        <span>P5 {fmt(stats.P5)}</span>
+        <span>Median {fmt(stats.Median)}</span>
+        <span>P95 {fmt(stats.P95)}</span>
+        <span>Max {fmt(stats.Max)}</span>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, CrosshairMode, AreaSeries } from 'lightweight-charts';
+import { getChartColors, withAlpha } from '@/lib/chartTheme';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 
 export interface DrawdownPoint {
   time: string;
@@ -18,32 +20,34 @@ export function DrawdownChart({
   height = 200,
 }: DrawdownChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const isDark = useIsDarkMode();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length < 2) return;
+    const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#22c55e',
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.muted,
         fontFamily: 'monospace',
       },
       grid: {
-        vertLines: { color: '#0a361b' },
-        horzLines: { color: '#0a361b' },
+        vertLines: { color: c.border },
+        horzLines: { color: c.border },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: '#22c55e', labelBackgroundColor: '#22c55e' },
-        horzLine: { color: '#22c55e', labelBackgroundColor: '#22c55e' },
+        vertLine: { color: c.primary, labelBackgroundColor: c.primary },
+        horzLine: { color: c.primary, labelBackgroundColor: c.primary },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#0a361b',
+        borderColor: c.border,
       },
       rightPriceScale: {
-        borderColor: '#0a361b',
+        borderColor: c.border,
         autoScale: true,
       },
       width: chartContainerRef.current.clientWidth,
@@ -51,9 +55,9 @@ export function DrawdownChart({
     });
 
     const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: '#ef4444',
-      topColor: 'rgba(239, 68, 68, 0.4)',
-      bottomColor: 'rgba(239, 68, 68, 0.0)',
+      lineColor: c.destructive,
+      topColor: withAlpha(c.destructive, 0.4),
+      bottomColor: withAlpha(c.destructive, 0),
       lineWidth: 2,
     });
 
@@ -86,7 +90,7 @@ export function DrawdownChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [points, height]);
+  }, [points, height, isDark]);
 
   if (!points || points.length < 2) {
     return (

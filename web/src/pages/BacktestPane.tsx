@@ -294,11 +294,10 @@ export function BacktestPane() {
             )}
             {monteCarlo ? (
               <MonteCarloDistribution
-                distribution={monteCarlo.distribution}
-                mean={monteCarlo.mean_return}
-                var95={monteCarlo.var_95}
-                ruinProb={monteCarlo.ruin_probability}
-                height={220}
+                totalReturn={monteCarlo.total_return_distribution}
+                sharpe={monteCarlo.sharpe_distribution}
+                maxDrawdown={monteCarlo.max_drawdown_distribution}
+                iterations={monteCarlo.iterations}
               />
             ) : (
               <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">

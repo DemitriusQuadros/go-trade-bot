@@ -3,12 +3,13 @@ import { useOutletContext } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
-import { luaEditorDarkTheme } from '@/lib/codeMirrorTheme';
+import { luaEditorDarkTheme, luaEditorLightTheme } from '@/lib/codeMirrorTheme';
 import { luaAutocompletion } from '@/lib/luaCompletions';
 import { api } from '@/api/client';
 import { TraceRecord } from '@/api/types';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { WorkbenchContext } from './WorkbenchShell';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw, RefreshCw } from 'lucide-react';
 
 interface ReplHistoryEntry {
@@ -37,6 +38,7 @@ const MAX_WINDOW_CANDLES = 2000;
 export function ReplPane() {
   const ctx = useOutletContext<WorkbenchContext>();
   const { setReplTrace, setReplResult, setActiveTraceSource, draft, appendConsoleEntry } = ctx;
+  const isDark = useIsDarkMode();
 
   // source/symbol/timeframe/windowCandles/history/selectedHistoryId stay
   // PANE-LOCAL - only replTrace/replResult are lifted to the shell, since
@@ -248,8 +250,8 @@ export function ReplPane() {
             <CodeMirror
               value={source}
               height="220px"
-              theme="dark"
-              extensions={[StreamLanguage.define(lua), luaEditorDarkTheme, luaAutocompletion]}
+              theme={isDark ? 'dark' : 'light'}
+              extensions={[StreamLanguage.define(lua), isDark ? luaEditorDarkTheme : luaEditorLightTheme, luaAutocompletion]}
               onChange={(val) => setSource(val)}
               className="font-mono text-xs"
               basicSetup={{ lineNumbers: true, highlightActiveLineGutter: true, foldGutter: false }}

@@ -179,16 +179,35 @@ export interface BacktestRun {
   created_at: string;
 }
 
+// Mirrors app/engine/montecarlo.go's DistributionStats exactly - Go's
+// encoding/json defaults to the field names as-written (no json tags on
+// that struct), so these stay PascalCase rather than the snake_case every
+// other DTO in this file uses.
+export interface MonteCarloDistributionStats {
+  Mean: number;
+  Median: number;
+  Min: number;
+  Max: number;
+  P5: number;
+  P95: number;
+}
+
+// Mirrors app/engine/montecarlo.go's MonteCarloResult. This previously
+// assumed a histogram-shaped response (a `distribution` bin/count array)
+// that the backend has never produced - RunMonteCarlo reorders the trade
+// log Iterations times and reports percentile summary stats per metric,
+// not per-iteration raw values, so no histogram is possible from this
+// response.
 export interface MonteCarloSummary {
-  simulations: number;
-  mean_return: number;
-  median_return: number;
-  std_dev: number;
-  var_95: number;
-  cvar_95: number;
-  max_drawdown_p95: number;
-  ruin_probability: number;
-  distribution: Array<{ bin: number; count: number }>;
+  iterations: number;
+  // The single backtest's own metrics, recomputed as a baseline - unused
+  // by the frontend today (the BacktestRun already on screen has the
+  // same figures), so left loose rather than fully mirroring
+  // metrics_provider.BacktestMetrics field-for-field.
+  original_metrics: Record<string, unknown>;
+  sharpe_distribution: MonteCarloDistributionStats;
+  max_drawdown_distribution: MonteCarloDistributionStats;
+  total_return_distribution: MonteCarloDistributionStats;
 }
 
 // --- Optimization ----------------------------------------------------------
