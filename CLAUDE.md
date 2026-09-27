@@ -197,8 +197,11 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
 ### Frontend (`web/`)
 React + TypeScript + Vite SPA, built with `make web-build` and embedded into `cmd/api`'s binary via
 `go:embed` (`cmd/api/webui/`). Talks to `cmd/api` over the same REST surface described above (all under
-`/api`), plus a consolidated SSE stream (`GET /api/stream/dashboard`) for live prices/positions. Auth token
-lives in
+`/api`), plus a consolidated SSE stream (`GET /api/stream/dashboard`) for live prices/positions.
+
+**Design system**: `docs/architecture/design-system.md` is the authoritative reference for the "Console Pro"
+theme (color tokens, typography, component conventions, chart/code-editor theming) — read it before adding
+or restyling any UI. Auth token lives in
 `localStorage`, attached as `Authorization: Bearer <token>` (query-param fallback for the SSE endpoint and
 the backtest HTML report iframe, since browsers can't attach custom headers to those requests).
 
