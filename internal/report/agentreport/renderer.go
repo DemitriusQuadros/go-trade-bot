@@ -369,6 +369,12 @@ func kpi(metric string, m Metrics) kpiView {
 	case "profit_factor":
 		if m.TotalTrades == 0 {
 			k.Value = "n/a"
+		} else if math.IsInf(m.ProfitFactor, 1) || m.ProfitFactor >= 1e15 {
+			// No losing trades. The backtest usecase persists +Inf as
+			// math.MaxFloat64 (Postgres can't store Inf); same sentinel rule
+			// as app/handler/web/backtest/dto.go.
+			k.Value = "∞"
+			k.Tone = "pos"
 		} else {
 			k.Value = fmtNum(m.ProfitFactor, 2)
 			if m.ProfitFactor > 1 {

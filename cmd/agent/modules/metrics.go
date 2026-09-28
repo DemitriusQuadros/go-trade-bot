@@ -72,6 +72,24 @@ var AgentRuntimeMetrics = []metrics.MetricConfig{
 		LabelNames: []string{"agent", "direction"},
 	},
 	{
+		Name:       taskagent.MetricTriggersFired,
+		Help:       "Agent runs started by an event, market or chain trigger (agents-platform C-01), by kind.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"kind"},
+	},
+	{
+		Name:       taskagent.MetricTriggersSuppressed,
+		Help:       "Agent triggers suppressed by a cooldown (event, market) or a chain guard (chain: depth, repeated agent, duplicate), by kind.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"kind"},
+	},
+	{
+		Name:       taskagent.MetricMarketSubscriptions,
+		Help:       "Symbols cmd/agent's market watcher holds a 1m kline subscription for.",
+		Type:       metrics.Gauge,
+		LabelNames: []string{},
+	},
+	{
 		Name:       taskagent.MetricBlockedOrders,
 		Help:       "Order placement/cancellation attempts blocked by cmd/agent's read-only exchange client (should always be 0).",
 		Type:       metrics.Counter,

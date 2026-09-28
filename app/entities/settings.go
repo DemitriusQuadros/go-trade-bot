@@ -29,6 +29,10 @@ type Settings struct {
 	PrometheusURL string
 	GrafanaURL    string
 	AsynqmonURL   string
+	// AgentsAsynqmonURL is cmd/agent's Asynqmon UI (fix-02 B5, default
+	// empty; the UI suggests http://localhost:9194/tasks/monitoring).
+	// Display-only, like AsynqmonURL.
+	AgentsAsynqmonURL string
 	// AgentsPaused is the global agents kill switch (agents-platform A-01):
 	// when true no agent run (cron, manual or chat) starts, and in-flight
 	// runs halt before their next model call. Never read by any trading

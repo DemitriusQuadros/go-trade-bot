@@ -20,6 +20,7 @@ import (
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	signalusecase "go-trade-bot/app/usecase/signal"
 	strategyusecase "go-trade-bot/app/usecase/strategy"
+	agentworker "go-trade-bot/app/workers/agent"
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/lock"
@@ -87,6 +88,7 @@ var AgentModule = fx.Module("agent",
 			db *gorm.DB,
 			bt *backtestusecase.BacktestUseCase,
 			runner *strategyscript.Runner,
+			chain *agentworker.ChainLauncher,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
@@ -99,6 +101,9 @@ var AgentModule = fx.Module("agent",
 			uc.Guard = agentusecase.NewDefaultGuard(settings, platform, n)
 			uc.Lock = strategyLock
 			uc.APIBaseURL = cfg.APIBaseURL
+			// C-01 §4: trigger_agent (permission chain) enqueues through the
+			// same guarded launcher the declarative ChainFrom path uses.
+			uc.Chain = chain
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
 			return uc
 		},

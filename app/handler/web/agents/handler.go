@@ -36,6 +36,7 @@ type UseCase interface {
 	ListMemory(ctx context.Context, strategyID uint, kinds []string, limit int, beforeID *uint) ([]entities.StrategyMemoryEntry, error)
 	AddOperatorNote(ctx context.Context, strategyID uint, content string) (entities.StrategyMemoryEntry, error)
 	AgentNames(ctx context.Context) map[uint]string
+	MarketSymbols(ctx context.Context) (usecase.MarketSymbolsView, error)
 }
 
 // Handler serves the agents endpoints.
@@ -56,6 +57,7 @@ func (h *Handler) Handlers() []handler.Configuration {
 		{Pattern: "/agents", Method: http.MethodGet, Action: h.List},
 		{Pattern: "/agents", Method: http.MethodPost, Action: h.Create},
 		{Pattern: "/agents/kill-switch", Method: http.MethodPut, Action: h.KillSwitch},
+		{Pattern: "/agents/market-symbols", Method: http.MethodGet, Action: h.MarketSymbols},
 		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get},
 		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodPut, Action: h.Update},
 		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodDelete, Action: h.Delete},
@@ -74,11 +76,26 @@ func (h *Handler) Handlers() []handler.Configuration {
 func WriteError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	msg := err.Error()
+	if usecase.IsChainCycle(err) {
+		// C-01 §1: the frontend matches on this exact error code.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "chain_cycle", "message": err.Error()})
+		return
+	}
 	var ce *customerror.CustomError
 	if errors.As(err, &ce) {
 		status, msg = ce.Code, ce.Message
 	}
 	writeErrorBody(w, status, msg)
+}
+
+// MarketSymbols serves GET /agents/market-symbols (C-01 §6).
+func (h *Handler) MarketSymbols(w http.ResponseWriter, r *http.Request) {
+	v, err := h.useCase.MarketSymbols(r.Context())
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ToMarketSymbolsResponse(v))
 }
 
 func errorCode(status int) string {

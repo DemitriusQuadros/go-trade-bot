@@ -28,6 +28,7 @@ var permissionDescriptions = map[entities.AgentPermission]string{
 	entities.PermNotify:         "notify - send webhook notifications to the operator",
 	entities.PermCreateStrategy: "create_strategy - create new testing strategies (backtest/dryrun), bound to you, max 3 per UTC day",
 	entities.PermProposeLive:    "propose_live - propose_promotion: file a challenger promotion for the operator to approve",
+	entities.PermChain:          "chain - trigger_agent: start another agent's run with a message (max 3 per run; chains stop after 3 hops and never revisit an agent)",
 }
 
 var triggerDescriptions = map[string]string{
@@ -35,6 +36,9 @@ var triggerDescriptions = map[string]string{
 	"cron":     "cron - a scheduled run; no human is watching, so record what matters in memory and reports",
 	"manual":   "manual - the operator queued this run; no human is watching it live",
 	"mcp_tool": "mcp_tool - invoked through the MCP server",
+	"event":    "event - a strategy event triggered this run; no human is watching, so record what matters in memory and reports",
+	"market":   "market - a market watch rule triggered this run; no human is watching, so record what matters in memory and reports",
+	"chain":    "chain - another agent's run triggered this run; no human is watching, so record what matters in memory and reports",
 }
 
 func uintToString(v uint) string { return strconv.FormatUint(uint64(v), 10) }
@@ -64,8 +68,15 @@ func (u AgentUseCase) contextStrategyIDs(ctx context.Context, req RunRequest) (i
 	return ids, bound
 }
 
+// isScheduledTrigger reports whether trigger is an unattended run (every
+// trigger except chat_ui and mcp_tool, C-01 §5): its context is every bound
+// strategy and it runs under the same Phase A/B policy as cron.
 func isScheduledTrigger(trigger string) bool {
-	return trigger == "cron" || trigger == "manual"
+	switch trigger {
+	case "cron", "manual", "event", "market", "chain":
+		return true
+	}
+	return false
 }
 
 // buildSystemPrompt composes (A-01 §4.1): house rules, persona block,
@@ -122,6 +133,21 @@ func (u AgentUseCase) operatingContext(req RunRequest, bound []uint, strategies 
 		trig = req.Trigger
 	}
 	fmt.Fprintf(&b, "Trigger: %s\n", trig)
+	if len(req.TriggerDetail) > 0 && req.Trigger != "chat_ui" {
+		detail := string(req.TriggerDetail)
+		if len(detail) > 2000 {
+			detail = detail[:2000] + "...(truncated)"
+		}
+		fmt.Fprintf(&b, "Trigger detail: %s\n", detail)
+	}
+	if req.Trigger == "chain" {
+		path := make([]string, 0, len(req.ChainPath))
+		for _, id := range req.ChainPath {
+			path = append(path, "#"+uintToString(id))
+		}
+		fmt.Fprintf(&b, "Chain: depth %d of max 3; agents before you in this chain: %s. trigger_agent cannot start any of them.\n",
+			req.ChainDepth, strings.Join(path, " → "))
+	}
 
 	if isScheduledTrigger(req.Trigger) {
 		if len(bound) == 0 {
@@ -155,6 +181,7 @@ func (u AgentUseCase) operatingContext(req RunRequest, bound []uint, strategies 
 		b.WriteString(strings.Join(granted, "\n") + "\n")
 	}
 	b.WriteString("Always available: read_memory, write_journal, list_reports, write_report, list_proposals, get_deploy_gate_config.\n")
+	b.WriteString("Before backtesting, call get_candle_coverage and pick a timeframe and date range that has data.\n")
 	b.WriteString("Safety rules (enforced by the platform): live/productive strategies can never be modified by any tool - " +
 		"improve them through a challenger and an operator-approved promotion. You may only change strategies in your scope " +
 		"(bound to you, challengers of bound strategies, or created by you). No tool can make a " +

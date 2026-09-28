@@ -65,6 +65,7 @@ export function Settings() {
     prometheus_url: '',
     grafana_url: '',
     asynqmon_url: '',
+    agents_asynqmon_url: '',
   });
 
   const [dirtySecrets, setDirtySecrets] = useState<Record<string, string>>({});
@@ -96,6 +97,7 @@ export function Settings() {
         prometheus_url: loadedSettings.prometheus_url || '',
         grafana_url: loadedSettings.grafana_url || '',
         asynqmon_url: loadedSettings.asynqmon_url || '',
+        agents_asynqmon_url: loadedSettings.agents_asynqmon_url || '',
       });
       setDirtySecrets({});
     }
@@ -411,9 +413,9 @@ export function Settings() {
       <Card>
         <CardHeader
           title="Monitoring & Observability Endpoints"
-          subtitle="External dashboards linked in the application navigation"
+          subtitle="External dashboards linked from the Monitoring menu in the top bar"
         />
-        <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-foreground">Prometheus URL</label>
             <input
@@ -437,12 +439,23 @@ export function Settings() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Asynqmon URL</label>
+            <label className="text-xs font-semibold text-foreground">Worker Asynqmon URL</label>
             <input
               type="url"
               value={formState.asynqmon_url}
               placeholder="http://localhost:9191/tasks/monitoring"
               onChange={(e) => setFormState({ ...formState, asynqmon_url: e.target.value })}
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-foreground">Agents Asynqmon URL</label>
+            <input
+              type="url"
+              value={formState.agents_asynqmon_url}
+              placeholder="http://localhost:9194/tasks/monitoring"
+              onChange={(e) => setFormState({ ...formState, agents_asynqmon_url: e.target.value })}
               className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>

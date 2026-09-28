@@ -29,6 +29,11 @@ export const AGENT_PERMISSIONS: {
     label: 'Propose live',
     description: 'propose promotions of challenger code into live strategies (you approve every one)',
   },
+  {
+    key: 'chain',
+    label: 'Chain',
+    description: 'trigger other agents with a message (max 3 per run)',
+  },
 ];
 
 export function permissionLabel(key: string): string {

@@ -361,6 +361,8 @@ export interface PlatformSettings {
   prometheus_url: string;
   grafana_url: string;
   asynqmon_url?: string;
+  // Fix-02 B5: display-only link to cmd/agent's Asynqmon UI (:9194).
+  agents_asynqmon_url?: string;
   // Agents platform global kill switch - READ-ONLY here (PUT /settings
   // ignores it). Changed via PUT /agents/kill-switch. true = no agent runs
   // start, and in-flight runs halt before their next model call.
@@ -380,6 +382,8 @@ export interface PlatformSettingsUpdateRequest {
   prometheus_url: string;
   grafana_url: string;
   asynqmon_url?: string;
+  // Fix-02 B5: display-only link to cmd/agent's Asynqmon UI (:9194).
+  agents_asynqmon_url?: string;
 }
 
 export interface PlatformSettingsUpdateResponse {
@@ -555,7 +559,53 @@ export interface AgentHistoryTurn {
 }
 
 export type AgentRunStatus = 'ok' | 'error';
-export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor' | 'cron' | 'manual';
+export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor' | 'cron' | 'manual' | 'event' | 'market' | 'chain';
+
+// Per-trigger AgentRun.trigger_detail shapes (C-01 §2.3, §3, §4). Every
+// field is optional: detail JSON is written by the backend at enqueue time
+// and older rows (or a partially populated detail) must still render.
+export interface CronTriggerDetail {
+  cron?: string;
+}
+export interface ManualTriggerDetail {
+  requested_by?: string;
+  prompt?: string;
+}
+export interface EventTriggerDetail {
+  event?: AgentEventType | string;
+  strategy_id?: number;
+  symbol?: string;
+  occurred_at?: string;
+  data?: Record<string, unknown>;
+}
+export interface MarketTriggerDetail {
+  rule_id?: string;
+  symbol?: string;
+  kind?: MarketRuleKind | string;
+  window_minutes?: number;
+  observed_pct?: number; // pct_move, signed (e.g. -3.4 for a drop)
+  observed_multiplier?: number; // volatility_spike
+  threshold?: number;
+  price?: number;
+  at?: string;
+}
+export interface ChainTriggerDetail {
+  source_agent_id?: number;
+  source_run_id?: number;
+  report_ids?: number[];
+  on?: ChainOn | string;
+}
+
+// Discriminated union of (trigger, trigger_detail). Built by
+// runTriggerInfo() (lib/triggers.ts) so a narrowing switch on `trigger` types the detail.
+export type AgentRunTriggerInfo =
+  | { trigger: 'cron'; detail: CronTriggerDetail }
+  | { trigger: 'manual'; detail: ManualTriggerDetail }
+  | { trigger: 'event'; detail: EventTriggerDetail }
+  | { trigger: 'market'; detail: MarketTriggerDetail }
+  | { trigger: 'chain'; detail: ChainTriggerDetail }
+  | { trigger: 'other'; raw: string; detail: Record<string, unknown> };
+
 
 export interface AgentRun {
   id: number;
@@ -563,9 +613,18 @@ export interface AgentRun {
   // before the platform landed carry none of them.
   agent_id?: number;
   agent_name?: string;
-  // Raw JSON from the backend: {"cron": spec} for cron runs,
-  // {"requested_by", "prompt"} for manual runs, absent otherwise.
-  trigger_detail?: { cron?: string; requested_by?: string; prompt?: string } | null;
+  // Raw JSON from the backend, shape keyed by `trigger` - narrow it with
+  // runTriggerInfo(run) (lib/triggers.ts) rather than reading fields off it directly.
+  trigger_detail?:
+    | CronTriggerDetail
+    | ManualTriggerDetail
+    | EventTriggerDetail
+    | MarketTriggerDetail
+    | ChainTriggerDetail
+    | null;
+  // Chain runs only (C-01 §4); absent on other runs -> depth 0.
+  chain_depth?: number;
+  parent_run_id?: number | null;
   input_tokens?: number;
   output_tokens?: number;
   cost_usd?: number;
@@ -580,6 +639,9 @@ export interface AgentRun {
   strategy_id?: number;
   started_at: string;
   finished_at?: string;
+  // Fix-02 B1: true when the tool loop hit its iteration cap and the run
+  // finished via the forced tools-disabled final turn.
+  hit_iteration_cap?: boolean;
 }
 
 // --- Agents platform (docs/specs/agents-platform, A-02 §5) -----------------
@@ -593,16 +655,76 @@ export type AgentPermission =
   | 'edit_testing'
   | 'notify'
   | 'create_strategy' // B-01: create new testing/dryrun strategies (max 3/day)
-  | 'propose_live'; // B-01: propose challenger promotions (human approves each)
+  | 'propose_live' // B-01: propose challenger promotions (human approves each)
+  | 'chain'; // C-01 §4: trigger_agent tool - start other agents (max 3 per run)
 
 export type AgentProvider = '' | 'anthropic' | 'gemini';
 
+// --- Phase C triggers (C-01 §1 - the exact JSON contract) -----------------
+
+export type AgentEventType =
+  | 'position.opened'
+  | 'position.closed'
+  | 'stoploss.hit'
+  | 'strategy.error'
+  | 'strategy.panic'
+  | 'drawdown'
+  | 'no_signal';
+
+export interface EventTrigger {
+  type: AgentEventType | string;
+  threshold_pct?: number; // drawdown only
+  window_hours?: number; // drawdown (default 24), no_signal (required)
+  cooldown_minutes?: number; // default 15 (drawdown/no_signal: 240)
+}
+
+export type MarketRuleKind = 'pct_move' | 'volatility_spike';
+
+export interface MarketRule {
+  id: string; // stable client-generated uuid - never regenerate on edit
+  symbol: string;
+  kind: MarketRuleKind | string;
+  window_minutes: number; // 1..1440
+  threshold_pct?: number; // pct_move
+  multiplier?: number; // volatility_spike
+  cooldown_minutes: number; // default 60, min 5
+}
+
+export type ChainOn = 'report' | 'notify' | 'success';
+
+export interface ChainTrigger {
+  agent_id: number;
+  on: ChainOn | string;
+}
+
 export interface AgentTriggers {
   cron?: string[];
-  // Phase C - accepted/stored by the API but unused in Phase A.
-  events?: string[];
-  market?: unknown[];
-  chain_from?: number[];
+  events?: EventTrigger[];
+  market?: MarketRule[];
+  chain_from?: ChainTrigger[];
+}
+
+// C-01 §6: per-agent trigger counts for the agents table.
+export interface AgentTriggerSummary {
+  cron: number;
+  events: number;
+  market: number;
+  chain_from: number;
+}
+
+// C-01 §6: GET /agents/market-symbols row.
+export interface MarketSymbolStatus {
+  symbol: string;
+  watchers: number;
+  last_price: number | null;
+  last_candle_at: string | null;
+}
+
+// GET /agents/market-symbols body. runtime_seen_at is null when cmd/agent
+// has written no status snapshot.
+export interface MarketSymbolsResponse {
+  symbols: MarketSymbolStatus[];
+  runtime_seen_at: string | null;
 }
 
 export interface AgentRequest {
@@ -616,6 +738,9 @@ export interface AgentRequest {
   webhook_target_ids: number[];
   daily_budget_usd: number;
   max_auto_deploys_per_day: number;
+  // Fix-02 B1: tool-loop iteration cap. 0 = trigger default (24 for
+  // scheduled/triggered runs, 8 for chat); otherwise 4-50.
+  max_iterations?: number;
 }
 
 export interface AgentLastRun {
@@ -634,6 +759,9 @@ export interface Agent extends AgentRequest {
   today_cost_usd: number;
   last_run: AgentLastRun | null;
   next_run_at: string | null; // UTC RFC3339; null if no cron specs or paused
+  // C-01 §6. Optional so an API build without it degrades to counting
+  // `triggers` client-side.
+  trigger_summary?: AgentTriggerSummary;
 }
 
 export interface AgentRunEnqueuedResponse {

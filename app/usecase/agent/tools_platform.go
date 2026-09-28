@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -297,27 +298,105 @@ func (u AgentUseCase) listReportsTool() Tool {
 
 // --- write_report ------------------------------------------------------------
 
-var writeReportSchema = json.RawMessage(`{
-	"type": "object",
-	"properties": {
-		"title": {"type": "string"},
-		"severity": {"type": "string", "enum": ["info", "warning", "critical"]},
-		"strategy_ids": {"type": "array", "items": {"type": "integer"}},
-		"blocks": {
-			"type": "array",
-			"description": "At most 40 typed blocks, rendered server-side. Allowed types and data: summary {text}; callout {severity: info|warning|critical, title, text}; kpi_grid {source, metrics: [sharpe, max_drawdown, win_rate, profit_factor, total_trades, net_pnl]}; equity_chart {source}; trade_table {source, limit <= 50}; code_diff {strategy_id, from_version_id?, to_version_id?} or {strategy_id, from_source, to_source}; recommendation {items: [{title, rationale, action?}]}; text_table {columns: [..], rows: [[..]]} (qualitative text only). source is {kind: \"backtest_run\", id} or {kind: \"strategy_live\", strategy_id, days}. Numbers for kpi_grid/equity_chart/trade_table are read from the database by the renderer - never put metric values in block data.",
-			"items": {
-				"type": "object",
-				"properties": {
-					"type": {"type": "string"},
-					"data": {"type": "object"}
-				},
-				"required": ["type", "data"]
-			}
+// writeReportSchema documents every block type's data shape (fix-02 B3):
+// blocks.items is a oneOf with one branch per type, each pinning "type" to a
+// single-value enum and listing the required data properties. Run #49's
+// first write_report failed with `block 0 ("summary"): missing data`
+// because the old schema only said {"data": {"type": "object"}}.
+var writeReportSchema = buildWriteReportSchema()
+
+func buildWriteReportSchema() json.RawMessage {
+	str := map[string]any{"type": "string"}
+	integer := map[string]any{"type": "integer"}
+	source := map[string]any{
+		"type":        "object",
+		"description": `{kind:"backtest_run", id} or {kind:"strategy_live", strategy_id, days (default 30)}`,
+		"properties": map[string]any{
+			"kind":        map[string]any{"type": "string", "enum": []string{agentreport.SourceBacktestRun, agentreport.SourceStrategyLive}},
+			"id":          integer,
+			"strategy_id": integer,
+			"days":        integer,
+		},
+		"required": []string{"kind"},
+	}
+	obj := func(props map[string]any, required ...string) map[string]any {
+		o := map[string]any{"type": "object", "properties": props}
+		if len(required) > 0 {
+			o["required"] = required
 		}
-	},
-	"required": ["title", "severity", "strategy_ids", "blocks"]
-}`)
+		return o
+	}
+	block := func(typ, desc string, data map[string]any) map[string]any {
+		return map[string]any{
+			"type":        "object",
+			"description": desc,
+			"properties": map[string]any{
+				"type": map[string]any{"type": "string", "enum": []string{typ}},
+				"data": data,
+			},
+			"required": []string{"type", "data"},
+		}
+	}
+	branches := []any{
+		block(agentreport.TypeSummary, "Free-text summary paragraph.", obj(map[string]any{"text": str}, "text")),
+		block(agentreport.TypeCallout, "Highlighted note; needs a title or text.", obj(map[string]any{
+			"severity": map[string]any{"type": "string", "enum": []string{"info", "warning", "critical"}},
+			"title":    str,
+			"text":     str,
+		}, "severity")),
+		block(agentreport.TypeKPIGrid, "Metric tiles; values are read from the database.", obj(map[string]any{
+			"source":  source,
+			"metrics": map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": agentreport.AllowedMetrics}},
+		}, "source", "metrics")),
+		block(agentreport.TypeEquityChart, "Equity curve read from the database.", obj(map[string]any{"source": source}, "source")),
+		block(agentreport.TypeTradeTable, "Trade list read from the database.", obj(map[string]any{
+			"source": source,
+			"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": agentreport.MaxTradeRows},
+		}, "source")),
+		block(agentreport.TypeCodeDiff, "Script diff: by version ids, or by from_source + to_source (not both).", obj(map[string]any{
+			"strategy_id":     integer,
+			"from_version_id": integer,
+			"to_version_id":   integer,
+			"from_source":     str,
+			"to_source":       str,
+		}, "strategy_id")),
+		block(agentreport.TypeRecommendation, "Recommended next steps.", obj(map[string]any{
+			"items": map[string]any{"type": "array", "items": obj(map[string]any{
+				"title": str, "rationale": str, "action": str,
+			}, "title")},
+		}, "items")),
+		block(agentreport.TypeTextTable, "Qualitative table (text only, never metric numbers); every row has one cell per column.", obj(map[string]any{
+			"columns": map[string]any{"type": "array", "items": str},
+			"rows":    map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": str}},
+		}, "columns", "rows")),
+	}
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"title":        str,
+			"severity":     map[string]any{"type": "string", "enum": []string{"info", "warning", "critical"}},
+			"strategy_ids": map[string]any{"type": "array", "items": integer},
+			"blocks": map[string]any{
+				"type": "array",
+				"description": "At most 40 typed blocks, rendered server-side. Every block is {type, data} - the fields go INSIDE data. " +
+					"Numbers for kpi_grid/equity_chart/trade_table are read from the database by the renderer - never put metric values in block data.",
+				"items": map[string]any{"oneOf": branches},
+			},
+		},
+		"required": []string{"title", "severity", "strategy_ids", "blocks"},
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("write_report schema: %v", err))
+	}
+	return b
+}
+
+// writeReportExample is appended to the write_report description.
+const writeReportExample = `Example: {"title":"BTC RSI weekly review","severity":"info","strategy_ids":[7],"blocks":[` +
+	`{"type":"summary","data":{"text":"Walk-forward Sharpe improved after the stop change."}},` +
+	`{"type":"kpi_grid","data":{"source":{"kind":"backtest_run","id":123},"metrics":["sharpe","max_drawdown","win_rate"]}},` +
+	`{"type":"recommendation","data":{"items":[{"title":"Keep the 2% stop","rationale":"Lower drawdown at equal return"}]}}]}`
 
 func (u AgentUseCase) reportURL(id uint) string {
 	return strings.TrimRight(u.APIBaseURL, "/") + "/agents/reports/" + uintToString(id)
@@ -327,7 +406,7 @@ func (u AgentUseCase) writeReportTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name:        "write_report",
-			Description: "Write a report for the operator as typed blocks; it is rendered to HTML server-side, stored, and linked from each strategy's shared memory. Returns {report_id, url}.",
+			Description: "Write a report for the operator as typed blocks; it is rendered to HTML server-side, stored, and linked from each strategy's shared memory. Returns {report_id, url}. " + writeReportExample,
 			InputSchema: writeReportSchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -341,11 +420,21 @@ func (u AgentUseCase) writeReportTool() Tool {
 				Title       string              `json:"title"`
 				Severity    string              `json:"severity"`
 				StrategyIDs []uint              `json:"strategy_ids"`
-				Blocks      []agentreport.Block `json:"blocks"`
+				RawBlocks   []json.RawMessage   `json:"blocks"`
+				Blocks      []agentreport.Block `json:"-"`
 			}
 			if err := json.Unmarshal(raw, &in); err != nil {
 				return "", fmt.Errorf("write_report: invalid args: %w", err)
 			}
+			// fix-02 B3: accept {type, <fields>} as {type, data: {<fields>}}.
+			blocks, flattened, err := agentreport.DecodeBlocksLenient(in.RawBlocks)
+			if err != nil {
+				return "", fmt.Errorf("write_report: %w", err)
+			}
+			if flattened > 0 {
+				log.Printf("agent: debug: write_report accepted %d block(s) with fields outside \"data\" (moved into data)", flattened)
+			}
+			in.Blocks = blocks
 			in.Title = strings.TrimSpace(in.Title)
 			if in.Title == "" || len([]rune(in.Title)) > 200 {
 				return "", fmt.Errorf("write_report: title is required (at most 200 characters)")
@@ -394,6 +483,9 @@ func (u AgentUseCase) writeReportTool() Tool {
 			})
 			if err != nil {
 				return "", err
+			}
+			if scope, ok := scopeFrom(ctx); ok {
+				scope.recordReport(rep.ID)
 			}
 			for _, sid := range strategyIDs {
 				refID := rep.ID
@@ -499,6 +591,9 @@ func (u AgentUseCase) notifyTool() Tool {
 				if t.Enabled {
 					enabled++
 				}
+			}
+			if enabled-len(errs) > 0 {
+				scope.recordNotificationSent()
 			}
 			res := map[string]any{"sent_to_targets": enabled - len(errs)}
 			if len(errs) > 0 {

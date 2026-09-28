@@ -8,13 +8,43 @@ import (
 	usecase "go-trade-bot/app/usecase/agentplatform"
 )
 
-// TriggersDTO mirrors entities.AgentTriggers. cron is always present
-// (possibly empty); the Phase C fields are accepted and echoed back.
+// TriggersDTO is the REST `triggers` object - exactly entities.AgentTriggers'
+// C-01 §1 shape. Requests also accept the pre-C-01 forms (`events:
+// ["position.closed"]`, `chain_from: [3]`) via AgentTriggers.UnmarshalJSON.
+// Responses always carry all four arrays (possibly empty).
 type TriggersDTO struct {
-	Cron      []string          `json:"cron"`
-	Events    []string          `json:"events,omitempty"`
-	Market    []json.RawMessage `json:"market,omitempty"`
-	ChainFrom []uint            `json:"chain_from,omitempty"`
+	Cron      []string                `json:"cron"`
+	Events    []entities.EventTrigger `json:"events"`
+	Market    []entities.MarketRule   `json:"market"`
+	ChainFrom []entities.ChainTrigger `json:"chain_from"`
+}
+
+// UnmarshalJSON decodes through entities.AgentTriggers (strict, with the
+// backward-compatible element forms).
+func (d *TriggersDTO) UnmarshalJSON(b []byte) error {
+	var t entities.AgentTriggers
+	if err := json.Unmarshal(b, &t); err != nil {
+		return err
+	}
+	*d = TriggersDTO{Cron: t.Cron, Events: t.Events, Market: t.Market, ChainFrom: t.ChainFrom}
+	return nil
+}
+
+func toTriggersDTO(t entities.AgentTriggers) TriggersDTO {
+	d := TriggersDTO{Cron: t.Cron, Events: t.Events, Market: t.Market, ChainFrom: t.ChainFrom}
+	if d.Cron == nil {
+		d.Cron = []string{}
+	}
+	if d.Events == nil {
+		d.Events = []entities.EventTrigger{}
+	}
+	if d.Market == nil {
+		d.Market = []entities.MarketRule{}
+	}
+	if d.ChainFrom == nil {
+		d.ChainFrom = []entities.ChainTrigger{}
+	}
+	return d
 }
 
 // AgentRequest is the POST/PUT /agents body (A-02 §5).
@@ -29,6 +59,9 @@ type AgentRequest struct {
 	WebhookTargetIDs     []uint      `json:"webhook_target_ids"`
 	DailyBudgetUSD       float64     `json:"daily_budget_usd"`
 	MaxAutoDeploysPerDay int         `json:"max_auto_deploys_per_day"`
+	// MaxIterations is the tool-loop cap: 0 = trigger default (24 for
+	// scheduled/triggered runs, 8 for chat/MCP), otherwise 4..50.
+	MaxIterations int `json:"max_iterations"`
 }
 
 // ToInput maps the request to the usecase write model.
@@ -41,14 +74,15 @@ func (r AgentRequest) ToInput() usecase.AgentInput {
 		Permissions: r.Permissions,
 		Triggers: entities.AgentTriggers{
 			Cron:      append([]string(nil), r.Triggers.Cron...),
-			Events:    r.Triggers.Events,
-			Market:    r.Triggers.Market,
-			ChainFrom: r.Triggers.ChainFrom,
+			Events:    append([]entities.EventTrigger(nil), r.Triggers.Events...),
+			Market:    append([]entities.MarketRule(nil), r.Triggers.Market...),
+			ChainFrom: append([]entities.ChainTrigger(nil), r.Triggers.ChainFrom...),
 		},
 		StrategyIDs:          r.StrategyIDs,
 		WebhookTargetIDs:     r.WebhookTargetIDs,
 		DailyBudgetUSD:       r.DailyBudgetUSD,
 		MaxAutoDeploysPerDay: r.MaxAutoDeploysPerDay,
+		MaxIterations:        r.MaxIterations,
 	}
 }
 
@@ -71,6 +105,8 @@ type AgentResponse struct {
 	TodayCostUSD float64     `json:"today_cost_usd"`
 	LastRun      *LastRunDTO `json:"last_run"`
 	NextRunAt    *string     `json:"next_run_at"`
+	// TriggerSummary counts each trigger kind (C-01 §6), for the agents table.
+	TriggerSummary entities.TriggerSummary `json:"trigger_summary"`
 }
 
 func rfc3339(t time.Time) string {
@@ -84,10 +120,6 @@ func rfc3339(t time.Time) string {
 func ToAgentResponse(v usecase.AgentView) AgentResponse {
 	a := v.Agent
 	t := a.ParsedTriggers()
-	cron := t.Cron
-	if cron == nil {
-		cron = []string{}
-	}
 	perms := []string(a.Permissions)
 	if perms == nil {
 		perms = []string{}
@@ -103,13 +135,15 @@ func ToAgentResponse(v usecase.AgentView) AgentResponse {
 	resp := AgentResponse{
 		AgentRequest: AgentRequest{
 			Name: a.Name, Goal: a.Goal, Provider: a.Provider, Model: a.Model, Permissions: perms,
-			Triggers:    TriggersDTO{Cron: cron, Events: t.Events, Market: t.Market, ChainFrom: t.ChainFrom},
+			Triggers:    toTriggersDTO(t),
 			StrategyIDs: strategyIDs, WebhookTargetIDs: targets,
 			DailyBudgetUSD: a.DailyBudgetUSD, MaxAutoDeploysPerDay: a.MaxAutoDeploysPerDay,
+			MaxIterations: a.MaxIterations,
 		},
 		ID: a.ID, Paused: a.Paused, IsDefault: a.IsDefault,
 		CreatedAt: rfc3339(a.CreatedAt), UpdatedAt: rfc3339(a.UpdatedAt),
-		TodayCostUSD: v.TodayCostUSD,
+		TodayCostUSD:   v.TodayCostUSD,
+		TriggerSummary: t.Summary(),
 	}
 	if v.LastRun != nil {
 		resp.LastRun = &LastRunDTO{ID: v.LastRun.ID, Status: string(v.LastRun.Status), Trigger: v.LastRun.Trigger, StartedAt: rfc3339(v.LastRun.StartedAt)}
@@ -172,4 +206,36 @@ func ToMemoryEntryResponse(e entities.StrategyMemoryEntry, names map[uint]string
 func uintString(v uint) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// MarketSymbolsResponse is GET /agents/market-symbols (C-01 §6).
+type MarketSymbolsResponse struct {
+	Symbols       []MarketSymbolDTO `json:"symbols"`
+	RuntimeSeenAt *string           `json:"runtime_seen_at"`
+}
+
+// MarketSymbolDTO is one watched symbol.
+type MarketSymbolDTO struct {
+	Symbol       string   `json:"symbol"`
+	Watchers     int      `json:"watchers"`
+	LastPrice    *float64 `json:"last_price"`
+	LastCandleAt *string  `json:"last_candle_at"`
+}
+
+// ToMarketSymbolsResponse maps the usecase view.
+func ToMarketSymbolsResponse(v usecase.MarketSymbolsView) MarketSymbolsResponse {
+	out := MarketSymbolsResponse{Symbols: make([]MarketSymbolDTO, 0, len(v.Symbols))}
+	for _, s := range v.Symbols {
+		d := MarketSymbolDTO{Symbol: s.Symbol, Watchers: s.Watchers, LastPrice: s.LastPrice}
+		if s.LastCandleAt != nil {
+			ts := rfc3339(*s.LastCandleAt)
+			d.LastCandleAt = &ts
+		}
+		out.Symbols = append(out.Symbols, d)
+	}
+	if v.RuntimeSeenAt != nil {
+		ts := rfc3339(*v.RuntimeSeenAt)
+		out.RuntimeSeenAt = &ts
+	}
+	return out
 }

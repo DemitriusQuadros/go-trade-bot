@@ -56,7 +56,13 @@ type Processor struct {
 	useCase UseCase
 	agents  AgentRepository
 	metrics MetricsRecorder // may be nil
+	chains  *ChainDispatcher
 }
+
+// SetChainDispatcher enables declarative ChainFrom triggers (C-01 §4):
+// after an ok run, the dispatcher starts every agent chained from it. nil =
+// no chaining.
+func (p *Processor) SetChainDispatcher(c *ChainDispatcher) { p.chains = c }
 
 // NewProcessor builds a Processor.
 func NewProcessor(uc UseCase, agents AgentRepository, m MetricsRecorder) *Processor {
@@ -89,8 +95,18 @@ func (p *Processor) ProcessTask(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var strategyID *uint
-	if bindings, err := p.agents.ListBindingsByAgent(ctx, agent.ID); err == nil && len(bindings) == 1 {
-		id := bindings[0].StrategyID
+	var boundIDs []uint
+	if bindings, err := p.agents.ListBindingsByAgent(ctx, agent.ID); err == nil {
+		for _, b := range bindings {
+			boundIDs = append(boundIDs, b.StrategyID)
+		}
+		if len(bindings) == 1 {
+			id := bindings[0].StrategyID
+			strategyID = &id
+		}
+	}
+	if payload.StrategyID != nil && *payload.StrategyID != 0 {
+		id := *payload.StrategyID
 		strategyID = &id
 	}
 
@@ -109,9 +125,11 @@ func (p *Processor) ProcessTask(ctx context.Context, t *asynq.Task) error {
 		Agent:         agent,
 		Trigger:       trigger,
 		TriggerDetail: detail,
-		UserInput:     agentusecase.BuildScheduledInput(payload.Prompt),
+		UserInput:     p.buildInput(ctx, trigger, payload, detail),
 		StrategyID:    strategyID,
 		ChainDepth:    payload.ChainDepth,
+		ChainPath:     payload.ChainPath,
+		ParentRunID:   payload.ParentRunID,
 	})
 	p.record(agent, trigger, run, runErr, time.Since(start))
 
@@ -120,8 +138,35 @@ func (p *Processor) ProcessTask(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("agent:run: agent %d: %w", agent.ID, runErr)
 		}
 		log.Printf("agent:run: agent %d run %d finished with error: %v", agent.ID, run.ID, runErr)
+		return nil
+	}
+	if p.chains != nil && run.ID != 0 && run.Status == entities.AgentRunOK {
+		p.chains.AfterRun(ctx, agent, payload, run)
 	}
 	return nil
+}
+
+// buildInput phrases the run's instruction from its trigger (C-01 §5).
+func (p *Processor) buildInput(ctx context.Context, trigger string, payload RunPayload, detail json.RawMessage) string {
+	in := agentusecase.TriggerInput{Trigger: trigger, Detail: detail, Prompt: payload.Prompt}
+	switch trigger {
+	case entities.TriggerKindChain:
+		var d struct {
+			SourceAgentID uint `json:"source_agent_id"`
+		}
+		if json.Unmarshal(detail, &d) == nil && d.SourceAgentID != 0 {
+			if src, err := p.agents.GetAgent(ctx, d.SourceAgentID); err == nil {
+				in.SourceAgent = src.Name
+			}
+		}
+	case entities.TriggerKindMarket:
+		var d struct {
+			Monitored bool `json:"monitored_by_bound_strategy"`
+		}
+		_ = json.Unmarshal(detail, &d)
+		in.BoundStrategy = d.Monitored
+	}
+	return agentusecase.BuildTriggerInput(in)
 }
 
 func (p *Processor) record(agent entities.Agent, trigger string, run entities.AgentRun, runErr error, d time.Duration) {

@@ -17,8 +17,8 @@ import {
   BudgetCell,
 } from '@/components/domain/AgentBadges';
 import { RunAgentDialog } from '@/components/domain/RunAgentDialog';
+import { AgentTriggerSummaryCell, MarketWatchCard } from '@/components/domain/AgentTriggerDisplay';
 import { useToast } from '@/context/ToastContext';
-import { describeCron } from '@/lib/cron';
 import { formatRelative } from '@/lib/time';
 
 const TH = 'px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap';
@@ -27,12 +27,6 @@ function runtimeStatus(agent: Agent, globallyPaused: boolean): AgentRuntimeStatu
   if (globallyPaused) return 'halted';
   if (agent.paused) return 'paused';
   return 'active';
-}
-
-function scheduleLabel(agent: Agent): string {
-  const specs = agent.triggers?.cron ?? [];
-  if (specs.length === 0) return 'Manual only';
-  return specs.map(describeCron).join(', ');
 }
 
 // Agents list (A-03 §3): every configured persona, its runtime state and
@@ -49,6 +43,7 @@ export function Agents() {
   const [runTarget, setRunTarget] = useState<Agent | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? `Agent #${id}`;
 
   const togglePause = (agent: Agent) => {
     const next = !agent.paused;
@@ -154,7 +149,7 @@ export function Agents() {
                   <th className={TH}>Status</th>
                   <th className={TH}>Permissions</th>
                   <th className={TH}>Strategies</th>
-                  <th className={TH}>Schedule</th>
+                  <th className={TH}>Triggers</th>
                   <th className={TH}>Next run</th>
                   <th className={TH}>Last run</th>
                   <th className={`${TH} text-right`}>Today</th>
@@ -214,7 +209,7 @@ export function Agents() {
                         {agent.strategy_ids?.length ?? 0}
                       </td>
                       <td className="px-4 py-3 align-top text-xs text-foreground">
-                        <span title={(agent.triggers?.cron ?? []).join('\n') || undefined}>{scheduleLabel(agent)}</span>
+                        <AgentTriggerSummaryCell agent={agent} agentName={agentName} />
                       </td>
                       <td className="px-4 py-3 align-top text-xs text-muted-foreground whitespace-nowrap">
                         {agent.next_run_at && status === 'active' ? (
@@ -249,6 +244,8 @@ export function Agents() {
           </div>
         )}
       </Card>
+
+      <MarketWatchCard />
 
       <RunAgentDialog agent={runTarget} onClose={() => setRunTarget(null)} />
 

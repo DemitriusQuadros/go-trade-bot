@@ -21,6 +21,7 @@ import (
 	agentworker "go-trade-bot/app/workers/agent"
 	"go-trade-bot/internal/cronspec"
 	"go-trade-bot/internal/customerror"
+	"go-trade-bot/internal/marketstatus"
 	"go-trade-bot/internal/notifier"
 
 	"gorm.io/datatypes"
@@ -67,6 +68,7 @@ type UseCase struct {
 	enqueuer   RunEnqueuer
 	settings   SettingsStore
 	sender     TestSender
+	market     marketstatus.Reader
 	now        func() time.Time
 }
 
@@ -89,6 +91,9 @@ func notFound(format string, args ...any) error {
 
 // StatusOf returns the HTTP status carried by err (500 if none).
 func StatusOf(err error) int {
+	if IsChainCycle(err) {
+		return http.StatusBadRequest
+	}
 	var ce *customerror.CustomError
 	if errors.As(err, &ce) {
 		return ce.Code
@@ -110,6 +115,9 @@ type AgentInput struct {
 	WebhookTargetIDs     []uint
 	DailyBudgetUSD       float64
 	MaxAutoDeploysPerDay int
+	// MaxIterations is the tool-loop cap override: 0 = trigger default,
+	// otherwise MinMaxIterations..MaxMaxIterations (fix-02 B1).
+	MaxIterations int
 }
 
 // AgentView is an agent plus the derived fields the API returns.
@@ -120,6 +128,12 @@ type AgentView struct {
 	LastRun      *entities.AgentRun
 	NextRunAt    *time.Time
 }
+
+// Bounds for AgentInput.MaxIterations when it is not 0 (fix-02 B1).
+const (
+	MinMaxIterations = 4
+	MaxMaxIterations = 50
+)
 
 const (
 	maxNameLen  = 100
@@ -173,11 +187,21 @@ func (u *UseCase) validateInput(ctx context.Context, in *AgentInput, existing *e
 		}
 		in.Triggers.Cron[i] = spec
 	}
+	var selfID uint
+	if existing != nil {
+		selfID = existing.ID
+	}
+	if err := u.validateTriggers(ctx, &in.Triggers, selfID, in.Name); err != nil {
+		return err
+	}
 	if in.DailyBudgetUSD < 0 {
 		return badRequest("daily_budget_usd must be >= 0")
 	}
 	if in.MaxAutoDeploysPerDay < 0 {
 		return badRequest("max_auto_deploys_per_day must be >= 0")
+	}
+	if in.MaxIterations != 0 && (in.MaxIterations < MinMaxIterations || in.MaxIterations > MaxMaxIterations) {
+		return badRequest("max_iterations must be 0 (trigger default) or between %d and %d", MinMaxIterations, MaxMaxIterations)
 	}
 	in.StrategyIDs = dedupe(in.StrategyIDs)
 	for _, sid := range in.StrategyIDs {
@@ -230,6 +254,7 @@ func applyInput(a *entities.Agent, in AgentInput) {
 	a.WebhookTargetIDs = datatypes.JSONSlice[uint](in.WebhookTargetIDs)
 	a.DailyBudgetUSD = in.DailyBudgetUSD
 	a.MaxAutoDeploysPerDay = in.MaxAutoDeploysPerDay
+	a.MaxIterations = in.MaxIterations
 }
 
 func (u *UseCase) view(ctx context.Context, a entities.Agent, killSwitch bool) (AgentView, error) {

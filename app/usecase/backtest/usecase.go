@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"go-trade-bot/app/strategies"
 	"go-trade-bot/app/strategies/script"
 	signal_usecase "go-trade-bot/app/usecase/signal"
+	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/feed"
 	"go-trade-bot/internal/indicators"
 	"go-trade-bot/internal/memcache"
@@ -156,6 +158,10 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 	}
 	strategyName = strat.Name
 
+	if err := u.requireCandles(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate); err != nil {
+		return entities.BacktestRun{}, err
+	}
+
 	var executionTrace []script.TraceRecord
 	tradeLog, err := u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, req.StartDate, req.EndDate, req.InitialCapital, req.FillPolicy, &executionTrace)
 	if err != nil {
@@ -294,6 +300,10 @@ func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat e
 	}
 
 	strategyName = strat.Name
+
+	if err := u.requireCandles(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate); err != nil {
+		return entities.BacktestRun{}, err
+	}
 
 	periodsPerYear := periodsPerYearForTimeframe(req.Timeframe)
 
@@ -620,6 +630,26 @@ func (u *BacktestUseCase) executeReplay(
 
 	driver := engine.NewReplayDriver(replayFeed, simExchange, eng, stratImpl, strat, symbol, strategies.ModeBacktest, signalRepo)
 	return driver.Run(ctx)
+}
+
+// requireCandles fails a backtest loudly (a 400 validation error) when the
+// replay range holds zero candles for (symbol, timeframe), instead of letting
+// it "succeed" with 0 trades (fix-02 B2). The message lists what IS stored
+// for the symbol so the caller can pick a covered timeframe/range.
+func (u *BacktestUseCase) requireCandles(ctx context.Context, symbol, timeframe string, from, to time.Time) error {
+	n, err := u.candleRepo.CountInRange(ctx, symbol, timeframe, from, to)
+	if err != nil {
+		return fmt.Errorf("failed to count %s %s candles: %w", symbol, timeframe, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	available := "unknown"
+	if cov, cErr := u.candleRepo.Coverage(ctx, symbol); cErr == nil {
+		available = candle.FormatCoverage(cov)
+	}
+	return customerror.New(http.StatusBadRequest, fmt.Sprintf("no %s %s candles in %s..%s; available: %s",
+		symbol, timeframe, from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02"), available))
 }
 
 func (u *BacktestUseCase) pruneReports(ctx context.Context, strategyID uint) {

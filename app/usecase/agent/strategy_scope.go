@@ -23,21 +23,16 @@ func (u AgentUseCase) inWriteScope(ctx context.Context, agent entities.Agent, s 
 	if s.CreatedByAgentID != nil && *s.CreatedByAgentID == agent.ID {
 		return nil
 	}
-	bound, err := u.isBound(ctx, agent.ID, s.ID)
+	bindings, err := u.Platform.ListBindingsByAgent(ctx, agent.ID)
 	if err != nil {
 		return fmt.Errorf("could not check agent %q's bindings: %w", agent.Name, err)
 	}
-	if bound {
-		return nil
+	bound := make(map[uint]bool, len(bindings))
+	for _, b := range bindings {
+		bound[b.StrategyID] = true
 	}
-	if s.ChallengerOfID != nil {
-		bound, err := u.isBound(ctx, agent.ID, *s.ChallengerOfID)
-		if err != nil {
-			return fmt.Errorf("could not check agent %q's bindings: %w", agent.Name, err)
-		}
-		if bound {
-			return nil
-		}
+	if StrategyInScope(agent.ID, bound, s) {
+		return nil
 	}
 	return outOfScope
 }

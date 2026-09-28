@@ -235,3 +235,21 @@ func TestUnifiedDiff(t *testing.T) {
 	_, note = unifiedDiff("same\n", "same\n")
 	assert.Equal(t, "No changes.", note)
 }
+
+// maxPFData serves a backtest whose profit factor is the math.MaxFloat64
+// sentinel the backtest usecase persists for "no losing trades".
+type maxPFData struct{ fakeData }
+
+func (maxPFData) BacktestRun(_ context.Context, _ uint) (Series, error) {
+	return Series{Label: "Backtest #29", Metrics: Metrics{WinRatePct: 100, ProfitFactor: math.MaxFloat64, TotalTrades: 1}}, nil
+}
+
+// Regression (E2E run #55): the MaxFloat64 sentinel rendered as a 309-digit
+// number that overflowed its KPI card.
+func TestRender_ProfitFactorSentinelRendersAsInfinity(t *testing.T) {
+	b := block(t, TypeKPIGrid, map[string]any{"source": map[string]any{"kind": "backtest_run", "id": 29}, "metrics": []string{"profit_factor"}})
+	html, err := NewHTMLRenderer(maxPFData{}).Render(context.Background(), meta(), []Block{b})
+	require.NoError(t, err)
+	assert.Contains(t, html, ">∞<")
+	assert.NotContains(t, html, "17976931348623157")
+}

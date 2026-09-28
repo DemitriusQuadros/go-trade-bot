@@ -161,8 +161,9 @@ func (g *GateRunner) Run(ctx context.Context, target entities.Strategy, candidat
 	}
 	expected := int64(to.Sub(from) / step)
 	if expected <= 0 || float64(have) < minHistoryCoverage*float64(expected) {
-		out.Result = deploygate.InsufficientHistory(fmt.Sprintf("%s %s has %d candles between %s and %s, need at least %.0f%% of %d - import more history first",
-			symbol, tf, have, from.Format(time.RFC3339), to.Format(time.RFC3339), minHistoryCoverage*100, expected))
+		out.Result = deploygate.InsufficientHistory(fmt.Sprintf("%s %s has %d candles between %s and %s, need at least %.0f%% of %d - import more history first%s",
+			symbol, tf, have, from.Format(time.RFC3339), to.Format(time.RFC3339), minHistoryCoverage*100, expected,
+			coverageSuffix(ctx, g.Candles, symbol)))
 		return out, nil
 	}
 

@@ -17,6 +17,7 @@ import (
 	agentworker "go-trade-bot/app/workers/agent"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/lock"
+	"go-trade-bot/internal/marketstatus"
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
 	"go-trade-bot/internal/report/agentreport"
@@ -53,8 +54,12 @@ var AgentPlatformModule = fx.Module("agentplatform",
 			worker agentworker.AgentWorker,
 			settings settings_repo.Repository,
 			n *notifier.MultiTargetNotifier,
+			cfg *configuration.Configuration,
 		) *platformusecase.UseCase {
-			return platformusecase.NewUseCase(platform, strategies, runs, worker, settings, n)
+			uc := platformusecase.NewUseCase(platform, strategies, runs, worker, settings, n)
+			// C-01 §6: the market-watch status snapshot cmd/agent writes to Redis.
+			uc.SetMarketStatusReader(marketstatus.NewRedisStoreFromAddr(cfg.Redis.Addr))
+			return uc
 		},
 		func(u *platformusecase.UseCase) agentshandler.UseCase { return u },
 		func(u *platformusecase.UseCase) agentreports.UseCase { return u },

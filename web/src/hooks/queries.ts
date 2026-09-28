@@ -44,6 +44,9 @@ export const QUERY_KEYS = {
   agent: (id: number) => ['agents', id],
   agentRunsForAgent: (id: number) => ['agents', id, 'runs'],
   agentUsage: (id: number, days: number) => ['agents', id, 'usage', days],
+  // Deliberately NOT under the ['agents'] prefix: agent mutations
+  // invalidate that prefix and shouldn't refetch the market status.
+  agentMarketSymbols: ['agentMarketSymbols'],
   agentReports: (filter?: AgentReportFilter) => (filter ? ['agentReports', filter] : ['agentReports']),
   agentReport: (id: number) => ['agentReports', 'detail', id],
   webhookTargets: ['webhookTargets'],
@@ -426,6 +429,15 @@ export function useRunAgent() {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.agentRunsForAgent(id) });
       qc.invalidateQueries({ queryKey: QUERY_KEYS.agents });
     },
+  });
+}
+
+// C-01 §6 / C-02 §5: market-watch status, polled every 60s.
+export function useMarketSymbols() {
+  return useQuery({
+    queryKey: QUERY_KEYS.agentMarketSymbols,
+    queryFn: ({ signal }) => api.getMarketSymbols({ signal }),
+    refetchInterval: 60_000,
   });
 }
 

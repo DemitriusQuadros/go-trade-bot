@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"go-trade-bot/app/entities"
+	agentplatformrepo "go-trade-bot/app/repository/agentplatform"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/modelprovider"
 
@@ -354,4 +355,123 @@ func TestRunBacktestTool_SucceedsForArbitraryExistingStrategy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, entities.AgentRunOK, run.Status)
 	backtestUC.AssertExpectations(t)
+}
+
+// --- fix-02 B1: iteration cap + forced final turn ---------------------------
+
+func setupCapRun(t *testing.T) (*agentusecase.AgentUseCase, *mockModelProvider, *mockAgentRepository) {
+	t.Helper()
+	uc, model, repo, strategyUC, _ := newBareAgentUseCase()
+	repo.On("GetInstruction", mock.Anything).Return(entities.AgentInstruction{}, nil)
+	repo.On("CreateRun", mock.Anything, mock.Anything).Return(entities.AgentRun{ID: 1}, nil)
+	repo.On("UpdateRun", mock.Anything, mock.Anything).Return(nil)
+	strategyUC.On("GetAll", mock.Anything).Return([]entities.Strategy{}, nil)
+	// Every turn that is offered tools keeps calling a tool.
+	model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
+		return len(req.Tools) > 0
+	})).Return(modelprovider.CompletionResult{
+		StopReason: "tool_use",
+		ToolCalls:  []modelprovider.ToolCall{{ID: "1", Name: "list_strategies", Args: rawArgs(map[string]any{})}},
+	}, nil)
+	return uc, model, repo
+}
+
+func isForcedFinalTurn(req modelprovider.CompletionRequest) bool {
+	last := req.Messages[len(req.Messages)-1]
+	return len(req.Tools) == 0 && last.Role == "user" &&
+		last.Content == "Iteration limit reached - give your final answer now, no more tool calls."
+}
+
+func TestRun_HitsCapThenAnswersInForcedTurn_IsOK(t *testing.T) {
+	uc, model, _ := setupCapRun(t)
+	uc.MaxToolLoopIterations = 3
+	model.On("Complete", mock.Anything, mock.MatchedBy(isForcedFinalTurn)).
+		Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "Done: 2 backtests, report written."}, nil).Once()
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "analyse", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, entities.AgentRunOK, run.Status)
+	assert.True(t, run.HitIterationCap)
+	assert.Equal(t, "Done: 2 backtests, report written.", run.ResponseText)
+	assert.Empty(t, run.ErrorMessage)
+	model.AssertNumberOfCalls(t, "Complete", 4) // 3 tool turns + 1 forced turn
+}
+
+func TestRun_ForcedTurnErrors_IsError(t *testing.T) {
+	uc, model, _ := setupCapRun(t)
+	uc.MaxToolLoopIterations = 2
+	model.On("Complete", mock.Anything, mock.MatchedBy(isForcedFinalTurn)).
+		Return(modelprovider.CompletionResult{}, assert.AnError).Once()
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "analyse", nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, entities.AgentRunError, run.Status)
+	assert.False(t, run.HitIterationCap)
+	assert.Contains(t, run.ErrorMessage, "tool loop exceeded 2 iterations")
+	assert.Contains(t, run.ErrorMessage, "forced final answer failed")
+}
+
+func TestRun_ForcedTurnGuardHalt_IsError(t *testing.T) {
+	uc, model, _ := setupCapRun(t)
+	uc.MaxToolLoopIterations = 2
+	guard := &countingGuard{failAfter: 2} // passes the 2 loop checks, halts the forced turn
+	uc.Guard = guard
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "analyse", nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, entities.AgentRunError, run.Status)
+	assert.Contains(t, run.ErrorMessage, "halted")
+	model.AssertNumberOfCalls(t, "Complete", 2)
+}
+
+func TestRun_UnattendedTriggerDefaultCapIs24(t *testing.T) {
+	uc, model, _ := setupCapRun(t)
+	model.On("Complete", mock.Anything, mock.MatchedBy(isForcedFinalTurn)).
+		Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "final"}, nil).Once()
+
+	agent := entities.Agent{ID: 0, Name: "Analyst", Permissions: agentplatformrepo.DefaultAgentPermissions()}
+	run, err := uc.Run(context.Background(), agentusecase.RunRequest{Agent: agent, Trigger: "cron", UserInput: "go"})
+	require.NoError(t, err)
+	assert.True(t, run.HitIterationCap)
+	model.AssertNumberOfCalls(t, "Complete", agentusecase.DefaultUnattendedMaxToolLoopIterations+1)
+}
+
+func TestRun_PerAgentMaxIterationsOverride(t *testing.T) {
+	uc, model, _ := setupCapRun(t)
+	model.On("Complete", mock.Anything, mock.MatchedBy(isForcedFinalTurn)).
+		Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "final"}, nil).Once()
+
+	// The override applies to interactive triggers too (default there is 8).
+	agent := entities.Agent{Name: "Analyst", MaxIterations: 5, Permissions: agentplatformrepo.DefaultAgentPermissions()}
+	run, err := uc.Run(context.Background(), agentusecase.RunRequest{Agent: agent, Trigger: "chat_ui", UserInput: "go"})
+	require.NoError(t, err)
+	assert.Equal(t, entities.AgentRunOK, run.Status)
+	assert.True(t, run.HitIterationCap)
+	model.AssertNumberOfCalls(t, "Complete", 6)
+}
+
+func TestRun_AnswerBeforeCap_DoesNotSetHitIterationCap(t *testing.T) {
+	uc, model, repo, _, _ := newBareAgentUseCase()
+	repo.On("GetInstruction", mock.Anything).Return(entities.AgentInstruction{}, nil)
+	repo.On("CreateRun", mock.Anything, mock.Anything).Return(entities.AgentRun{ID: 1}, nil)
+	repo.On("UpdateRun", mock.Anything, mock.Anything).Return(nil)
+	model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "hi"}, nil).Once()
+
+	run, err := uc.RunToolLoop(context.Background(), "chat_ui", "hello", nil, nil)
+	require.NoError(t, err)
+	assert.False(t, run.HitIterationCap)
+}
+
+// countingGuard allows the first failAfter checks and halts every later one.
+type countingGuard struct {
+	calls     int
+	failAfter int
+}
+
+func (g *countingGuard) Check(_ context.Context, _ entities.Agent) error {
+	g.calls++
+	if g.calls > g.failAfter {
+		return &agentusecase.HaltError{Reason: "kill switch engaged"}
+	}
+	return nil
 }

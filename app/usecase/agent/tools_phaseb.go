@@ -898,6 +898,9 @@ type ProposalBackend interface {
 // cmd/agent so the three transports stay identical.
 func (u *AgentUseCase) WirePhaseB(wf WalkForwardRunner, candles CandleCounter, proposals ProposalBackend, forward ClosedSignalReader, validator ScriptValidator) {
 	u.Gate = NewGateRunner(wf, candles, proposals)
+	if cov, ok := candles.(CandleCoverageReader); ok {
+		u.Coverage = cov
+	}
 	u.Proposals = proposals
 	u.ForwardTest = forward
 	u.Validator = validator

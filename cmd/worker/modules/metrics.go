@@ -145,6 +145,7 @@ var MetricsModule = fx.Module("metrics",
 		cfgs = append(cfgs, Phase3Metrics...)
 		cfgs = append(cfgs, ScriptingMetrics...)
 		cfgs = append(cfgs, DryRunMetrics...)
+		cfgs = append(cfgs, AgentBridgeMetrics...)
 		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

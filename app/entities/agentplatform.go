@@ -1,7 +1,6 @@
 package entities
 
 import (
-	"encoding/json"
 	"time"
 
 	"gorm.io/datatypes"
@@ -21,11 +20,12 @@ const (
 	PermCreateStrategy AgentPermission = "create_strategy" // create_strategy (always testing + backtest/dryrun, max 3/day)
 	PermProposeLive    AgentPermission = "propose_live"    // propose_promotion (operator approval required in the web UI)
 	PermNotify         AgentPermission = "notify"          // notify tool
+	PermChain          AgentPermission = "chain"           // trigger_agent (Phase C): start another agent's run with a message, max 3 per run
 )
 
 // AllAgentPermissions is every permission the API accepts, in display order.
 var AllAgentPermissions = []AgentPermission{
-	PermRead, PermBacktest, PermOptimize, PermEditTesting, PermCreateStrategy, PermProposeLive, PermNotify,
+	PermRead, PermBacktest, PermOptimize, PermEditTesting, PermCreateStrategy, PermProposeLive, PermNotify, PermChain,
 }
 
 // IsValidAgentPermission reports whether p is a known permission.
@@ -38,13 +38,18 @@ func IsValidAgentPermission(p string) bool {
 	return false
 }
 
-// AgentTriggers is the JSON shape stored in Agent.Triggers. Only Cron is
-// acted upon in Phase A; the rest are stored for Phase C.
+// AgentTriggers is the JSON shape stored in Agent.Triggers (and the REST
+// `triggers` object - the agents-platform C-01 §1 contract). Cron is served
+// by cmd/agent's cron provider; Events by the worker->agents bridge and the
+// sweeper; Market by the market watcher; ChainFrom by the agent:run
+// processor after a source run finishes. See agenttriggers.go for the element
+// types, defaults and the backward-compatible decoding of the old
+// `events: ["..."]` / `chain_from: [1,2]` forms.
 type AgentTriggers struct {
-	Cron      []string          `json:"cron,omitempty"`       // standard 5-field cron specs, UTC
-	Events    []string          `json:"events,omitempty"`     // Phase C; stored, ignored in Phase A
-	Market    []json.RawMessage `json:"market,omitempty"`     // Phase C
-	ChainFrom []uint            `json:"chain_from,omitempty"` // Phase C
+	Cron      []string       `json:"cron,omitempty"` // standard 5-field cron specs, UTC
+	Events    []EventTrigger `json:"events,omitempty"`
+	Market    []MarketRule   `json:"market,omitempty"`
+	ChainFrom []ChainTrigger `json:"chain_from,omitempty"`
 }
 
 // Agent is a configurable agent persona. Exactly one row has IsDefault=true
@@ -60,10 +65,14 @@ type Agent struct {
 	WebhookTargetIDs     datatypes.JSONSlice[uint]   `gorm:"type:jsonb"`
 	DailyBudgetUSD       float64                     // 0 = no budget limit
 	MaxAutoDeploysPerDay int                         // deploy_to_testing auto-deploys per UTC day; 0 = auto-deploy disabled
-	Paused               bool
-	IsDefault            bool // exactly one row: the "Copilot" persona
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// MaxIterations caps the run's tool loop (fix-02 B1). 0 = the trigger
+	// default (8 for chat_ui/mcp_tool, 24 for unattended triggers); otherwise
+	// 4..50 (validated in app/usecase/agentplatform).
+	MaxIterations int
+	Paused        bool
+	IsDefault     bool // exactly one row: the "Copilot" persona
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // HasPermission reports whether the agent was granted p.
@@ -76,14 +85,11 @@ func (a Agent) HasPermission(p AgentPermission) bool {
 	return false
 }
 
-// ParsedTriggers decodes Triggers, returning the zero value for an empty or
-// malformed column.
+// ParsedTriggers decodes Triggers leniently: an empty column is the zero
+// value, and a malformed element of one list is skipped without losing the
+// others (a bad market rule must never unschedule the agent's cron).
 func (a Agent) ParsedTriggers() AgentTriggers {
-	var t AgentTriggers
-	if len(a.Triggers) > 0 {
-		_ = json.Unmarshal(a.Triggers, &t)
-	}
-	return t
+	return ParseTriggersLenient(a.Triggers)
 }
 
 // DefaultAgentName is the fixed name of the IsDefault persona.

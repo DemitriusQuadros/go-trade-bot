@@ -171,6 +171,14 @@ type workerStack struct {
 
 func newWorkerStack(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool) *workerStack {
 	t.Helper()
+	return newWorkerStackWithSender(t, mode, ceiling, testnet, allowRealOrders, nil)
+}
+
+// newWorkerStackWithSender is newWorkerStack with the NotificationSender
+// the trading path receives built by sender (nil = the capture notifier
+// itself). Used by the agents-platform C-01 bridge fan-out test.
+func newWorkerStackWithSender(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool, sender func(*captureNotifier) notifier.NotificationSender) *workerStack {
+	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
 	require.NoError(t, err)
@@ -190,7 +198,12 @@ func newWorkerStack(t *testing.T, mode string, ceiling strategies.ExecutionMode,
 			func() *configuration.Configuration { return cfg },
 			func() *gorm.DB { return db },
 			func() exchange.ExchangeClient { return s.real },
-			func() notifier.NotificationSender { return s.notes },
+			func() notifier.NotificationSender {
+				if sender != nil {
+					return sender(s.notes)
+				}
+				return s.notes
+			},
 			func() *metrics.MetricsCollector { return nil },
 		),
 		modules.CacheModule,
@@ -217,7 +230,11 @@ func newWorkerStack(t *testing.T, mode string, ceiling strategies.ExecutionMode,
 	w := new(handlermocks.StrategyWorker)
 	w.On("EnqueueStrategyTask", mock.Anything).Return(nil)
 
-	s.proc = handler.NewStrategyProcessor(nil, w, repo, s.realEng, s.dryRun.Engine, s.notes, ceiling, testnet)
+	var procNotes notifier.NotificationSender = s.notes
+	if sender != nil {
+		procNotes = sender(s.notes)
+	}
+	s.proc = handler.NewStrategyProcessor(nil, w, repo, s.realEng, s.dryRun.Engine, procNotes, ceiling, testnet)
 	return s
 }
 

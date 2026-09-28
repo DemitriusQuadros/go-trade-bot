@@ -55,6 +55,7 @@ func (u AgentUseCase) buildToolRegistry() []Tool {
 		withPermission(u.getBacktestTool(), entities.PermRead),
 		withPermission(u.getOpenPositionsTool(), entities.PermRead),
 		withPermission(u.getPerformanceSnapshotsTool(), entities.PermRead),
+		withPermission(u.getCandleCoverageTool(), entities.PermRead),         // read - fix-02 B2
 		withPermission(u.runBacktestTool(), entities.PermBacktest),           // writes a BacktestRun only, never a Strategy row
 		withPermission(u.listOptimizationsTool(), entities.PermRead),         // read
 		withPermission(u.runOptimizationTool(), entities.PermOptimize),       // writes an OptimizationRun only, never a Strategy row
@@ -73,6 +74,9 @@ func (u AgentUseCase) buildToolRegistry() []Tool {
 		withPermission(u.createStrategyTool(), entities.PermCreateStrategy), // WRITE - new testing strategies (backtest/dryrun), max 3/day
 		u.listProposalsTool(),       // always granted, read-only
 		u.getDeployGateConfigTool(), // always granted, read-only
+		// Phase C-01 §4: starts another agent's (unattended, fully guarded)
+		// run; it cannot act on the exchange or on any strategy itself.
+		withPermission(u.triggerAgentTool(), entities.PermChain),
 	}
 }
 

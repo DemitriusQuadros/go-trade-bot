@@ -116,3 +116,33 @@ func (r SignalRepository) UpdateSimStopEvaluatedAt(orderID uint, evaluatedAt tim
 		Where("id = ?", orderID).
 		Update("sim_stop_evaluated_at", evaluatedAt).Error
 }
+
+// ListClosedBetween returns strategyID's closed signals (with orders) whose
+// close time (UpdatedAt, set when the position is closed - the same basis
+// GetPerformanceInRange uses via orders.updated_at) is in [from, to), oldest
+// close first. Read by cmd/agent's drawdown sweeper (agents-platform C-01
+// §2.2).
+func (r SignalRepository) ListClosedBetween(ctx context.Context, strategyID uint, from, to time.Time) ([]entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.WithContext(ctx).
+		Preload("Orders").
+		Where("strategy_id = ? AND status = ? AND updated_at >= ? AND updated_at < ?", strategyID, entities.Closed, from, to).
+		Order("updated_at ASC, id ASC").
+		Find(&signals).Error
+	return signals, err
+}
+
+// LastOpenedAt returns when strategyID's most recent signal was opened, or
+// nil if it has none (C-01 §2.2 no_signal sweeper).
+func (r SignalRepository) LastOpenedAt(ctx context.Context, strategyID uint) (*time.Time, error) {
+	var s entities.Signal
+	res := r.db.WithContext(ctx).Where("strategy_id = ?", strategyID).Order("created_at DESC").Limit(1).Find(&s)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, nil
+	}
+	t := s.CreatedAt
+	return &t, nil
+}

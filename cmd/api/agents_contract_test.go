@@ -56,6 +56,7 @@ type contractEnv struct {
 	db       *gorm.DB
 	enqueuer *fakeEnqueuer
 	strategy entities.Strategy
+	platform *platformusecase.UseCase
 }
 
 func newContractEnv(t *testing.T) *contractEnv {
@@ -82,7 +83,7 @@ func newContractEnv(t *testing.T) *contractEnv {
 		webhooktargets.NewWebhookTargetsHandler(uc),
 	}
 	router := NewServeMux(routes, &configuration.Configuration{APIToken: testToken})
-	return &contractEnv{router: router, db: db, enqueuer: enq, strategy: strat}
+	return &contractEnv{router: router, db: db, enqueuer: enq, strategy: strat, platform: uc}
 }
 
 func (e *contractEnv) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {

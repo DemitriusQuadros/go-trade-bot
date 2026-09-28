@@ -20,6 +20,7 @@ type PlatformSettingsUpdateRequestDTO struct {
 	PrometheusURL          string            `json:"prometheus_url"`
 	GrafanaURL             string            `json:"grafana_url"`
 	AsynqmonURL            string            `json:"asynqmon_url"`
+	AgentsAsynqmonURL      string            `json:"agents_asynqmon_url"`
 }
 
 // resolveSecret implements the "omitted/empty/masked-placeholder means keep
@@ -53,6 +54,7 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		PrometheusURL:          r.PrometheusURL,
 		GrafanaURL:             r.GrafanaURL,
 		AsynqmonURL:            r.AsynqmonURL,
+		AgentsAsynqmonURL:      r.AgentsAsynqmonURL,
 		// The agents kill switch is NOT settable through PUT /settings (any
 		// agents_paused in the body is ignored): it is owned by
 		// PUT /agents/kill-switch, so a normal settings save can never flip

@@ -9,21 +9,16 @@ import {
   Download,
   Settings,
   HelpCircle,
-  ExternalLink,
-  BarChart3,
-  LineChart,
   Terminal,
-  ListChecks,
   Bot,
   FileText,
   GitPullRequest,
 } from 'lucide-react';
-import { usePendingProposalCount, usePlatformSettings } from '@/hooks/queries';
+import { usePendingProposalCount } from '@/hooks/queries';
 import { AgentKillSwitch } from '@/components/domain/AgentKillSwitch';
 
 export function MiniSidebar() {
   const [expanded, setExpanded] = useState(false);
-  const { data: settings } = usePlatformSettings();
   // Polled every 60s; approve/reject invalidate it immediately (B-02 §2).
   const { data: pendingProposals = 0 } = usePendingProposalCount();
 
@@ -115,38 +110,8 @@ export function MiniSidebar() {
           dataWalkthrough="nav-help"
         />
 
-        {/* Monitoring External Links */}
-        {(settings?.prometheus_url || settings?.grafana_url || settings?.asynqmon_url) && (
-          <>
-            <GroupLabel expanded={expanded}>Monitoring</GroupLabel>
-            <div className="flex flex-col gap-1">
-              {settings?.prometheus_url && (
-                <ExternalNavItem
-                  href={settings.prometheus_url}
-                  icon={<BarChart3 className="w-5 h-5" />}
-                  label="Prometheus"
-                  expanded={expanded}
-                />
-              )}
-              {settings?.grafana_url && (
-                <ExternalNavItem
-                  href={settings.grafana_url}
-                  icon={<LineChart className="w-5 h-5" />}
-                  label="Grafana"
-                  expanded={expanded}
-                />
-              )}
-              {settings?.asynqmon_url && (
-                <ExternalNavItem
-                  href={settings.asynqmon_url}
-                  icon={<ListChecks className="w-5 h-5" />}
-                  label="Asynqmon"
-                  expanded={expanded}
-                />
-              )}
-            </div>
-          </>
-        )}
+        {/* External monitoring links (Prometheus, Grafana, Asynqmon) live in
+            the top bar's Monitoring menu (AppLayout) - not here. */}
       </nav>
 
       {/* Global agents kill switch - pinned to the footer so it's reachable
@@ -241,38 +206,5 @@ function NavItem({
         </span>
       )}
     </NavLink>
-  );
-}
-
-function ExternalNavItem({
-  href,
-  icon,
-  label,
-  expanded,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  expanded: boolean;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`${label} (opens in new tab)`}
-      className="flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 overflow-hidden transition-colors"
-      title={expanded ? undefined : label}
-    >
-      <div className="shrink-0">{icon}</div>
-      <span
-        className={`text-sm whitespace-nowrap transition-opacity duration-300 flex items-center gap-1.5 ${
-          expanded ? 'opacity-100' : 'opacity-0 w-0'
-        }`}
-      >
-        {label}
-        <ExternalLink className="w-3 h-3 opacity-60" />
-      </span>
-    </a>
   );
 }

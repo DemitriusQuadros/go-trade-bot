@@ -44,16 +44,29 @@ func NewGormRepository(db *gorm.DB) *GormRepository {
 	return &GormRepository{db: db}
 }
 
+// GetInstruction returns the house-rules singleton, or an empty instruction
+// when the row does not exist. Uses Limit(1).Find rather than First so a
+// missing row is not a gorm "record not found" error - First logged one on
+// every agent run (fix-02 B4).
 func (r *GormRepository) GetInstruction(ctx context.Context) (entities.AgentInstruction, error) {
-	var instruction entities.AgentInstruction
-	err := r.db.WithContext(ctx).First(&instruction, singletonInstructionID).Error
-	if err == gorm.ErrRecordNotFound {
-		return entities.AgentInstruction{}, nil
-	}
-	if err != nil {
+	var rows []entities.AgentInstruction
+	if err := r.db.WithContext(ctx).Where("id = ?", singletonInstructionID).Limit(1).Find(&rows).Error; err != nil {
 		return entities.AgentInstruction{}, err
 	}
-	return instruction, nil
+	if len(rows) == 0 {
+		return entities.AgentInstruction{}, nil
+	}
+	return rows[0], nil
+}
+
+// EnsureInstruction seeds an empty house-rules row (ID 1) if none exists;
+// an existing row is never touched. Called next to EnsureDefaultAgent in
+// every Migrate site (fix-02 B4).
+func (r *GormRepository) EnsureInstruction(ctx context.Context) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoNothing: true,
+	}).Create(&entities.AgentInstruction{ID: singletonInstructionID, UpdatedAt: time.Now()}).Error
 }
 
 // SaveInstruction upserts row ID 1 unconditionally - there is never a

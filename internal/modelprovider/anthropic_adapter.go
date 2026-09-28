@@ -57,7 +57,13 @@ func (a *AnthropicAdapter) Complete(ctx context.Context, req CompletionRequest) 
 		}
 	}
 
-	tools := make([]anthropic.ToolUnionParam, 0, len(req.Tools))
+	// nil (not an empty non-nil slice) when no tools are offered, so the
+	// omitzero "tools" field is left out of the request entirely - the
+	// agent's forced final turn at the iteration cap sends no tools.
+	var tools []anthropic.ToolUnionParam
+	if len(req.Tools) > 0 {
+		tools = make([]anthropic.ToolUnionParam, 0, len(req.Tools))
+	}
 	for _, t := range req.Tools {
 		schema, err := toAnthropicInputSchema(t.InputSchema)
 		if err != nil {

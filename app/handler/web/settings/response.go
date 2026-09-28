@@ -57,6 +57,7 @@ type SettingsResponseDTO struct {
 	PrometheusURL          string            `json:"prometheus_url"`
 	GrafanaURL             string            `json:"grafana_url"`
 	AsynqmonURL            string            `json:"asynqmon_url"`
+	AgentsAsynqmonURL      string            `json:"agents_asynqmon_url"`
 	// AgentsPaused is the agents kill switch - read-only here; written via
 	// PUT /agents/kill-switch.
 	AgentsPaused bool `json:"agents_paused"`
@@ -76,10 +77,11 @@ func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
 			FeePct:      s.DryRunFeePct,
 			FillDelayMs: s.DryRunFillDelayMs,
 		},
-		PrometheusURL: s.PrometheusURL,
-		GrafanaURL:    s.GrafanaURL,
-		AsynqmonURL:   s.AsynqmonURL,
-		AgentsPaused:  s.AgentsPaused,
+		PrometheusURL:     s.PrometheusURL,
+		GrafanaURL:        s.GrafanaURL,
+		AsynqmonURL:       s.AsynqmonURL,
+		AgentsAsynqmonURL: s.AgentsAsynqmonURL,
+		AgentsPaused:      s.AgentsPaused,
 	}
 }
 

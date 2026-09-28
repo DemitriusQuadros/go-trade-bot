@@ -44,9 +44,45 @@ var strategyAuthoringDoc string
 // handler.
 var StrategyAuthoringDoc = strategyAuthoringDoc
 
-// DefaultMaxToolLoopIterations is used when AgentUseCase.MaxToolLoopIterations
-// is left at its zero value.
+// DefaultMaxToolLoopIterations is the tool-loop cap for interactive triggers
+// (chat_ui, mcp_tool), used when AgentUseCase.MaxToolLoopIterations is left at
+// its zero value and the agent has no MaxIterations override.
 const DefaultMaxToolLoopIterations = 8
+
+// DefaultUnattendedMaxToolLoopIterations is the tool-loop cap for unattended
+// triggers (cron, manual, event, market, chain), used when
+// AgentUseCase.UnattendedMaxToolLoopIterations is zero and the agent has no
+// MaxIterations override (fix-02 B1: a real analysis run - reads, backtests,
+// journals, a report and a notify - needs well over 8 model turns).
+const DefaultUnattendedMaxToolLoopIterations = 24
+
+// iterationCapMessage is appended as a user message for the forced,
+// tools-disabled final turn once the tool loop hits its cap.
+const iterationCapMessage = "Iteration limit reached - give your final answer now, no more tool calls."
+
+// isInteractiveTrigger reports whether trigger is a human-in-the-loop one
+// (the low cap applies).
+func isInteractiveTrigger(trigger string) bool {
+	return trigger == "chat_ui" || trigger == "mcp_tool"
+}
+
+// maxIterationsFor resolves the tool-loop cap for one run: the agent's own
+// MaxIterations when set, otherwise the trigger default.
+func (u AgentUseCase) maxIterationsFor(agent entities.Agent, trigger string) int {
+	if agent.MaxIterations > 0 {
+		return agent.MaxIterations
+	}
+	if isInteractiveTrigger(trigger) {
+		if u.MaxToolLoopIterations > 0 {
+			return u.MaxToolLoopIterations
+		}
+		return DefaultMaxToolLoopIterations
+	}
+	if u.UnattendedMaxToolLoopIterations > 0 {
+		return u.UnattendedMaxToolLoopIterations
+	}
+	return DefaultUnattendedMaxToolLoopIterations
+}
 
 // Tools exposes the closed tool registry (see tools.go's buildToolRegistry)
 // to cmd/mcp's transport layer (Backend Spec 04), which maps each
@@ -58,13 +94,14 @@ const DefaultMaxToolLoopIterations = 8
 // permissions - tools it isn't granted are not registered, and every
 // permission-gated tool re-checks the default agent's current permissions
 // at call time (the operator may edit them while cmd/mcp runs). The notify
-// tool is never exposed over MCP. write_report/write_journal invoked over
+// tool is never exposed over MCP, and neither is trigger_agent (it only
+// exists inside an agent run). write_report/write_journal invoked over
 // MCP attribute to the default agent (see tools_platform.go).
 func (u AgentUseCase) Tools() []Tool {
 	registered, lookupErr := u.DefaultAgent(context.Background())
 	var out []Tool
 	for _, t := range u.buildToolRegistry() {
-		if t.Def.Name == notifyToolName {
+		if t.Def.Name == notifyToolName || t.Def.Name == triggerAgentToolName {
 			continue
 		}
 		if t.Permission == "" {
@@ -154,7 +191,11 @@ type AgentUseCase struct {
 	// NewAgentUseCase's signature.
 	Optimize              OptimizeUseCase
 	OptimizeWorker        OptimizeWorker
-	MaxToolLoopIterations int // e.g. 8; hard cap, not configurable per-call
+	MaxToolLoopIterations int // interactive-trigger cap (chat_ui, mcp_tool); 0 = DefaultMaxToolLoopIterations
+	// UnattendedMaxToolLoopIterations is the cap for every other trigger;
+	// 0 = DefaultUnattendedMaxToolLoopIterations. Agent.MaxIterations > 0
+	// overrides both.
+	UnattendedMaxToolLoopIterations int
 	// Provider/ModelName are recorded onto every AgentRun for audit
 	// purposes (Backend Spec 02's AgentRun.Provider/Model) - set once at
 	// construction from configuration.Agent, not per-call.
@@ -174,6 +215,16 @@ type AgentUseCase struct {
 	Guard      RunGuard
 	Lock       StrategyLock
 	APIBaseURL string // for report/proposal deep links (<APIBaseURL>/agents/reports/<id>, /agents/proposals/<id>)
+
+	// Coverage backs get_candle_coverage (fix-02 B2). Set by WirePhaseB
+	// when the candle repository supports it; nil = the tool reports "not
+	// available".
+	Coverage CandleCoverageReader
+
+	// Chain (C-01 §4) starts chained runs for the trigger_agent tool behind
+	// the shared chain guards (app/workers/agent.ChainLauncher). nil =
+	// trigger_agent reports "not available" (cmd/api chat, cmd/mcp).
+	Chain ChainLauncher
 
 	// Agents platform Phase B-01 dependencies - optional like the above:
 	// nil Gate/Proposals = deploy_to_testing / propose_promotion /
@@ -353,6 +404,9 @@ type RunRequest struct {
 	StrategyID   *uint       // context strategy (chat selection or the single binding being evaluated)
 	ChainDepth   int
 	ParentRunID  *uint
+	// ChainPath is every agent already in this chain, source-first (chain
+	// runs only, C-01 §4); trigger_agent refuses any agent in it.
+	ChainPath []uint
 }
 
 // DefaultAgent returns the default "Copilot" persona. Without a Platform
@@ -425,16 +479,15 @@ func (u AgentUseCase) modelFor(agent entities.Agent) (modelprovider.ModelProvide
 // re-checks the RunGuard (kill switch / pause / budget) before EVERY model
 // call, accounts token usage and cost per call, executes tool calls
 // (re-checking permissions at dispatch), and repeats until the model stops
-// calling tools or MaxToolLoopIterations is hit. AgentRun is persisted
+// calling tools or the iteration cap (maxIterationsFor) is hit. At the cap
+// the model gets one forced final turn with no tools; if that turn answers
+// the run is ok with HitIterationCap set. AgentRun is persisted
 // incrementally after every tool call so a crash mid-loop leaves a partial
 // audit trail. Strategy writer locks acquired during the run are released
 // when Run returns.
 func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRun, error) {
 	agent := req.Agent
-	maxIterations := u.MaxToolLoopIterations
-	if maxIterations <= 0 {
-		maxIterations = DefaultMaxToolLoopIterations
-	}
+	maxIterations := u.maxIterationsFor(agent, req.Trigger)
 
 	instruction, err := u.Repository.GetInstruction(ctx)
 	if err != nil {
@@ -466,12 +519,13 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 		return entities.AgentRun{}, fmt.Errorf("agent: failed to create run: %w", err)
 	}
 
-	scope := &runScope{agent: agent, runID: run.ID, locks: map[uint]bool{}}
+	scope := &runScope{agent: agent, runID: run.ID, locks: map[uint]bool{}, chainDepth: req.ChainDepth, chainPath: append([]uint(nil), req.ChainPath...)}
 	ctx = withRunScope(ctx, scope)
 	defer u.releaseLocks(scope)
 
 	var records []toolCallRecord
 	finish := func(status entities.AgentRunStatus, errMsg string) (entities.AgentRun, error) {
+		run.ReportIDs, run.NotificationsSent = scope.outcome()
 		run.Status = status
 		run.ErrorMessage = errMsg
 		run.FinishedAt = time.Now()
@@ -602,14 +656,38 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 				run.ToolCallsJSON = datatypes.JSON(b)
 			}
 			if uErr := u.Repository.UpdateRun(ctx, run); uErr != nil {
+				run.ReportIDs, run.NotificationsSent = scope.outcome()
 				return run, fmt.Errorf("agent: failed to persist incremental run state: %w", uErr)
 			}
 		}
 	}
 
-	// AC#6: exceeding the iteration cap without end_turn is an explicit
-	// error, never a silently-returned partial/misleading success.
-	return finish(entities.AgentRunError, fmt.Sprintf("tool loop exceeded %d iterations", maxIterations))
+	// fix-02 B1: at the cap, give the model ONE final turn with tools
+	// disabled so a run that finished its work can still deliver its answer.
+	// The guard (kill switch / pause / budget) still applies before it. Only
+	// if this turn also fails (or returns no text) is the run an error -
+	// never a silently-returned partial/misleading success (AC#6).
+	capMsg := fmt.Sprintf("tool loop exceeded %d iterations", maxIterations)
+	if gErr := u.CheckGuard(ctx, agent); gErr != nil {
+		return finish(entities.AgentRunError, "halted: "+gErr.Error())
+	}
+	messages = append(messages, modelprovider.Message{Role: "user", Content: iterationCapMessage})
+	result, err := model.Complete(ctx, modelprovider.CompletionRequest{
+		System:   system,
+		Messages: messages,
+		Tools:    nil,
+	})
+	if err != nil {
+		return finish(entities.AgentRunError, fmt.Sprintf("%s; forced final answer failed: %v", capMsg, err))
+	}
+	u.recordUsage(ctx, &run, agent, providerName, modelName, result.Usage)
+	if strings.TrimSpace(result.Text) == "" {
+		return finish(entities.AgentRunError, capMsg+"; forced final answer returned no text")
+	}
+	run.ResponseText = result.Text
+	run.HitIterationCap = true
+	u.onRunSucceeded(ctx, agent, req, run)
+	return finish(entities.AgentRunOK, "")
 }
 
 // toolGranted reports whether agent may use t ("" permission = always).

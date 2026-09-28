@@ -33,6 +33,7 @@ import { ScriptVersion,
   AgentRequest,
   AgentRunEnqueuedResponse,
   AgentUsage,
+  MarketSymbolsResponse,
   AgentReportSummary,
   AgentReport,
   AgentReportFilter,
@@ -310,6 +311,12 @@ export const api = {
   getAgentUsage: (id: number, days = 30, opts?: { signal?: AbortSignal }) =>
     api.get<AgentUsage>(`/agents/${id}/usage?days=${days}`, opts),
 
+  // C-01 §6: cmd/agent's market-watch status snapshot (read from Redis by cmd/api).
+  getMarketSymbols: async (opts?: { signal?: AbortSignal }): Promise<MarketSymbolsResponse> => {
+    const body = await api.get<MarketSymbolsResponse | null>('/agents/market-symbols', opts);
+    return { symbols: body?.symbols ?? [], runtime_seen_at: body?.runtime_seen_at ?? null };
+  },
+
   // Global agents kill switch. PUT /settings ignores agents_paused; this is
   // the only way to change it.
   setAgentsKillSwitch: (paused: boolean) =>
@@ -387,6 +394,18 @@ function buildQuery(params: Record<string, string | number | undefined | null>):
   }
   const str = qs.toString();
   return str ? `?${str}` : '';
+}
+
+// apiErrorCode returns the machine-readable `error` code of a
+// {"error": code, "message": text} API error body, or null.
+export function apiErrorCode(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const parsed = JSON.parse(err.body ?? '') as { error?: unknown };
+    return typeof parsed.error === 'string' && parsed.error ? parsed.error : null;
+  } catch {
+    return null;
+  }
 }
 
 // apiErrorMessage extracts the human-readable message from a failed call.

@@ -27,9 +27,48 @@ type runScope struct {
 	agent entities.Agent
 	runID uint
 
+	// Chain position of this run (C-01 §4): trigger_agent builds on it.
+	chainDepth int
+	chainPath  []uint
+
 	mu            sync.Mutex
 	locks         map[uint]bool
 	notifications int
+	// Outcome tracking for declarative chains (C-01 §4).
+	reportIDs         []uint
+	notificationsSent int
+	chainCalls        int
+}
+
+// maxChainCallsPerRun is trigger_agent's per-run limit.
+const maxChainCallsPerRun = 3
+
+func (s *runScope) recordReport(id uint) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reportIDs = append(s.reportIDs, id)
+}
+
+func (s *runScope) recordNotificationSent() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notificationsSent++
+}
+
+func (s *runScope) takeChainSlot() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.chainCalls >= maxChainCallsPerRun {
+		return false
+	}
+	s.chainCalls++
+	return true
+}
+
+func (s *runScope) outcome() ([]uint, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]uint(nil), s.reportIDs...), s.notificationsSent
 }
 
 type runScopeKey struct{}

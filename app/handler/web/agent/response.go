@@ -42,8 +42,13 @@ type AgentRunResponse struct {
 	ResponseText string             `json:"response_text,omitempty"`
 	ToolCalls    []toolCallResponse `json:"tool_calls"`
 	StrategyID   *uint              `json:"strategy_id,omitempty"`
-	StartedAt    string             `json:"started_at"`
-	FinishedAt   string             `json:"finished_at,omitempty"`
+	ChainDepth   int                `json:"chain_depth"`   // C-01 §4
+	ParentRunID  *uint              `json:"parent_run_id"` // C-01 §4; null unless a chain run
+	// HitIterationCap: the answer came from the forced tools-disabled final
+	// turn after the tool loop used its whole budget (fix-02 B1).
+	HitIterationCap bool   `json:"hit_iteration_cap"`
+	StartedAt       string `json:"started_at"`
+	FinishedAt      string `json:"finished_at,omitempty"`
 }
 
 func ToRunResponse(run entities.AgentRun) AgentRunResponse {
@@ -74,6 +79,10 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 		ResponseText: run.ResponseText,
 		ToolCalls:    calls,
 		StrategyID:   run.StrategyID,
+		ChainDepth:   run.ChainDepth,
+		ParentRunID:  run.ParentRunID,
+
+		HitIterationCap: run.HitIterationCap,
 	}
 	if len(run.TriggerDetail) > 0 && json.Valid(run.TriggerDetail) {
 		resp.TriggerDetail = json.RawMessage(run.TriggerDetail)

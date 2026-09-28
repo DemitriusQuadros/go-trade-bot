@@ -5,6 +5,7 @@ import { apiErrorMessage } from '@/api/client';
 import { useDeployGateConfig, useUpdateDeployGateConfig } from '@/hooks/queries';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useToast } from '@/context/ToastContext';
+import { formatDecimal, parseDecimal, parseInteger } from '@/lib/decimal';
 
 // "Deploy gate" section on /settings (B-02 §6): the thresholds the Go
 // deploy gate (B-01 §3) applies before any agent auto-deploy, and records
@@ -19,7 +20,6 @@ interface FieldSpec {
   label: string;
   help: string;
   integer: boolean;
-  step: string;
   // Returns an error message, or null when valid.
   validate: (n: number) => string | null;
 }
@@ -30,7 +30,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Min Sharpe delta',
     help: "Candidate Sharpe ratio must be at least the current version's plus this. 0 = no worse than today.",
     integer: false,
-    step: '0.01',
     validate: () => null,
   },
   {
@@ -38,7 +37,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Max drawdown ratio',
     help: "Candidate max drawdown may be at most this multiple of the current version's (1.10 = up to 10% deeper).",
     integer: false,
-    step: '0.01',
     validate: (n) => (n > 0 ? null : 'Must be greater than 0.'),
   },
   {
@@ -46,7 +44,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Min profit factor',
     help: 'Candidate gross profit divided by gross loss must be at least this. 1.0 = break-even.',
     integer: false,
-    step: '0.01',
     validate: (n) => (n > 0 ? null : 'Must be greater than 0.'),
   },
   {
@@ -54,7 +51,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Min trades',
     help: 'Fewest out-of-sample trades the candidate must make for its numbers to count at all.',
     integer: true,
-    step: '1',
     validate: (n) => (n >= 1 ? null : 'Must be at least 1.'),
   },
   {
@@ -62,7 +58,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Lookback (months)',
     help: 'How much recent history both versions are walk-forward tested over, ending now.',
     integer: true,
-    step: '1',
     validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
   },
   {
@@ -70,7 +65,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Train window (months)',
     help: 'Length of each walk-forward in-sample window.',
     integer: true,
-    step: '1',
     validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
   },
   {
@@ -78,7 +72,6 @@ const FIELDS: FieldSpec[] = [
     label: 'Test window (months)',
     help: 'Length of each out-of-sample window - the metrics above are measured on these.',
     integer: true,
-    step: '1',
     validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
   },
 ];
@@ -95,13 +88,15 @@ const TIMEFRAMES: { value: string; label: string }[] = [
 
 function toForm(c: DeployGateConfig): FormState {
   return {
-    min_sharpe_delta: String(c.min_sharpe_delta ?? 0),
-    max_drawdown_ratio: String(c.max_drawdown_ratio ?? ''),
-    min_profit_factor: String(c.min_profit_factor ?? ''),
-    min_trades: String(c.min_trades ?? ''),
-    lookback_months: String(c.lookback_months ?? ''),
-    train_months: String(c.train_months ?? ''),
-    test_months: String(c.test_months ?? ''),
+    // formatDecimal is String(): always "." and no grouping, whatever the
+    // browser locale - never toLocaleString().
+    min_sharpe_delta: formatDecimal(c.min_sharpe_delta ?? 0),
+    max_drawdown_ratio: formatDecimal(c.max_drawdown_ratio),
+    min_profit_factor: formatDecimal(c.min_profit_factor),
+    min_trades: formatDecimal(c.min_trades),
+    lookback_months: formatDecimal(c.lookback_months),
+    train_months: formatDecimal(c.train_months),
+    test_months: formatDecimal(c.test_months),
     timeframe: c.timeframe ?? '',
   };
 }
@@ -110,14 +105,17 @@ function validateForm(f: FormState): { errors: Partial<Record<NumericKey, string
   const errors: Partial<Record<NumericKey, string>> = {};
   const out: Partial<DeployGateConfig> = { timeframe: f.timeframe };
   for (const field of FIELDS) {
-    const raw = f[field.key].trim();
-    const n = Number(raw);
-    if (raw === '' || !Number.isFinite(n)) {
-      errors[field.key] = 'Enter a number.';
-      continue;
-    }
-    if (field.integer && !Number.isInteger(n)) {
-      errors[field.key] = 'Must be a whole number.';
+    // Explicit, locale-independent parsing (lib/decimal): "1.1" and "1,1"
+    // both mean 1.1; thousands separators / mixed separators are rejected
+    // instead of guessed, so a value is never sent as NaN or 10x off.
+    const raw = f[field.key];
+    const n = field.integer ? parseInteger(raw) : parseDecimal(raw);
+    if (n === null) {
+      if (field.integer && parseDecimal(raw) !== null) {
+        errors[field.key] = 'Must be a whole number.';
+      } else {
+        errors[field.key] = field.integer ? 'Enter a whole number.' : 'Enter a number, e.g. 1.1 or 1,1.';
+      }
       continue;
     }
     const msg = field.validate(n);
@@ -154,10 +152,10 @@ export function DeployGateSection() {
 
   const windowWarning = useMemo(() => {
     if (!form) return null;
-    const lb = Number(form.lookback_months);
-    const tr = Number(form.train_months);
-    const te = Number(form.test_months);
-    if ([lb, tr, te].every((n) => Number.isFinite(n) && n > 0) && tr + te > lb) {
+    const lb = parseInteger(form.lookback_months);
+    const tr = parseInteger(form.train_months);
+    const te = parseInteger(form.test_months);
+    if (lb !== null && tr !== null && te !== null && lb > 0 && tr > 0 && te > 0 && tr + te > lb) {
       return `Train + test (${tr + te} months) is longer than the lookback (${lb} months) - a complete walk-forward window may not fit, and the gate fails when there isn't enough history.`;
     }
     return null;
@@ -228,9 +226,13 @@ export function DeployGateSection() {
                   </label>
                   <input
                     id={id}
-                    type="number"
-                    step={field.step}
-                    min={field.key === 'min_sharpe_delta' ? undefined : field.integer ? 1 : 0}
+                    // Text, not type="number": a number input formats and
+                    // parses with the browser locale (1.1 rendered as "1,1"
+                    // under pt-BR). validateForm parses explicitly instead.
+                    type="text"
+                    inputMode={field.integer ? 'numeric' : 'decimal'}
+                    autoComplete="off"
+                    spellCheck={false}
                     value={form[field.key]}
                     onChange={(e) => set(field.key, e.target.value)}
                     aria-invalid={!!err}

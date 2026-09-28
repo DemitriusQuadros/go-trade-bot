@@ -17,7 +17,7 @@ strategy-example payloads that used to live under `docs/prd/`, `docs/specs/`, `d
 ```bash
 go run cmd/api/main.go        # HTTP API server (port 8080) — also serves the embedded web frontend
 go run cmd/worker/main.go     # Asynq task worker + monitoring UI (port 9191)
-go run cmd/agent/main.go      # Agents runtime: "agents" asynq queue + agent cron scheduler, /metrics on 9194
+go run cmd/agent/main.go      # Agents runtime: "agents" asynq queue + agent cron scheduler, /metrics + Asynqmon on 9194
 ```
 
 Or via Makefile:
@@ -100,6 +100,16 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
   `agent:apply_proposal` holds it, the cycle is held and re-enqueued after 5 s (like the drain gate; if that
   re-enqueue fails the task errors so asynq retries it). A Redis error on acquire **fails open** (the cycle runs
   as before Phase B) because the apply side fails closed - it never writes without the lock.
+  Its `notifier.NotificationSender` is a `notifier.MultiNotifier` (agents-platform C-01 §2.1,
+  `cmd/worker/modules/notifier.go`): the `SwappableNotifier` webhook first (its result is the only one callers
+  see; `Swap` still works) and then the **worker -> agents bridge** `notifier.AgentEventBridge`
+  (`internal/notifier/agent_bridge.go`), which enqueues every non-backtest trade event as `agent:event`
+  (queue `agents`, `MaxRetry(3)`, 30 s timeout) for cmd/agent. **The bridge is fire-and-forget**: `Send`
+  hands the event to a bounded background goroutine (max 32 in flight, extra events dropped), the enqueue has
+  a 2 s timeout, failures are only logged and counted (`agent_bridge_failures_total{reason}`), and it never
+  returns an error or panics - a worker whose Redis is down keeps trading and keeps sending webhooks
+  (`cmd/worker/modules/agent_bridge_fanout_test.go`). This is the only Phase C change in the worker;
+  `app/usecase/signal` and `app/engine` are untouched.
 
 - **agent** — the isolated agents-platform runtime (agents-platform Phase A). Consumes ONLY the asynq
   `agents` queue (`agent:run` tasks - manual runs enqueued by `POST /api/agents/{id}/run`, plus its own cron
@@ -113,9 +123,12 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
   undecorated/swappable client, and `cmd/agent/main_test.go` asserts the fx graph can't resolve one. It
   ignores `MODE`/`CONFIRM_LIVE` entirely. Migrates the same entity list as cmd/api. Also serves
   `agent:apply_proposal` (Phase B, queue `agents`, `MaxRetry(3)`, 2 min timeout) - the ONLY code path that
-  changes a live strategy's code, see "Agents platform (Phase B)" below.
+  changes a live strategy's code, see "Agents platform (Phase B)" below. Phase C also serves `agent:event`,
+  `agent:sweep_events` and runs the market watcher (see "Agents platform (Phase C-01)" below); metrics
+  `agent_triggers_fired_total{kind}`, `agent_trigger_suppressed_total{kind}` (kind = event | market | chain)
+  and the `agent_market_subscriptions` gauge.
 - **mcp** — MCP server exposing the agent tool registry to external MCP clients (stdio or `--transport=http`).
-  MCP tool calls act as the default "Copilot" agent's permissions; `notify` is never exposed over MCP; no
+  MCP tool calls act as the default "Copilot" agent's permissions; `notify` and `trigger_agent` are never exposed over MCP; no
   strategy writer lock is wired here (nil Lock).
 
 Each entry point defines its own `modules/` directory with FX dependency injection modules. The `Migrate`
@@ -204,14 +217,30 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
     kill switch / agent pause / daily budget before EVERY model call (fails closed). New tools
     (`tools_platform.go`): `read_memory`, `write_journal`, `list_reports`, `write_report` (always granted)
     and `notify` (permission `notify`, max 10 per run) - none can touch `entities.Strategy`, orders or
-    settings. `save_strategy_script` (gate unchanged) now takes a one-writer lock per existing strategy;
+    settings. `write_report`'s schema is a per-block-type `oneOf` (each branch pins `type` with a one-value
+    `enum` and lists the required `data` props) plus an example in the description; a block that puts its
+    fields next to `type` instead of under `data` is accepted by moving them into `data`
+    (`agentreport.DecodeBlocksLenient`, logged as `agent: debug:`). `get_candle_coverage {symbol?}`
+    (`tools_coverage.go`, permission `read`) lists stored candles per (symbol, timeframe) from
+    `CandleRepository.Coverage` (one grouped query; `AgentUseCase.Coverage`, set by `WirePhaseB`), and the
+    system prompt tells the model to call it before backtesting.
+  - Tool-loop cap (fix-02 B1): `chat_ui`/`mcp_tool` default to 8 iterations (`MaxToolLoopIterations`),
+    every other trigger (cron, manual, event, market, chain) to 24 (`UnattendedMaxToolLoopIterations`);
+    `Agent.MaxIterations` (REST `max_iterations`, 0 = trigger default, else 4..50) overrides both. At the cap
+    the model gets ONE more turn with no tools and the user message "Iteration limit reached - give your
+    final answer now, no more tool calls." (guard re-checked first); if it answers with text the run is `ok`
+    with `AgentRun.HitIterationCap` (REST `hit_iteration_cap`), otherwise `error`.
+  - House rules: `AgentInstruction` ID 1 is seeded empty by every `Migrate` (api/mcp/agent,
+    `EnsureInstruction`, idempotent); `GetInstruction` uses `Limit(1).Find`, so a missing row is empty
+    content with no gorm "record not found" log. `save_strategy_script` (gate unchanged) now takes a one-writer lock per existing strategy;
     and refuses to update any productive or live-mode strategy on every path (chat, cron/manual, MCP) -
     live changes only ever land via an operator-approved proposal (Phase B).
   - `app/usecase/agentplatform/`: management usecase behind the REST API (validation, next_run_at, usage,
     webhook targets, memory, kill switch).
   - `app/handler/tasks/agent/`: `agent:run` processor + `CronProvider` (one schedule per (agent, cron spec)
     for agents that are not paused and have >=1 binding; nothing while the kill switch is on; fails closed).
-  - `app/workers/agent/`: `agent:run` enqueue helper (queue `agents`).
+  - `app/workers/agent/`: `agent:run` enqueue helper (queue `agents`) and, since Phase C, `ChainLauncher`
+    (the shared chain guards).
   - REST (all under `/api`): `app/handler/web/agents/` (`/agents` CRUD, `/agents/{id}/pause|run|runs|usage`,
     `PUT /agents/kill-switch`, `/strategies/{id}/memory`), `app/handler/web/agentreports/`
     (`/agent-reports`, `/{id}`, `/{id}/html` with a `default-src 'none'` CSP, `?token=` and `?theme=`),
@@ -230,13 +259,17 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
     timeframe "" = the strategy's cycle interval), `AgentUsage.StrategiesCreated`, `BacktestRun.CandidateSourceHash`.
     Repo: `app/repository/proposal/`. `strategy_response` DTO has `challenger_of_id`.
   - `BacktestUseCase.RunWalkForwardForStrategy(ctx, strat, req)` runs walk-forward on an in-memory (unsaved)
-    strategy; `RunWalkForward` = load by id -> delegate. Runs persist under `strat.ID`.
+    strategy; `RunWalkForward` = load by id -> delegate. Runs persist under `strat.ID`. `Run` and
+    `RunWalkForward*` return a 400 `customerror` when (symbol, timeframe, range) has zero candles, e.g.
+    `no BTCUSDT 15m candles in 2024-06-01..2024-12-01; available: 1h 2021-01-01..2026-09-20 (36267), ...`
+    (fix-02 B2; `RunEphemeral` is unchanged).
   - Deploy gate: `app/usecase/agent/deploygate` (pure `Evaluate`: trades >= min, Sharpe >= baseline + delta,
     maxDD <= baseline x ratio (0 baseline DD -> candidate must be 0), PF >= min (+Inf passes), NaN fails; a
     0-trade baseline counts as Sharpe 0/DD 0) and `gate_runner.go` (`GateRunner`: two walk-forwards over the
     last `LookbackMonths` on the first monitored symbol - baseline = current source, candidate = new source -
     then `Evaluate` on the persisted runs; fewer than 90% of the expected candles -> failing
-    `insufficient_history` check). Thresholds come ONLY from `DeployGateConfig`; tool args can't carry numbers.
+    `insufficient_history` check, whose detail ends with `; available: <coverage>` when the candle counter
+    also implements `CandleCoverageReader`). Thresholds come ONLY from `DeployGateConfig`; tool args can't carry numbers.
   - Tools (`tools_phaseb.go`): `create_challenger` (edit_testing; champion must be bound + live/productive; one
     active challenger per champion, auto-bound, finding on the champion), `deploy_to_testing` (edit_testing;
     non-live, non-productive, in-scope targets; daily `MaxAutoDeploysPerDay` cap (0 = disabled) via a
@@ -272,6 +305,59 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
     could still open a position concurrently; the new code then manages it.
   - `app/usecase/agent` must never import `app/repository/strategy` / `app/usecase/proposal`
     (`phaseb_isolation_test.go` walks its imports), so no LLM tool can reach `ReplaceScriptSource`.
+- **Agents platform (Phase C-01: event, market and chain triggers)** — spec
+  `docs/specs/agents-platform/phase-c-01-backend-triggers.md`. Phase C only STARTS agent runs; every
+  triggered run is an ordinary unattended run (`AgentRun.Trigger` = `event` | `market` | `chain`, detail in
+  `TriggerDetail`) under every Phase A/B guard (RunGuard kill switch/pause/budget, permissions, write scope,
+  live/productive refusal, deploy gate). `isScheduledTrigger` treats every trigger except `chat_ui`/`mcp_tool`
+  as unattended.
+  - Schema (`app/entities/agenttriggers.go`): `AgentTriggers{Cron, Events []EventTrigger, Market
+    []MarketRule, ChainFrom []ChainTrigger}` - the REST `triggers` contract. Its `UnmarshalJSON` also accepts
+    the pre-C forms (`events: ["position.closed"]` -> `{type}`, `chain_from: [3]` -> `{agent_id: 3, on:
+    "report"}`); `Agent.ParsedTriggers()` is lenient (a bad element is skipped, the rest survives). Validation
+    (400) and default-filling live in `app/usecase/agentplatform/triggers.go`; a self-chain or a ChainFrom cycle
+    across all agents is 400 `{"error":"chain_cycle","message":"chain cycle: A → B → A"}` (the frontend matches
+    the code). `AgentResponse.trigger_summary` counts each kind; responses always carry all four arrays.
+  - Event types: `position.opened`, `position.closed`, `stoploss.hit` (derived: a stop-loss `exit_reason`,
+    incl. `simulated_stop_loss`), `strategy.error`, `strategy.panic` (derived: `Data["panic"]`), and the swept
+    `drawdown` / `no_signal`. Events fire only for strategies in the agent's scope
+    (`agentusecase.StrategyInScope`, the same definition as the Phase B write scope).
+  - Dispatch (`app/handler/tasks/agent/event_dispatch.go`, cmd/agent `agent:event`): skip paused agents and
+    everything while the kill switch is on (unreadable settings = on); cooldown via Redis `SET NX PX`
+    (`internal/cooldown`, key `agent-trigger:<agentID>:<type>:<strategyID>`, default 15 min, 240 for swept
+    types) - also dedupes across replicas; enqueues `agent:run` with `StrategyID` and detail `{event,
+    strategy_id, symbol, occurred_at, data (truncated)}`.
+  - Sweeper (`sweeper.go`, `agent:sweep_events`, scheduled `*/5 * * * *` by the `CronProvider` only while a
+    non-paused agent has a swept trigger): `drawdown` = peak-to-trough of cumulative realized PnL (sum of
+    `Order.Profit`, the performance-snapshot basis) over signals closed in `window_hours`
+    (`SignalRepository.ListClosedBetween`), as % of the first closed trade's invested amount; `no_signal` =
+    last opened signal (or `CreatedAt`) older than `window_hours`, skipping disabled and backtest-mode
+    strategies. Both go through the dispatcher's cooldown/enqueue path.
+  - Market watcher (`market_watcher.go`, fx lifecycle in cmd/agent): every `SYNC_INTERVAL` recomputes the
+    symbols from non-paused agents' `Market` rules (none while the kill switch is on), keeps one 1m
+    `feed.NewLiveFeed` over the **read-only** client per symbol, closes unwatched ones, backfills with
+    `ListKline` (max 1000) on subscribe and after a reconnect gap, buffers largest-window + 24h closed candles,
+    and evaluates each closed candle: `pct_move` = signed `(close/close[-window] - 1)*100` fires on its
+    absolute value; `volatility_spike` = window ATR / prior-24h ATR (`internal/indicators` ATR; with < 24h of
+    history it uses what it has, min 60 candles). Cooldown key `agent-market:<agentID>:<ruleID>`. Detail
+    `{rule_id, symbol, kind, window_minutes, observed_pct | observed_multiplier, threshold, price, at,
+    monitored_by_bound_strategy}`; `StrategyID` only when exactly one bound strategy monitors the symbol. It
+    writes a status snapshot to Redis (`internal/marketstatus`, key `agent-runtime:market-status`, TTL 15 min)
+    that cmd/api serves as `GET /api/agents/market-symbols` -> `{"symbols":[{symbol, watchers, last_price,
+    last_candle_at}], "runtime_seen_at": RFC3339|null}`.
+  - Chains: declarative `ChainFrom` (`chain_dispatch.go`, run by the `agent:run` processor after an ok run;
+    `on` = `report` (the run wrote >= 1 report), `notify` (>= 1 successful notify) or `success`; the run
+    outcome comes from the non-persisted `AgentRun.ReportIDs`/`NotificationsSent`) and the imperative
+    `trigger_agent {agent_id, message}` tool (`app/usecase/agent/tools_chain.go`, new permission `chain`,
+    max 3 per run; target must exist, not be paused, not be the caller or already in the chain). Both go
+    through `app/workers/agent.ChainLauncher` - the guards: `ChainDepth <= 3`, no agent twice in
+    `ChainPath`, and a deterministic asynq `TaskID` `agent-chain:<target>:<sourceRun>` (24 h retention) so a
+    redelivered parent can't double-fire. A refusal is logged + `agent_trigger_suppressed_total{kind="chain"}`
+    and never fails the parent run. Chain detail `{source_agent_id, source_run_id, report_ids, on, chain_path
+    (+ message for trigger_agent, on = "trigger_agent")}`. `RunPayload` gained `StrategyID`, `ChainPath`,
+    `ParentRunID`; the run DTO gained `chain_depth` and `parent_run_id`.
+  - Prompts (`app/usecase/agent/prompts.go` `BuildTriggerInput`) phrase event/market/chain runs; the operating
+    context shows the trigger detail and, for chains, depth and path.
 
 There is no more `app/services/algorithm/` (deleted in Phase 1 — that's where Grid/Bollinger/Scalping used
 to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `internal/exchange/`, below).
@@ -294,7 +380,8 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
 - **`metrics_provider/`** — Sharpe/Drawdown/WinRate/ProfitFactor computation, wrapping `cinar/indicator/v2`.
 - **`notifier/`** — Generic webhook notifier for trade/error events (`WEBHOOK_URL`), plus the agents'
   multi-target notifier (`agent_notifier.go`: generic/discord/slack/telegram formatters, link-only, async
-  delivery with one retry, never logs target URLs or the telegram token).
+  delivery with one retry, never logs target URLs or the telegram token), plus (Phase C) `MultiNotifier`
+  and the fire-and-forget worker -> agents `AgentEventBridge` (`agent:event`).
 - **`report/`** — HTML backtest report generation.
 - **`grpc/`** — `strategy.proto` + generated stubs for the `mlgrpc` strategy adapter.
 - **`configuration/`** — Viper-based config loader. Keys map to `config.yml`/env vars. See its source for
@@ -307,6 +394,10 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
   `web/src/index.css` - keep in sync by hand). Data-bearing blocks carry ids; values are resolved from the
   DB, never from model-supplied numbers. Golden files in `testdata/` (`go test ./internal/report/agentreport
   -update` to regenerate).
+- **`cooldown/`** — agent-trigger cooldown/dedupe store (Phase C): Redis `SET NX PX` (`RedisStore`) and an
+  in-memory variant with an injectable clock for tests. Redis test only with `REDIS_TEST_ADDR`.
+- **`marketstatus/`** — the market watcher's Redis status snapshot (written by cmd/agent, read by cmd/api for
+  `GET /api/agents/market-symbols`).
 - **`lock/`** — one-writer-per-strategy lock for agent runs: Redis (`SET NX PX` + compare-and-delete Lua,
   key `agent:strategy-lock:<id>`, TTL 15 min; the same type with `CycleKeyPrefix` is the Phase B
   `strategy-cycle:<id>` lock shared by cmd/worker and `agent:apply_proposal`) and an in-memory variant. The Redis test runs only with
@@ -388,7 +479,11 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 ### Monitoring
 - Prometheus scrapes the API and worker; Alertmanager is also in the docker-compose stack (Phase 2).
   Grafana dashboards are in `docs/grafana/`.
-- Asynqmon UI available at `http://localhost:9191/tasks/monitoring` when the worker is running.
+- Asynqmon UI available at `http://localhost:9191/tasks/monitoring` when the worker is running, and at
+  `http://localhost:9194/tasks/monitoring` from cmd/agent (`NewMonitoringHandler` in
+  `cmd/agent/modules/runtime.go`, same Redis, every queue incl. `agents`). Both links are display-only
+  settings: `asynqmon_url` and `agents_asynqmon_url` (`Settings.AgentsAsynqmonURL`, default empty) in
+  GET/PUT `/settings`.
 - `docker-compose.yml` has an `agent` service (cmd/agent, `mem_limit: 512m`, `restart: unless-stopped`,
   host networking like `mcp`).
 - `docker-compose.yml`'s `worker` service (there was none before backend-06) has `mem_limit: 512m` as a
@@ -414,6 +509,12 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
   history is imported.
 - Budget alerts dedupe per agent per UTC day across processes via `AgentUsage.BudgetAlertSent`.
 - The model price table in `internal/modelprovider/pricing.go` must be updated by hand.
+- Phase C: `notifier.EventDrawdownAlert` (`drawdown.alert`) is still never emitted by the worker; `drawdown`
+  triggers come only from cmd/agent's sweeper. The market watcher backfills at most 1000 1m candles
+  (`ListKline`), so a `volatility_spike` rule evaluates against a shorter-than-24h baseline (min 60 candles)
+  until enough live candles accumulate, and windows > ~999 min need live candles before `pct_move` works.
+  No market rule fires while its symbol's subscription is down. A trigger whose enqueue fails after its
+  cooldown key was taken is lost for that cooldown (logged) rather than risking a double run.
 
 ## Safety notes (this executes real trades with real money)
 
@@ -422,6 +523,10 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 - `MODE=live` requires `CONFIRM_LIVE=true` at worker startup, and requires `Testnet=false`.
 - Never let a strategy's effective mode silently downgrade past `live` — the engine refuses the cycle
   instead, by design (see `app/handler/tasks/strategy/handler.go`'s `gateMode`).
+- Agent triggers (Phase C) only enqueue `agent:run` tasks. The worker's side is the fire-and-forget
+  `AgentEventBridge` behind a `MultiNotifier` - it can't block or fail a trading cycle; nothing else in the
+  trading path changed. Runaway protection: per-trigger cooldowns (Redis `SET NX PX`), chain depth <= 3, no
+  agent twice in a chain, one chain run per (target, source run); the budget guard still bounds cost.
 - `cmd/agent` must only ever get `exchange.ReadOnlyClient`. No agent tool can place/cancel orders or touch
   settings/credentials, and no agent tool can change a live-mode or productive strategy's source, mode or
   status. The strategy-writing tools are `save_strategy_script` (creates; updates backtest drafts),

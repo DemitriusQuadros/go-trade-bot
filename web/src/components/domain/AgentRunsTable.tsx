@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { AgentRun } from '@/api/types';
 import { AgentToolCallCard } from '@/components/domain/AgentToolCallCard';
+import { RunTriggerBadge, RunTriggerDetail } from '@/components/domain/AgentTriggerDisplay';
+import { useAgents } from '@/hooks/queries';
 import { MarkdownMessage } from '@/components/domain/MarkdownMessage';
 import { formatDuration, formatRelative, formatTokens, formatUsd } from '@/lib/time';
 
@@ -23,6 +25,9 @@ interface AgentRunsTableProps {
 export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const colCount = 8;
+  // Resolves chain-source agent names (C-02 §4); shares the Agents page's cache.
+  const { data: agents = [] } = useAgents();
+  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? `Agent #${id}`;
 
   return (
     <div className="overflow-x-auto rounded border border-border/60">
@@ -78,7 +83,14 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                   <td className="font-mono text-muted-foreground whitespace-nowrap" title={new Date(run.started_at).toLocaleString()}>
                     {variant === 'agent' ? formatRelative(run.started_at) : new Date(run.started_at).toLocaleString()}
                   </td>
-                  <td className="font-mono text-muted-foreground">{run.trigger}</td>
+                  <td className="max-w-[16rem]">
+                    <div className="flex flex-col items-start gap-0.5">
+                      <RunTriggerBadge trigger={run.trigger} />
+                      <div className="text-[11px] text-muted-foreground truncate max-w-full">
+                        <RunTriggerDetail run={run} agentName={agentName} />
+                      </div>
+                    </div>
+                  </td>
                   {variant === 'log' && (
                     <td className="text-foreground whitespace-nowrap">
                       {run.agent_id != null ? (
@@ -110,6 +122,15 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                     >
                       {run.status}
                     </span>
+                    {run.hit_iteration_cap && (
+                      <span
+                        className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-warning/15 text-warning border border-warning/40"
+                        title="The run reached its tool-iteration cap; the final answer came from a forced turn with tools disabled."
+                      >
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                        hit iteration cap
+                      </span>
+                    )}
                   </td>
                   {variant === 'agent' && (
                     <>

@@ -31,7 +31,7 @@ type AgentRun struct {
 	ID            uint   `gorm:"primaryKey"`
 	Provider      string // "anthropic" | "gemini"
 	Model         string
-	Trigger       string // "mcp_tool" | "chat_ui" | "monitor" | "cron" | "manual"
+	Trigger       string // "mcp_tool" | "chat_ui" | "monitor" | "cron" | "manual" | "event" | "market" | "chain"
 	Status        AgentRunStatus
 	ErrorMessage  string
 	InputSummary  string         `gorm:"type:text"` // triggering user prompt/event, truncated to a bounded length
@@ -61,4 +61,16 @@ type AgentRun struct {
 	InputTokens   int64
 	OutputTokens  int64
 	CostUSD       float64
+
+	// HitIterationCap is true when the run used its whole tool-loop budget
+	// and its answer came from the forced tools-disabled final turn
+	// (fix-02 B1). The run can still be "ok".
+	HitIterationCap bool
+
+	// Run outcome for chained triggers (agents-platform C-01 §4) - filled in
+	// memory by AgentUseCase.Run, never persisted: the reports the run wrote
+	// and how many notify calls succeeded. The agent:run processor uses them
+	// to decide which ChainFrom ("report" / "notify") triggers fire.
+	ReportIDs         []uint `gorm:"-" json:"-"`
+	NotificationsSent int    `gorm:"-" json:"-"`
 }

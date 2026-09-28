@@ -19,6 +19,9 @@ type Repository interface {
 	LatestOpenTime(ctx context.Context, symbol, timeframe string) (time.Time, error)
 	Count(ctx context.Context, symbol, timeframe string) (int64, error)
 	CountInRange(ctx context.Context, symbol, timeframe string, from, to time.Time) (int64, error)
+	// Coverage returns the stored span per (symbol, timeframe) - every
+	// symbol when symbol == "" (fix-02 B2). See coverage.go.
+	Coverage(ctx context.Context, symbol string) ([]Coverage, error)
 }
 
 type CandleRepository struct {

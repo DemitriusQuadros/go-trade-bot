@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, ArrowLeft, Clock, ExternalLink, History, Loader2, Plus, Save, Trash2 } from 'lucide-react';
-import { Agent, AgentPermission, AgentProvider, AgentRequest, AgentTriggers } from '@/api/types';
-import { apiErrorMessage } from '@/api/client';
+import { Agent, AgentPermission, AgentProvider, AgentRequest } from '@/api/types';
+import { apiErrorCode, apiErrorMessage } from '@/api/client';
 import {
   useAgent,
+  useAgents,
   useAgentUsage,
   useCreateAgent,
   useStrategies,
@@ -19,16 +20,24 @@ import { LoadingScreen } from '@/components/ui/Spinner';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ModeBadge } from '@/components/ui/ModeBadge';
 import { DefaultAgentBadge } from '@/components/domain/AgentBadges';
+import {
+  AgentTriggersEditor,
+  TriggersDraft,
+  draftFromTriggers,
+  toTriggerPayload,
+  validateTriggers,
+} from '@/components/domain/AgentTriggersEditor';
 import { UsageSparkline } from '@/components/charts/UsageSparkline';
 import { useToast } from '@/context/ToastContext';
 import { AGENT_PERMISSIONS } from '@/lib/agentPermissions';
 import { CRON_PRESETS, describeCron } from '@/lib/cron';
 import { formatTokens, formatUsd } from '@/lib/time';
+import { normalizeTriggers } from '@/lib/triggers';
 
 // Form state mirrors AgentRequest, except the budget stays a string while
-// typing (so "0." or "" don't get coerced mid-edit) and the non-cron
-// triggers (Phase C: events/market/chain_from) are carried through
-// untouched so saving from this form never wipes them.
+// typing (so "0." or "" don't get coerced mid-edit) and the Phase C
+// triggers (events/market/chain_from) live in a string-typed draft owned by
+// AgentTriggersEditor, converted back to the C-01 §1 shape on save.
 interface FormState {
   name: string;
   goal: string;
@@ -40,7 +49,9 @@ interface FormState {
   cron: string[];
   daily_budget_usd: string;
   max_auto_deploys_per_day: number;
-  otherTriggers: Omit<AgentTriggers, 'cron'>;
+  // Kept as text so a blank field means "use the trigger default" (0).
+  max_iterations: string;
+  triggers: TriggersDraft;
 }
 
 const EMPTY_FORM: FormState = {
@@ -54,11 +65,14 @@ const EMPTY_FORM: FormState = {
   cron: [],
   daily_budget_usd: '1',
   max_auto_deploys_per_day: 0,
-  otherTriggers: {},
+  max_iterations: '',
+  triggers: draftFromTriggers({ events: [], market: [], chain_from: [] }),
 };
 
 function formFromAgent(a: Agent): FormState {
-  const { cron = [], ...otherTriggers } = a.triggers ?? {};
+  // normalizeTriggers also accepts the pre-C shapes (events: string[],
+  // chain_from: number[]) in case the API hands one back unconverted.
+  const { cron, ...otherTriggers } = normalizeTriggers(a.triggers);
   return {
     name: a.name,
     goal: a.goal,
@@ -70,7 +84,8 @@ function formFromAgent(a: Agent): FormState {
     cron: [...cron],
     daily_budget_usd: String(a.daily_budget_usd ?? 0),
     max_auto_deploys_per_day: a.max_auto_deploys_per_day ?? 0,
-    otherTriggers,
+    max_iterations: a.max_iterations ? String(a.max_iterations) : '',
+    triggers: draftFromTriggers(otherTriggers),
   };
 }
 
@@ -82,13 +97,29 @@ function toRequest(f: FormState): AgentRequest {
     provider: f.provider,
     model: f.model.trim(),
     permissions: f.permissions,
-    triggers: { ...f.otherTriggers, cron: f.cron.map((c) => c.trim()).filter(Boolean) },
+    triggers: { ...toTriggerPayload(f.triggers), cron: f.cron.map((c) => c.trim()).filter(Boolean) },
     strategy_ids: f.strategy_ids,
     webhook_target_ids: f.webhook_target_ids,
     // handleSave has already validated this is a finite number >= 0.
     daily_budget_usd: Number.isFinite(budget) ? budget : 0,
     max_auto_deploys_per_day: f.max_auto_deploys_per_day,
+    // handleSave has already validated this is blank, 0, or an integer 4-50.
+    max_iterations: parseMaxIterations(f.max_iterations) ?? 0,
   };
+}
+
+const MIN_ITERATIONS = 4;
+const MAX_ITERATIONS = 50;
+
+// Blank -> 0 (trigger default). Returns null when the text isn't a whole
+// number or falls outside 0 / 4-50, so handleSave can reject it.
+function parseMaxIterations(raw: string): number | null {
+  const t = raw.trim();
+  if (t === '') return 0;
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  if (n === 0 || (n >= MIN_ITERATIONS && n <= MAX_ITERATIONS)) return n;
+  return null;
 }
 
 function toggle<T>(list: T[], item: T): T[] {
@@ -108,6 +139,7 @@ export function AgentEditor() {
   const { data: agent, isLoading, error: loadError } = useAgent(agentId);
   const { data: strategies = [] } = useStrategies();
   const { data: targets = [] } = useWebhookTargets();
+  const { data: allAgents = [] } = useAgents();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent(agentId);
   const { toast } = useToast();
@@ -117,6 +149,12 @@ export function AgentEditor() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [newCron, setNewCron] = useState('');
   const [strategySearch, setStrategySearch] = useState('');
+  // Trigger field errors appear only after the first save attempt, then
+  // track edits live. chainError holds the backend's 400 chain/cycle
+  // message so it can be shown inline in the chain sub-section.
+  const [showTriggerErrors, setShowTriggerErrors] = useState(false);
+  const [chainError, setChainError] = useState<string | null>(null);
+  const chainRef = useRef<HTMLElement>(null);
 
   // Seed the form once per agent. Later refetches (window refocus, list
   // invalidations) must not clobber in-progress edits; after a save the
@@ -134,6 +172,16 @@ export function AgentEditor() {
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline]);
   const guard = useUnsavedChangesGuard(dirty);
 
+  const triggerErrors = useMemo(() => validateTriggers(form.triggers), [form.triggers]);
+  // Suggest the monitored symbols of the strategies bound to this agent.
+  const symbolSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of strategies) {
+      if (form.strategy_ids.includes(s.id)) (s.monitored_symbols ?? []).forEach((sym) => set.add(sym.toUpperCase()));
+    }
+    return [...set].sort();
+  }, [strategies, form.strategy_ids]);
+
   const saving = createAgent.isPending || updateAgent.isPending;
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -146,17 +194,41 @@ export function AgentEditor() {
   const handleSave = (e?: React.FormEvent) => {
     e?.preventDefault();
     setSaveError(null);
+    setChainError(null);
+    setShowTriggerErrors(true);
     const budget = Number(form.daily_budget_usd);
     if (form.daily_budget_usd.trim() === '' || !Number.isFinite(budget) || budget < 0) {
       setSaveError('Daily budget must be a number of US dollars, 0 or more (0 = unlimited).');
       return;
     }
+    if (parseMaxIterations(form.max_iterations) === null) {
+      setSaveError(
+        `Max tool iterations must be blank (use the default) or a whole number from ${MIN_ITERATIONS} to ${MAX_ITERATIONS}.`,
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (triggerErrors.count > 0) {
+      setSaveError(
+        `Fix the ${triggerErrors.count} highlighted trigger field${triggerErrors.count === 1 ? '' : 's'} in the Schedule section.`,
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     const req = toRequest(form);
     const onError = (err: unknown) => {
-      // 400 (invalid cron / permission / budget) and 409 (duplicate name)
-      // come back as {"error","message"} - shown inline, form state kept.
-      setSaveError(apiErrorMessage(err, 'Failed to save the agent'));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // 400 (invalid cron / permission / budget / trigger, chain cycle) and
+      // 409 (duplicate name) come back as {"error","message"} - shown
+      // inline, form state kept.
+      const msg = apiErrorMessage(err, 'Failed to save the agent');
+      setSaveError(msg);
+      // Chain-cycle and self-chain rejections: 400 {"error":"chain_cycle"}.
+      if (apiErrorCode(err) === 'chain_cycle') {
+        setChainError(msg);
+        chainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     };
     if (isEdit) {
       updateAgent.mutate(req, {
@@ -410,7 +482,7 @@ export function AgentEditor() {
 
       {/* 5. Schedule */}
       <Card>
-        <CardHeader title="Schedule" subtitle="Cron schedules, evaluated in UTC. With no schedule, the agent only runs manually or in chat." />
+        <CardHeader title="Schedule" subtitle="Cron schedules (UTC) and event, market and chained triggers. With none, the agent only runs manually or in chat." />
         <div className="space-y-3">
           {form.cron.length === 0 ? (
             <p className="text-xs text-muted-foreground">No schedule - manual runs only.</p>
@@ -496,10 +568,24 @@ export function AgentEditor() {
             </p>
           </div>
 
-          <div className="pt-3 border-t border-border opacity-50" aria-disabled="true">
-            <div className="text-xs font-semibold text-foreground">Event, market and chained triggers</div>
-            <p className={HELP}>Coming in Phase C - run on trade events, price conditions, or after another agent.</p>
+          <div className="pt-3 border-t border-border">
+            <div className="text-xs font-semibold text-foreground">Triggers</div>
+            <p className={HELP}>
+              Besides the schedule, run this agent when a bound strategy emits an event, when a watched market moves,
+              or after another agent finishes. Every trigger runs unattended under the same permissions, budget and
+              kill switch.
+            </p>
           </div>
+          <AgentTriggersEditor
+            ref={chainRef}
+            draft={form.triggers}
+            onChange={(next) => set('triggers', next)}
+            errors={showTriggerErrors ? triggerErrors : null}
+            chainError={chainError}
+            currentAgentId={agentId}
+            agents={allAgents}
+            symbolSuggestions={symbolSuggestions}
+          />
         </div>
       </Card>
 
@@ -607,6 +693,36 @@ export function AgentEditor() {
                 The <span className="font-mono">edit_testing</span> permission is off - this agent can't auto-deploy.
               </p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-1.5 max-w-xs">
+            <label htmlFor="agent-max-iterations" className={LABEL}>
+              Max tool iterations
+              <HelpTooltip>
+                How many model-to-tool round trips one run may take. When a run reaches the cap, the model gets one
+                last turn with tools disabled to give its final answer, and the run is marked "hit iteration cap".
+                Leave blank to use the default: 24 for scheduled and triggered runs, 8 for chat.
+              </HelpTooltip>
+            </label>
+            <input
+              id="agent-max-iterations"
+              type="text"
+              inputMode="numeric"
+              placeholder="Default (24 scheduled / 8 chat)"
+              value={form.max_iterations}
+              onChange={(e) => set('max_iterations', e.target.value)}
+              className="form-input text-sm"
+              aria-invalid={parseMaxIterations(form.max_iterations) === null}
+              aria-describedby="agent-max-iterations-help"
+            />
+            <p
+              id="agent-max-iterations-help"
+              className={parseMaxIterations(form.max_iterations) === null ? 'text-[11px] text-destructive' : HELP}
+            >
+              {parseMaxIterations(form.max_iterations) === null
+                ? `Enter a whole number from ${MIN_ITERATIONS} to ${MAX_ITERATIONS}, or leave blank for the default.`
+                : `Blank or 0 = default (24 scheduled/triggered, 8 chat). Allowed: ${MIN_ITERATIONS}-${MAX_ITERATIONS}.`}
+            </p>
           </div>
 
           {isEdit && <UsagePanel agentId={agentId} budget={budgetNum > 0 ? budgetNum : 0} />}

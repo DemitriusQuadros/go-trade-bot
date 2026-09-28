@@ -38,6 +38,15 @@ type CronProvider struct {
 	agents   CronSource
 	settings SettingsReader
 	timeout  time.Duration
+	sweep    bool
+}
+
+// WithEventSweep also schedules the agent:sweep_events task (every 5 min,
+// C-01 §2.2) whenever at least one non-paused agent has a drawdown or
+// no_signal trigger.
+func (p *CronProvider) WithEventSweep() *CronProvider {
+	p.sweep = true
+	return p
 }
 
 // NewCronProvider builds a CronProvider.
@@ -67,11 +76,18 @@ func (p *CronProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
 		return configs, nil
 	}
 
+	needSweep := false
 	for _, a := range agents {
 		if a.Paused {
 			continue
 		}
-		specs := a.ParsedTriggers().Cron
+		parsed := a.ParsedTriggers()
+		for _, e := range parsed.Events {
+			if entities.IsSweptEventType(e.Type) {
+				needSweep = true
+			}
+		}
+		specs := parsed.Cron
 		if len(specs) == 0 {
 			continue
 		}
@@ -100,6 +116,10 @@ func (p *CronProvider) GetConfigs() ([]*asynq.PeriodicTaskConfig, error) {
 				Opts:     agentworker.Options(payload),
 			})
 		}
+	}
+	if p.sweep && needSweep {
+		task, opts := NewSweepTask()
+		configs = append(configs, &asynq.PeriodicTaskConfig{Cronspec: SweepCronspec, Task: task, Opts: opts})
 	}
 	return configs, nil
 }
