@@ -14,9 +14,13 @@ import (
 const defaultAnthropicModel = "claude-sonnet-5"
 
 // defaultAnthropicMaxTokens bounds a single Complete call's response size.
-// The tool-call loop (Backend Spec 03) makes many of these calls per run, so
-// this is deliberately conservative rather than the SDK's max.
-const defaultAnthropicMaxTokens = 4096
+// It was 4096, which an agent writing a full Lua script into a single
+// deploy_to_testing call exceeded (E2E run #57: the turn was cut off
+// mid-tool-call). Cost is driven by tokens actually generated, not by this
+// ceiling. Kept at 16000 because the Anthropic SDK refuses non-streaming
+// requests whose max_tokens implies an expected duration over 10 minutes
+// (~21k); this adapter is request/response only.
+const defaultAnthropicMaxTokens = 16000
 
 // AnthropicAdapter is the internal/modelprovider ACL implementation backed
 // by the official github.com/anthropics/anthropic-sdk-go client. No type

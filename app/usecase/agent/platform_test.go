@@ -523,3 +523,69 @@ func TestRunToolLoop_UsesDefaultAgentFromPlatform(t *testing.T) {
 	require.NotNil(t, run.AgentID)
 	assert.Equal(t, h.def.ID, *run.AgentID)
 }
+
+// Regression (E2E run #58): an unattended run with only edit_testing created
+// a new dryrun strategy through save_strategy_script's create path, bypassing
+// create_strategy's permission and daily cap. Chat drafting is unaffected.
+func TestSaveStrategyScript_UnattendedCreateNeedsCreateStrategy(t *testing.T) {
+	createArgs := rawArgs(map[string]any{"name": "scratch", "description": "x", "script_source": "x", "symbols": []string{"ETHUSDT"}, "cycle_minutes": 15})
+	runCreate := func(h *platformHarness, agent entities.Agent, trigger string) string {
+		var last string
+		h.model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{
+			StopReason: "tool_use", ToolCalls: []modelprovider.ToolCall{{ID: "1", Name: "save_strategy_script", Args: createArgs}},
+		}, nil).Once()
+		h.model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
+			last = req.Messages[len(req.Messages)-1].Content
+			return true
+		})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
+		_, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: agent, Trigger: trigger, UserInput: "x"})
+		require.NoError(t, err)
+		return last
+	}
+
+	t.Run("cron without create_strategy is refused", func(t *testing.T) {
+		h := newPlatformHarness(t)
+		a := h.platform.addAgent(entities.Agent{Name: "Editor", Permissions: []string{"read", "edit_testing"}})
+		last := runCreate(h, a, "cron")
+		assert.Contains(t, last, "needs the create_strategy permission")
+		assert.Zero(t, h.strategy.writes())
+	})
+	t.Run("cron with create_strategy creates, counts and binds", func(t *testing.T) {
+		h := newPlatformHarness(t)
+		a := h.platform.addAgent(entities.Agent{Name: "Creator", Permissions: []string{"read", "edit_testing", "create_strategy"}})
+		runCreate(h, a, "cron")
+		assert.Equal(t, 1, h.strategy.writes())
+		bindings, _ := h.platform.ListBindingsByAgent(context.Background(), a.ID)
+		require.Len(t, bindings, 1)
+		assert.Equal(t, uint(50), bindings[0].StrategyID)
+	})
+	t.Run("chat drafting is unchanged", func(t *testing.T) {
+		h := newPlatformHarness(t)
+		a := h.platform.addAgent(entities.Agent{Name: "ChatEditor", Permissions: []string{"read", "edit_testing"}})
+		runCreate(h, a, "chat_ui")
+		assert.Equal(t, 1, h.strategy.writes())
+	})
+}
+
+// Regression (E2E run #58): end_turn with no text and no tool call was
+// recorded as a successful run. The model is nudged once to continue.
+func TestRun_EmptyAnswerIsNudgedThenErrors(t *testing.T) {
+	t.Run("nudge then answer", func(t *testing.T) {
+		h := newPlatformHarness(t)
+		h.model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Once()
+		h.model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
+			return strings.Contains(req.Messages[len(req.Messages)-1].Content, "ended your turn without an answer")
+		})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "summary"}, nil).Once()
+		run, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: h.def, Trigger: "cron", UserInput: "x"})
+		require.NoError(t, err)
+		assert.Equal(t, entities.AgentRunOK, run.Status)
+		assert.Equal(t, "summary", run.ResponseText)
+	})
+	t.Run("two empty turns is an error", func(t *testing.T) {
+		h := newPlatformHarness(t)
+		h.model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Twice()
+		run, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: h.def, Trigger: "cron", UserInput: "x"})
+		require.Error(t, err)
+		assert.Equal(t, entities.AgentRunError, run.Status)
+	})
+}

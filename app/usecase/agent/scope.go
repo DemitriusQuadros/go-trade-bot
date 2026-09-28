@@ -26,6 +26,8 @@ const maxNotificationsPerRun = 10
 type runScope struct {
 	agent entities.Agent
 	runID uint
+	// trigger is the run's RunRequest.Trigger ("chat_ui", "cron", ...).
+	trigger string
 
 	// Chain position of this run (C-01 §4): trigger_agent builds on it.
 	chainDepth int

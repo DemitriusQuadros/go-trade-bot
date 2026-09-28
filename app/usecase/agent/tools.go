@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -365,10 +367,43 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 				s.CreatedByAgentID = &agentID
 			}
 
+			// Creating a strategy from an unattended run (cron, manual,
+			// event, market, chain) is governed exactly like create_strategy:
+			// it needs that permission and counts toward the same daily cap,
+			// and the new strategy is bound to the agent. Otherwise
+			// save_strategy_script's create path bypassed both (E2E run #58
+			// created a dryrun "scratch" strategy with only edit_testing).
+			// Chat and MCP drafting is unchanged: an operator is driving it.
+			var unattendedAgent *entities.Agent
+			if in.StrategyID == 0 {
+				if sc, ok := scopeFrom(ctx); ok && isScheduledTrigger(sc.trigger) && sc.agent.ID != 0 {
+					if !sc.agent.HasPermission(entities.PermCreateStrategy) {
+						return "", fmt.Errorf("save_strategy_script: creating a new strategy from an unattended run needs the create_strategy permission; improve an existing strategy with deploy_to_testing instead")
+					}
+					if u.Platform == nil {
+						return "", fmt.Errorf("save_strategy_script: strategy creation is not available here")
+					}
+					ok, limErr := u.Platform.TryIncStrategiesCreated(ctx, sc.agent.ID, u.now(), MaxStrategiesCreatedPerDay)
+					if limErr != nil {
+						return "", fmt.Errorf("save_strategy_script: could not check the daily creation limit: %w", limErr)
+					}
+					if !ok {
+						return "", fmt.Errorf("save_strategy_script: agent %q already created %d strategies today (UTC) - the limit is %d per day", sc.agent.Name, MaxStrategiesCreatedPerDay, MaxStrategiesCreatedPerDay)
+					}
+					a := sc.agent
+					unattendedAgent = &a
+				}
+			}
+
 			var saved entities.Strategy
 			var err error
 			if in.StrategyID == 0 {
 				saved, err = u.Strategy.Save(ctx, s)
+				if err == nil && unattendedAgent != nil {
+					if bErr := u.Platform.AddBinding(ctx, unattendedAgent.ID, saved.ID); bErr != nil {
+						log.Printf("agent: strategy %d created by agent %q but binding failed: %v", saved.ID, unattendedAgent.Name, bErr)
+					}
+				}
 			} else {
 				err = u.Strategy.Update(ctx, s)
 				saved = s
@@ -454,6 +489,18 @@ func (u AgentUseCase) runBacktestTool() Tool {
 	}
 }
 
+// formatProfitFactorForModel renders the no-losing-trades case as "inf".
+// The backtest usecase persists +Inf as math.MaxFloat64 (Postgres can't
+// store Inf); printed with %.4f that is a 309-digit number the model then
+// has to reason about (E2E run #58). Same sentinel rule as
+// app/handler/web/backtest/dto.go.
+func formatProfitFactorForModel(pf float64) string {
+	if math.IsInf(pf, 1) || pf >= 1e15 {
+		return "inf"
+	}
+	return strconv.FormatFloat(pf, 'f', 4, 64)
+}
+
 // maxBacktestSummaryTradeLines bounds summarizeBacktestForModel's output
 // (Backend Spec 06 AC#3): only the trailing N trades, never the full trace.
 const maxBacktestSummaryTradeLines = 20
@@ -464,8 +511,8 @@ const maxBacktestSummaryTradeLines = 20
 // never the full trace, to stay within a reasonable tool-result size.
 func summarizeBacktestForModel(run entities.BacktestRun) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "backtest_id=%d strategy_id=%d\nsymbol=%s\nsharpe=%.4f max_drawdown_pct=%.2f win_rate_pct=%.2f profit_factor=%.4f total_trades=%d total_return_pct=%.2f passed=%v initial_capital=%.2f\n",
-		run.ID, run.StrategyID, run.Symbol, run.Sharpe, run.MaxDrawdownPct, run.WinRatePct, run.ProfitFactor, run.TotalTrades, run.TotalReturnPct, run.Passed, run.InitialCapital)
+	fmt.Fprintf(&b, "backtest_id=%d strategy_id=%d\nsymbol=%s\nsharpe=%.4f max_drawdown_pct=%.2f win_rate_pct=%.2f profit_factor=%s total_trades=%d total_return_pct=%.2f passed=%v initial_capital=%.2f\n",
+		run.ID, run.StrategyID, run.Symbol, run.Sharpe, run.MaxDrawdownPct, run.WinRatePct, formatProfitFactorForModel(run.ProfitFactor), run.TotalTrades, run.TotalReturnPct, run.Passed, run.InitialCapital)
 
 	var trades []metrics_provider.TradeLogEntry
 	if len(run.TradeLogJSON) > 0 {

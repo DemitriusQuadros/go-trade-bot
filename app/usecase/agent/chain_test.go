@@ -56,7 +56,7 @@ func TestTriggerAgent_RequiresChainPermission(t *testing.T) {
 	h.model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
 		last = req.Messages[len(req.Messages)-1].Content
 		return true
-	})).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Once()
+	})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
 
 	_, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: caller, Trigger: "cron", UserInput: "go"})
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func TestTriggerAgent_RequiresChainPermission(t *testing.T) {
 	h.model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
 		offered = toolNames(req)
 		return true
-	})).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Once()
+	})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
 	_, err = h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: withChain, Trigger: "cron", UserInput: "go"})
 	require.NoError(t, err)
 	assert.Contains(t, offered, "trigger_agent")
@@ -102,7 +102,7 @@ func TestTriggerAgent_GuardsAndLimit(t *testing.T) {
 			results = append(results, m.Content)
 		}
 		return true
-	})).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Once()
+	})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
 
 	parent := uint(50)
 	run, err := h.uc.Run(context.Background(), agentusecase.RunRequest{
@@ -140,7 +140,7 @@ func TestTriggerAgent_DepthGuard(t *testing.T) {
 	h.model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
 		last = req.Messages[len(req.Messages)-1].Content
 		return true
-	})).Return(modelprovider.CompletionResult{StopReason: "end_turn"}, nil).Once()
+	})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
 	_, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: d, Trigger: "chain", UserInput: "go", ChainDepth: 3, ChainPath: []uint{100, 101, 102}})
 	require.NoError(t, err)
 	assert.Contains(t, last, "chain suppressed")

@@ -2,6 +2,8 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"go-trade-bot/app/entities"
@@ -474,4 +476,44 @@ func (g *countingGuard) Check(_ context.Context, _ entities.Agent) error {
 		return &agentusecase.HaltError{Reason: "kill switch engaged"}
 	}
 	return nil
+}
+
+func setupTruncationRun(t *testing.T) (*agentusecase.AgentUseCase, *mockModelProvider, *mockStrategyUseCase) {
+	t.Helper()
+	uc, model, repo, strategyUC, _ := newBareAgentUseCase()
+	repo.On("GetInstruction", mock.Anything).Return(entities.AgentInstruction{}, nil)
+	repo.On("CreateRun", mock.Anything, mock.Anything).Return(entities.AgentRun{ID: 1}, nil)
+	repo.On("UpdateRun", mock.Anything, mock.Anything).Return(nil)
+	return uc, model, strategyUC
+}
+
+// Regression (E2E run #57): a turn cut off at max_tokens mid-tool-call was
+// recorded as a successful run with an empty answer. The truncated tool call
+// must not execute, the model is asked to retry, and its next answer wins.
+func TestRun_MaxTokensTurnIsRetriedNotTreatedAsAnswer(t *testing.T) {
+	uc, model, strategyUC := setupTruncationRun(t)
+	model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{
+		StopReason: "max_tokens",
+		ToolCalls:  []modelprovider.ToolCall{{ID: "1", Name: "list_strategies", Args: json.RawMessage(`{"trunc`)}},
+	}, nil).Once()
+	model.On("Complete", mock.Anything, mock.MatchedBy(func(req modelprovider.CompletionRequest) bool {
+		return strings.Contains(req.Messages[len(req.Messages)-1].Content, "cut off at the output-token limit")
+	})).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "go", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, entities.AgentRunOK, run.Status)
+	assert.Equal(t, "done", run.ResponseText)
+	strategyUC.AssertNotCalled(t, "GetAll", mock.Anything)
+}
+
+func TestRun_TwoConsecutiveMaxTokensTurnsIsError(t *testing.T) {
+	uc, model, _ := setupTruncationRun(t)
+	model.On("Complete", mock.Anything, mock.Anything).
+		Return(modelprovider.CompletionResult{StopReason: "max_tokens", Text: "partial"}, nil).Twice()
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "go", nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, entities.AgentRunError, run.Status)
+	assert.Contains(t, run.ErrorMessage, "truncated at the output-token limit twice")
 }

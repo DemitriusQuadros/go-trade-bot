@@ -519,7 +519,7 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 		return entities.AgentRun{}, fmt.Errorf("agent: failed to create run: %w", err)
 	}
 
-	scope := &runScope{agent: agent, runID: run.ID, locks: map[uint]bool{}, chainDepth: req.ChainDepth, chainPath: append([]uint(nil), req.ChainPath...)}
+	scope := &runScope{agent: agent, runID: run.ID, trigger: req.Trigger, locks: map[uint]bool{}, chainDepth: req.ChainDepth, chainPath: append([]uint(nil), req.ChainPath...)}
 	ctx = withRunScope(ctx, scope)
 	defer u.releaseLocks(scope)
 
@@ -561,6 +561,8 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 
 	messages := append(buildHistoryMessages(req.History), modelprovider.Message{Role: "user", Content: req.UserInput})
 
+	truncations := 0 // consecutive max_tokens turns, see below
+	emptyAnswers := 0 // turns with no text and no tool call, see below
 	for i := 0; i < maxIterations; i++ {
 		// A-01 §4.3: kill switch / pause / budget re-checked before EVERY
 		// model call, so an in-flight run halts at its next iteration.
@@ -604,6 +606,35 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 				turn.WriteString(fmt.Sprintf("[called tool %s with args %s]", call.Name, string(call.Args)))
 			}
 			messages = append(messages, modelprovider.Message{Role: "assistant", Content: turn.String()})
+		}
+
+		// A turn cut off at the output-token limit is not an answer, and any
+		// tool call in it may carry truncated arguments - never execute it,
+		// and never record the run as ok on it (E2E run #57 finished "ok"
+		// with an empty answer this way, mid-way through writing a script).
+		// Ask the model to redo the step more concisely; two truncations in a
+		// row end the run as an error.
+		if result.StopReason == "max_tokens" {
+			truncations++
+			if truncations >= 2 {
+				return finish(entities.AgentRunError, "model output truncated at the output-token limit twice in a row")
+			}
+			messages = append(messages, modelprovider.Message{Role: "user", Content: "Your previous response was cut off at the output-token limit, so none of its tool calls were executed. Redo that step more concisely (shorter text; keep tool arguments compact)."})
+			continue
+		}
+		truncations = 0
+
+		// A turn that ends with neither tool calls nor any text is not an
+		// answer either: E2E run #58 stopped half-way through its task this
+		// way (end_turn, empty content, right after a tool result) and was
+		// recorded as ok. Nudge once; a second empty turn is an error.
+		if len(result.ToolCalls) == 0 && strings.TrimSpace(result.Text) == "" {
+			emptyAnswers++
+			if emptyAnswers >= 2 {
+				return finish(entities.AgentRunError, "model ended its turn twice without an answer or a tool call")
+			}
+			messages = append(messages, modelprovider.Message{Role: "user", Content: "You ended your turn without an answer. If the task is not finished, continue with the next step now; otherwise give a short final summary."})
+			continue
 		}
 
 		if result.StopReason != "tool_use" || len(result.ToolCalls) == 0 {
