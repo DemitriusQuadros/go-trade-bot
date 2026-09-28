@@ -117,7 +117,9 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                       className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
                         isError
                           ? 'bg-destructive/15 text-destructive border border-destructive/40'
-                          : 'bg-success/15 text-success border border-success/40'
+                          : run.status === 'running'
+                            ? 'bg-primary/15 text-primary border border-primary/40 animate-pulse'
+                            : 'bg-success/15 text-success border border-success/40'
                       }`}
                     >
                       {run.status}

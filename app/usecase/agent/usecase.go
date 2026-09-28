@@ -500,7 +500,7 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 		Provider:     providerName,
 		Model:        modelName,
 		Trigger:      req.Trigger,
-		Status:       entities.AgentRunOK,
+		Status:       entities.AgentRunRunning,
 		InputSummary: truncate(req.UserInput, 4000),
 		StrategyID:   req.StrategyID,
 		StartedAt:    time.Now(),
@@ -532,7 +532,13 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 		if b, mErr := json.Marshal(records); mErr == nil {
 			run.ToolCallsJSON = datatypes.JSON(b)
 		}
-		if uErr := u.Repository.UpdateRun(ctx, run); uErr != nil {
+		// Persist on a context detached from the run's: when the run is
+		// ended by its task deadline, ctx is already expired, and saving
+		// with it failed - leaving the row "in progress" forever (E2E run
+		// #61).
+		pctx, cancel := persistContext(ctx)
+		defer cancel()
+		if uErr := u.Repository.UpdateRun(pctx, run); uErr != nil {
 			return run, fmt.Errorf("agent: failed to persist final run state: %w", uErr)
 		}
 		if status == entities.AgentRunError {
@@ -561,9 +567,12 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 
 	messages := append(buildHistoryMessages(req.History), modelprovider.Message{Role: "user", Content: req.UserInput})
 
-	truncations := 0 // consecutive max_tokens turns, see below
+	truncations := 0  // consecutive max_tokens turns, see below
 	emptyAnswers := 0 // turns with no text and no tool call, see below
 	for i := 0; i < maxIterations; i++ {
+		if ctx.Err() != nil {
+			return finish(entities.AgentRunError, fmt.Sprintf("run timed out or was cancelled: %v", ctx.Err()))
+		}
 		// A-01 §4.3: kill switch / pause / budget re-checked before EVERY
 		// model call, so an in-flight run halts at its next iteration.
 		if gErr := u.CheckGuard(ctx, agent); gErr != nil {
@@ -686,9 +695,11 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 			if b, mErr := json.Marshal(records); mErr == nil {
 				run.ToolCallsJSON = datatypes.JSON(b)
 			}
-			if uErr := u.Repository.UpdateRun(ctx, run); uErr != nil {
-				run.ReportIDs, run.NotificationsSent = scope.outcome()
-				return run, fmt.Errorf("agent: failed to persist incremental run state: %w", uErr)
+			pctx, cancel := persistContext(ctx)
+			uErr := u.Repository.UpdateRun(pctx, run)
+			cancel()
+			if uErr != nil {
+				return finish(entities.AgentRunError, fmt.Sprintf("failed to persist incremental run state: %v", uErr))
 			}
 		}
 	}
@@ -719,6 +730,13 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 	run.HitIterationCap = true
 	u.onRunSucceeded(ctx, agent, req, run)
 	return finish(entities.AgentRunOK, "")
+}
+
+// persistContext returns a context for saving run state that survives the
+// run's own cancellation/deadline (but keeps its values), bounded so a
+// stuck database can't hang the task.
+func persistContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 }
 
 // toolGranted reports whether agent may use t ("" permission = always).

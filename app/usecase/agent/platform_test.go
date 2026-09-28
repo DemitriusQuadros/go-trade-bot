@@ -589,3 +589,49 @@ func TestRun_EmptyAnswerIsNudgedThenErrors(t *testing.T) {
 		assert.Equal(t, entities.AgentRunError, run.Status)
 	})
 }
+
+// ctxCheckingRunRepo fails writes made with a dead context, like a real DB
+// driver does.
+type ctxCheckingRunRepo struct{ *fakeRunRepo }
+
+func (r ctxCheckingRunRepo) UpdateRun(ctx context.Context, run entities.AgentRun) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return r.fakeRunRepo.UpdateRun(ctx, run)
+}
+
+// Regression (E2E run #61): a run killed by its task deadline couldn't
+// persist its final state (the save used the expired context), so its row
+// stayed "in progress" forever. Runs now start as "running" and the final
+// state is saved on a detached context.
+func TestRun_DeadlineExceededStillPersistsErrorState(t *testing.T) {
+	h := newPlatformHarness(t)
+	repo := ctxCheckingRunRepo{h.repo}
+	h.uc.Repository = repo
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the task deadline has already passed
+
+	run, err := h.uc.Run(ctx, agentusecase.RunRequest{Agent: h.def, Trigger: "cron", UserInput: "x"})
+	require.Error(t, err)
+	stored, _ := h.repo.GetRun(context.Background(), run.ID)
+	assert.Equal(t, entities.AgentRunError, stored.Status)
+	assert.Contains(t, stored.ErrorMessage, "timed out or was cancelled")
+	assert.False(t, stored.FinishedAt.IsZero())
+	h.model.AssertNotCalled(t, "Complete", mock.Anything, mock.Anything)
+}
+
+func TestRun_StartsAsRunning(t *testing.T) {
+	h := newPlatformHarness(t)
+	var statusDuringRun entities.AgentRunStatus
+	h.model.On("Complete", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		r, _ := h.repo.GetRun(context.Background(), 1)
+		statusDuringRun = r.Status
+	}).Return(modelprovider.CompletionResult{StopReason: "end_turn", Text: "done"}, nil).Once()
+
+	run, err := h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: h.def, Trigger: "cron", UserInput: "x"})
+	require.NoError(t, err)
+	assert.Equal(t, entities.AgentRunRunning, statusDuringRun)
+	assert.Equal(t, entities.AgentRunOK, run.Status)
+}

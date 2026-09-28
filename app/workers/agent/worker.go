@@ -22,7 +22,10 @@ const Queue = "agents"
 
 // Task options (A-02 §2).
 const (
-	RunTimeout = 10 * time.Minute
+	// RunTimeout bounds one agent:run task. 10 minutes was too short for a
+	// run that backtests and then passes the deploy gate (two walk-forward
+	// runs): E2E run #61 was killed mid-gate.
+	RunTimeout = 30 * time.Minute
 	// CronUniqueTTL prevents cron pile-ups when a run overruns its interval.
 	CronUniqueTTL = 2 * time.Minute
 )

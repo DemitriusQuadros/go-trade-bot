@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"go-trade-bot/app/entities"
 	agentrepo "go-trade-bot/app/repository/agent"
@@ -19,6 +20,7 @@ import (
 	proposalrepo "go-trade-bot/app/repository/proposal"
 	"go-trade-bot/app/strategies"
 	strategyscript "go-trade-bot/app/strategies/script"
+	agentworker "go-trade-bot/app/workers/agent"
 	"go-trade-bot/cmd/agent/modules"
 
 	"go.uber.org/fx"
@@ -48,6 +50,15 @@ func appOptions() fx.Option {
 		fx.Invoke(func(db *gorm.DB) {
 			if err := Migrate(db); err != nil {
 				log.Fatalf("failed to migrate database: %v", err)
+			}
+			// Runs orphaned by a previous crash/deadline show as in progress
+			// forever otherwise. The cutoff is older than any live run can
+			// be, so another replica's in-flight runs are never touched.
+			cutoff := time.Now().Add(-(agentworker.RunTimeout + 5*time.Minute))
+			if n, err := agentrepo.MarkOrphanedRuns(context.Background(), db, cutoff); err != nil {
+				log.Printf("cmd/agent: failed to mark orphaned agent runs: %v", err)
+			} else if n > 0 {
+				log.Printf("cmd/agent: marked %d orphaned agent run(s) as interrupted", n)
 			}
 		}),
 		fx.Invoke(RegisterScriptStrategy),

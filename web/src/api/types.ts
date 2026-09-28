@@ -558,7 +558,8 @@ export interface AgentHistoryTurn {
   response_text?: string;
 }
 
-export type AgentRunStatus = 'ok' | 'error';
+// 'running' from creation until the run finishes (older rows were created as 'ok').
+export type AgentRunStatus = 'running' | 'ok' | 'error';
 export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor' | 'cron' | 'manual' | 'event' | 'market' | 'chain';
 
 // Per-trigger AgentRun.trigger_detail shapes (C-01 §2.3, §3, §4). Every

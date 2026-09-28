@@ -60,7 +60,14 @@ export function MemoryKindBadge({ kind }: { kind: string }) {
 }
 
 export function RunStatusChip({ status }: { status: string }) {
-  const tone = status === 'error' ? TONE.destructive : status === 'ok' ? TONE.success : TONE.muted;
+  const tone =
+    status === 'error'
+      ? TONE.destructive
+      : status === 'ok'
+        ? TONE.success
+        : status === 'running'
+          ? `${TONE.primary} animate-pulse`
+          : TONE.muted;
   return <span className={`${BADGE_BASE} ${tone}`}>{status}</span>;
 }
 

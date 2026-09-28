@@ -19,8 +19,12 @@ type AgentInstruction struct {
 type AgentRunStatus string
 
 const (
-	AgentRunOK    AgentRunStatus = "ok"
-	AgentRunError AgentRunStatus = "error"
+	// AgentRunRunning is a run's status from creation until it finishes.
+	// Runs used to be created as "ok", so an in-progress (or orphaned) run
+	// was indistinguishable from a successful one in the API and UI.
+	AgentRunRunning AgentRunStatus = "running"
+	AgentRunOK      AgentRunStatus = "ok"
+	AgentRunError   AgentRunStatus = "error"
 )
 
 // AgentRun is the audit-log entry for one agent invocation (one MCP

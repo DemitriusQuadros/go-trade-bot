@@ -90,7 +90,7 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 	if !run.StartedAt.IsZero() {
 		resp.StartedAt = run.StartedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
-	if !run.FinishedAt.IsZero() {
+	if !run.FinishedAt.IsZero() && run.FinishedAt.Year() > 1 {
 		resp.FinishedAt = run.FinishedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 	return resp
