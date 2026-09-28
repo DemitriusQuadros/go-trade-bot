@@ -7,8 +7,13 @@ import (
 
 	"go-trade-bot/app/entities"
 	repoagent "go-trade-bot/app/repository/agent"
+	"go-trade-bot/app/repository/agentplatform"
+	candle_repo "go-trade-bot/app/repository/candle"
 	snapshot_repo "go-trade-bot/app/repository/performancesnapshot"
+	proposalrepo "go-trade-bot/app/repository/proposal"
+	signalrepo "go-trade-bot/app/repository/signal"
 	strategy_repo "go-trade-bot/app/repository/strategy"
+	strategyscript "go-trade-bot/app/strategies/script"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
@@ -17,6 +22,7 @@ import (
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/modelprovider"
+	"go-trade-bot/internal/report/agentreport"
 
 	"go.uber.org/fx"
 	"gorm.io/gorm"
@@ -54,10 +60,27 @@ var AgentModule = fx.Module("agent",
 			optimize agentusecase.OptimizeUseCase,
 			optimizeWorker agentusecase.OptimizeWorker,
 			cfg *configuration.Configuration,
+			db *gorm.DB,
+			bt *backtestusecase.BacktestUseCase,
+			runner *strategyscript.Runner,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
 			uc.OptimizeWorker = optimizeWorker
+			// Agents platform (A-02 §5 "MCP"): the memory/report tools are
+			// exposed over MCP and act as the DEFAULT agent (its permissions
+			// filter the registered tools; write_report attributes to it).
+			// Notify is never exposed over MCP, so no notifier is wired.
+			// Lock is deliberately nil here: no strategy writer locking for
+			// MCP-originated save_strategy_script calls (documented choice -
+			// cmd/mcp has no Redis dependency today). No Guard either: MCP
+			// tool calls never run the model loop.
+			uc.Platform = agentplatform.NewGormRepository(db)
+			uc.Reports = agentreport.NewHTMLRenderer(agentplatform.NewReportDataSource(db))
+			uc.APIBaseURL = cfg.APIBaseURL
+			// Phase B-01: gated deploys, challengers, proposals (acting as
+			// the default agent, like every MCP tool call).
+			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
 			uc.Provider = cfg.Agent.Provider
 			if cfg.Agent.Provider == "anthropic" {
 				uc.ModelName = cfg.Agent.AnthropicModel

@@ -88,7 +88,16 @@ func (a *AnthropicAdapter) Complete(ctx context.Context, req CompletionRequest) 
 		return CompletionResult{}, fmt.Errorf("modelprovider: anthropic completion failed: %w", err)
 	}
 
-	result := CompletionResult{StopReason: mapAnthropicStopReason(resp.StopReason)}
+	result := CompletionResult{
+		StopReason: mapAnthropicStopReason(resp.StopReason),
+		// Cache writes/reads are billed as input too (at different rates);
+		// counting them all as plain input keeps budget accounting
+		// conservative rather than under-counting.
+		Usage: Usage{
+			InputTokens:  resp.Usage.InputTokens + resp.Usage.CacheCreationInputTokens + resp.Usage.CacheReadInputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+		},
+	}
 	for _, block := range resp.Content {
 		switch variant := block.AsAny().(type) {
 		case anthropic.TextBlock:

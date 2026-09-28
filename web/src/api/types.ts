@@ -26,6 +26,9 @@ export interface Strategy {
   configuration: Record<string, unknown> | null; // raw JSONB, algorithm-specific
   rule_summary?: string;     // present only for template strategies
   script_source?: string;    // Lua source code for script strategies
+  // Agents platform B-01 §1: set on a challenger (a dryrun clone an agent
+  // iterates on) to its champion's id; null everywhere else.
+  challenger_of_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -358,6 +361,10 @@ export interface PlatformSettings {
   prometheus_url: string;
   grafana_url: string;
   asynqmon_url?: string;
+  // Agents platform global kill switch - READ-ONLY here (PUT /settings
+  // ignores it). Changed via PUT /agents/kill-switch. true = no agent runs
+  // start, and in-flight runs halt before their next model call.
+  agents_paused: boolean;
 }
 
 export interface PlatformSettingsUpdateRequest {
@@ -548,10 +555,20 @@ export interface AgentHistoryTurn {
 }
 
 export type AgentRunStatus = 'ok' | 'error';
-export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor';
+export type AgentRunTrigger = 'mcp_tool' | 'chat_ui' | 'monitor' | 'cron' | 'manual';
 
 export interface AgentRun {
   id: number;
+  // Agents platform (A-02 §5) additions - optional because rows recorded
+  // before the platform landed carry none of them.
+  agent_id?: number;
+  agent_name?: string;
+  // Raw JSON from the backend: {"cron": spec} for cron runs,
+  // {"requested_by", "prompt"} for manual runs, absent otherwise.
+  trigger_detail?: { cron?: string; requested_by?: string; prompt?: string } | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
   provider: string;
   model: string;
   trigger: AgentRunTrigger | string;
@@ -563,4 +580,245 @@ export interface AgentRun {
   strategy_id?: number;
   started_at: string;
   finished_at?: string;
+}
+
+// --- Agents platform (docs/specs/agents-platform, A-02 §5) -----------------
+// Every type below mirrors a snake_case DTO from A-02 §5 exactly - rename
+// nothing here without updating the backend contract.
+
+export type AgentPermission =
+  | 'read'
+  | 'backtest'
+  | 'optimize'
+  | 'edit_testing'
+  | 'notify'
+  | 'create_strategy' // B-01: create new testing/dryrun strategies (max 3/day)
+  | 'propose_live'; // B-01: propose challenger promotions (human approves each)
+
+export type AgentProvider = '' | 'anthropic' | 'gemini';
+
+export interface AgentTriggers {
+  cron?: string[];
+  // Phase C - accepted/stored by the API but unused in Phase A.
+  events?: string[];
+  market?: unknown[];
+  chain_from?: number[];
+}
+
+export interface AgentRequest {
+  name: string;
+  goal: string;
+  provider: AgentProvider;
+  model: string;
+  permissions: AgentPermission[];
+  triggers: AgentTriggers;
+  strategy_ids: number[];
+  webhook_target_ids: number[];
+  daily_budget_usd: number;
+  max_auto_deploys_per_day: number;
+}
+
+export interface AgentLastRun {
+  id: number;
+  status: AgentRunStatus | string;
+  trigger: AgentRunTrigger | string;
+  started_at: string;
+}
+
+export interface Agent extends AgentRequest {
+  id: number;
+  paused: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+  today_cost_usd: number;
+  last_run: AgentLastRun | null;
+  next_run_at: string | null; // UTC RFC3339; null if no cron specs or paused
+}
+
+export interface AgentRunEnqueuedResponse {
+  enqueued: boolean;
+  task_id: string;
+}
+
+export interface UsageDay {
+  day: string; // YYYY-MM-DD (UTC)
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  runs: number;
+}
+
+export interface AgentUsage {
+  today: UsageDay;
+  days: UsageDay[];
+}
+
+export type ReportSeverity = 'info' | 'warning' | 'critical';
+
+export interface AgentReportSummary {
+  id: number;
+  agent_id: number;
+  agent_name: string;
+  agent_run_id: number | null;
+  strategy_ids: number[];
+  title: string;
+  severity: ReportSeverity | string;
+  summary: string;
+  created_at: string;
+}
+
+export interface AgentReport extends AgentReportSummary {
+  blocks: unknown; // raw JSON block list - rendering is server-side (/html)
+}
+
+export interface AgentReportFilter {
+  agent_id?: number;
+  strategy_id?: number;
+  severity?: ReportSeverity;
+  limit?: number;
+  before_id?: number;
+}
+
+export type WebhookTargetKind = 'generic' | 'discord' | 'slack' | 'telegram';
+
+// url and secret come back MASKED on every read. Sending a masked value
+// back unchanged on PUT means "keep the stored value" (same semantics as
+// the broker secrets in /settings).
+export interface WebhookTarget {
+  id: number;
+  name: string;
+  kind: WebhookTargetKind;
+  url: string; // generic/discord/slack only
+  secret: string; // telegram bot token only
+  chat_id: string; // telegram only
+  enabled: boolean;
+}
+
+export type WebhookTargetRequest = Omit<WebhookTarget, 'id'>;
+
+export interface WebhookTestResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export type StrategyMemoryKind = 'journal' | 'chat_user' | 'chat_agent' | 'report_ref' | 'finding';
+
+export interface StrategyMemoryEntry {
+  id: number;
+  strategy_id: number;
+  author_agent_id: number | null;
+  author_name: string; // agent name, or "operator"
+  agent_run_id: number | null;
+  kind: StrategyMemoryKind | string;
+  content: string;
+  ref_id: number | null; // AgentReport id for report_ref entries
+  created_at: string;
+}
+
+// --- Agents platform Phase B: proposals + deploy gate (B-01 §5) -------------
+
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'applied' | 'superseded' | 'failed';
+export type ProposalKind = 'promote_challenger' | 'gate_failed_change';
+
+// GET /proposals list item (B-01 §5).
+export interface Proposal {
+  id: number;
+  kind: ProposalKind | string;
+  target_strategy_id: number;
+  target_strategy_name: string;
+  challenger_strategy_id: number | null;
+  agent_id: number;
+  agent_name: string;
+  rationale: string;
+  status: ProposalStatus | string;
+  early: boolean;
+  created_at: string;
+  decided_at: string | null;
+  applied_at: string | null;
+  failure_reason: string;
+  // Deploy-gate outcome recorded in the evidence; null when no gate ran.
+  gate_passed?: boolean | null;
+}
+
+// GET /proposals/{id} - the list item plus the fields below (B-01 §5).
+export interface ProposalDetail extends Proposal {
+  base_source: string;
+  proposed_source: string;
+  evidence: unknown; // raw JSON - decode with parseProposalEvidence()
+  report_id: number | null;
+  decision_note: string;
+  target_has_open_position: boolean; // computed live on every GET
+  target_current_source_matches_base: boolean;
+  // When apply_proposal last checked an approved proposal's target for a
+  // flat position. Null before the first check - the UI then falls back to
+  // the time this page last refetched (target_has_open_position is live).
+  last_flat_check_at?: string | null;
+}
+
+export interface ProposalFilter {
+  // One status, or a comma-separated list ("applied,rejected,...").
+  status?: ProposalStatus | string;
+  strategy_id?: number;
+  agent_id?: number;
+  limit?: number;
+  before_id?: number;
+}
+
+export interface ProposalDecisionRequest {
+  note?: string;
+}
+
+// Decoded `evidence` (B-01 §3/§4): {gate:{passed, checks, baseline_run_id,
+// candidate_run_id}, forward_test?:{challenger, champion, since}}. Every
+// field optional - the payload is raw JSON and the UI must survive partial
+// shapes. Non-finite floats arrive as the strings "+Inf"/"-Inf"/"NaN".
+export interface GateCheck {
+  name?: string;
+  passed?: boolean;
+  candidate?: number | null;
+  baseline?: number | null;
+  threshold?: number | null;
+  detail?: string;
+}
+
+export interface GateResult {
+  passed?: boolean;
+  checks?: GateCheck[];
+  baseline_run_id?: number | null;
+  candidate_run_id?: number | null;
+}
+
+export interface ForwardTestSide {
+  trades?: number | null;
+  win_rate_pct?: number | null;
+  net_pnl?: number | null;
+  max_adverse?: number | null;
+}
+
+export interface ForwardTestEvidence {
+  challenger?: ForwardTestSide;
+  champion?: ForwardTestSide;
+  since?: string;
+}
+
+export interface ProposalEvidence {
+  gate?: GateResult;
+  forward_test?: ForwardTestEvidence;
+}
+
+// GET/PUT /deploy-gate (B-01 §1, §5).
+export interface PendingProposalCount {
+  count: number;
+}
+
+export interface DeployGateConfig {
+  min_sharpe_delta: number;
+  max_drawdown_ratio: number;
+  min_trades: number;
+  min_profit_factor: number;
+  lookback_months: number;
+  train_months: number;
+  test_months: number;
+  timeframe: string; // "" = the strategy's own cycle-derived timeframe
 }

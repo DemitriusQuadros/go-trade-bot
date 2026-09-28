@@ -140,3 +140,32 @@ func TestUpdateRun_AllowsLargeToolCallsJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(large), len(fetched.ToolCallsJSON))
 }
+
+func TestListRunsByAgentAndLastRun(t *testing.T) {
+	db := setupTestDB(t)
+	repo := agent.NewGormRepository(db)
+	ctx := context.Background()
+	a, b := uint(1), uint(2)
+	for i := 0; i < 3; i++ {
+		_, err := repo.CreateRun(ctx, entities.AgentRun{AgentID: &a, Trigger: "cron", Status: entities.AgentRunOK})
+		require.NoError(t, err)
+	}
+	_, err := repo.CreateRun(ctx, entities.AgentRun{AgentID: &b, Trigger: "manual"})
+	require.NoError(t, err)
+
+	runs, err := repo.ListRunsByAgent(ctx, a, 2, nil)
+	require.NoError(t, err)
+	require.Len(t, runs, 2)
+	assert.Greater(t, runs[0].ID, runs[1].ID)
+	older, err := repo.ListRunsByAgent(ctx, a, 10, &runs[1].ID)
+	require.NoError(t, err)
+	assert.Len(t, older, 1)
+
+	last, err := repo.LastRunByAgent(ctx, a)
+	require.NoError(t, err)
+	require.NotNil(t, last)
+	assert.Equal(t, runs[0].ID, last.ID)
+	none, err := repo.LastRunByAgent(ctx, 99)
+	require.NoError(t, err)
+	assert.Nil(t, none)
+}

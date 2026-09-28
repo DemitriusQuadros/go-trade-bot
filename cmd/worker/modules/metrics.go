@@ -5,6 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/metrics"
 )
 
@@ -85,6 +86,17 @@ var ScriptingMetrics = []metrics.MetricConfig{
 	},
 }
 
+// DryRunMetrics (fix-01): simulated dryrun orders are counted here and never
+// in order_execution_* (the dryrun SignalUseCase has no collector).
+var DryRunMetrics = []metrics.MetricConfig{
+	{
+		Name:       exchange.MetricDryRunSimulatedOrders,
+		Help:       "Orders simulated by the worker's dryrun exchange (no real exchange call), by side and type.",
+		Type:       metrics.Counter,
+		LabelNames: []string{"side", "type"},
+	},
+}
+
 var MetricsModule = fx.Module("metrics",
 	fx.Provide(func() *metrics.MetricsCollector {
 		cfgs := []metrics.MetricConfig{
@@ -132,6 +144,7 @@ var MetricsModule = fx.Module("metrics",
 		cfgs = append(cfgs, Phase2Metrics...)
 		cfgs = append(cfgs, Phase3Metrics...)
 		cfgs = append(cfgs, ScriptingMetrics...)
+		cfgs = append(cfgs, DryRunMetrics...)
 		return metrics.NewMetricsCollector(cfgs)
 	}),
 )

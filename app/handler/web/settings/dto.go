@@ -53,5 +53,10 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		PrometheusURL:          r.PrometheusURL,
 		GrafanaURL:             r.GrafanaURL,
 		AsynqmonURL:            r.AsynqmonURL,
+		// The agents kill switch is NOT settable through PUT /settings (any
+		// agents_paused in the body is ignored): it is owned by
+		// PUT /agents/kill-switch, so a normal settings save can never flip
+		// it (and never has to assert confirm_live to do so).
+		AgentsPaused: existing.AgentsPaused,
 	}
 }

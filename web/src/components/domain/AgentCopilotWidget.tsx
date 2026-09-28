@@ -2,7 +2,9 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Send, AlertTriangle, History, X, MessageSquareText, Maximize2, Minimize2 } from 'lucide-react';
 import { AgentRun } from '@/api/types';
-import { useSendAgentMessage } from '@/hooks/queries';
+import { ApiError, apiErrorMessage } from '@/api/client';
+import { useAgents, useSendAgentMessage } from '@/hooks/queries';
+import { formatUsd } from '@/lib/time';
 import { AgentToolCallCard } from '@/components/domain/AgentToolCallCard';
 import { MarkdownMessage } from '@/components/domain/MarkdownMessage';
 import { ApplyScriptDialog } from '@/components/domain/ApplyScriptDialog';
@@ -18,8 +20,37 @@ import { useEditorBridge } from '@/context/EditorBridgeContext';
 interface Turn {
   id: string;
   input: string;
+  // The persona this turn was sent to (A-03 §8) - shown on the reply even
+  // before/without the run's own agent_name.
+  agentName?: string;
   run?: AgentRun;
   failed?: string;
+  // 409 from POST /agent/runs: the agent (or every agent, via the global
+  // kill switch) is paused - rendered as a notice, not a failure.
+  blocked?: string;
+}
+
+// Which persona answers in the widget, remembered in this browser.
+// localStorage can throw (private mode, blocked storage) - never fatal.
+const AGENT_STORAGE_KEY = 'gtb_copilot_agent_id';
+
+function loadStoredAgentId(): number | undefined {
+  try {
+    const raw = localStorage.getItem(AGENT_STORAGE_KEY);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeAgentId(id: number | undefined) {
+  try {
+    if (id == null) localStorage.removeItem(AGENT_STORAGE_KEY);
+    else localStorage.setItem(AGENT_STORAGE_KEY, String(id));
+  } catch {
+    /* storage unavailable - selection just won't persist */
+  }
 }
 
 const EXAMPLE_PROMPT = 'List my strategies and tell me which ones have no recent backtests.';
@@ -51,6 +82,16 @@ export function AgentCopilotWidget() {
   // been editing an already-existing strategy the whole time.
   const [createdStrategyId, setCreatedStrategyId] = useState<number | undefined>(undefined);
   const sendMessage = useSendAgentMessage();
+  const { data: agents = [] } = useAgents();
+  const [storedAgentId, setStoredAgentId] = useState<number | undefined>(() => loadStoredAgentId());
+  const defaultAgent = agents.find((a) => a.is_default);
+  // A remembered id that no longer exists (agent deleted) falls back to the
+  // default "Copilot" persona.
+  const selectedAgent = agents.find((a) => a.id === storedAgentId) ?? defaultAgent;
+  const selectAgent = (id: number) => {
+    setStoredAgentId(id);
+    storeAgentId(id);
+  };
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const editorBridge = useEditorBridge();
 
@@ -90,11 +131,14 @@ export function AgentCopilotWidget() {
       }));
 
     const turnId = `${Date.now()}-${Math.random()}`;
-    setTurns((prev) => [...prev, { id: turnId, input: text }]);
+    const agentName = selectedAgent?.name;
+    setTurns((prev) => [...prev, { id: turnId, input: text, agentName }]);
     setInput('');
 
     sendMessage.mutate(
-      { input: text, strategyId: effectiveStrategyId, history },
+      // Omitted agent_id = the backend's default agent (agents list not
+      // loaded yet, or an older backend without personas).
+      { input: text, strategyId: effectiveStrategyId, history, agentId: selectedAgent?.id },
       {
         onSuccess: (run) => {
           setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, run } : t)));
@@ -105,6 +149,11 @@ export function AgentCopilotWidget() {
           }
         },
         onError: (err) => {
+          if (err instanceof ApiError && err.status === 409) {
+            const msg = apiErrorMessage(err, 'This agent is paused.');
+            setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, blocked: msg } : t)));
+            return;
+          }
           setTurns((prev) =>
             prev.map((t) => (t.id === turnId ? { ...t, failed: err instanceof Error ? err.message : String(err) } : t))
           );
@@ -140,7 +189,23 @@ export function AgentCopilotWidget() {
           {/* Header */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/60 shrink-0">
             <img src="/gopher-face.png" alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-            <span className="text-sm font-bold text-foreground">AI Strategy Copilot</span>
+            <span className="text-sm font-bold text-foreground whitespace-nowrap">AI Copilot</span>
+            {agents.length > 0 && (
+              <select
+                value={selectedAgent?.id ?? ''}
+                onChange={(e) => selectAgent(Number(e.target.value))}
+                aria-label="Agent persona answering in this chat"
+                title="Which agent persona answers"
+                className="min-w-0 max-w-[9rem] truncate bg-secondary border border-border text-[11px] rounded px-1.5 py-0.5 text-foreground focus:outline-none focus:border-primary"
+              >
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                    {a.paused ? ' (paused)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             {editorBridge && (
               <span
                 className="text-[10px] font-mono text-muted-foreground bg-card/40 border border-border/40 rounded px-1.5 py-0.5"
@@ -196,10 +261,23 @@ export function AgentCopilotWidget() {
                   </div>
                 </div>
 
-                {!turn.run && !turn.failed && (
+                {!turn.run && !turn.failed && !turn.blocked && (
                   <div className="flex items-center gap-2 text-muted-foreground text-xs pl-1">
                     <Spinner size="sm" />
-                    <span>Agent is working…</span>
+                    <span>{turn.agentName ?? 'Agent'} is working…</span>
+                  </div>
+                )}
+
+                {turn.blocked && (
+                  <div role="status" className="flex items-start gap-2 rounded border border-warning/40 bg-warning/15 text-foreground text-xs px-3 py-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
+                    <div>
+                      <div className="font-semibold">{turn.agentName ?? 'This agent'} can't answer right now</div>
+                      <div className="text-muted-foreground mt-0.5">{turn.blocked}</div>
+                      <Link to="/agents" className="inline-block mt-1 text-primary hover:underline">
+                        Open Agents
+                      </Link>
+                    </div>
                   </div>
                 )}
 
@@ -215,6 +293,14 @@ export function AgentCopilotWidget() {
 
                 {turn.run && (
                   <div className="space-y-2 pl-1">
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="font-semibold text-foreground">{turn.run.agent_name || turn.agentName || 'Copilot'}</span>
+                      {turn.run.cost_usd != null && (
+                        <span className="font-mono" title="Model cost of this turn">
+                          {formatUsd(turn.run.cost_usd)}
+                        </span>
+                      )}
+                    </div>
                     {turn.run.status === 'error' && (
                       <div className="flex items-start gap-2 rounded border border-destructive/40 bg-destructive/15 text-destructive text-xs px-3 py-2">
                         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />

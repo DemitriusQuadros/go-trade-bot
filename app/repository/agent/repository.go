@@ -104,3 +104,35 @@ func (r *GormRepository) ListRuns(ctx context.Context, limit int, strategyID *ui
 	err := query.Find(&runs).Error
 	return runs, err
 }
+
+// ListRunsByAgent returns an agent's runs newest-first (agents-platform
+// A-02 GET /agents/{id}/runs). Not part of Repository - consumers declare
+// their own narrow interface.
+func (r *GormRepository) ListRunsByAgent(ctx context.Context, agentID uint, limit int, beforeID *uint) ([]entities.AgentRun, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	q := r.db.WithContext(ctx).Where("agent_id = ?", agentID)
+	if beforeID != nil {
+		q = q.Where("id < ?", *beforeID)
+	}
+	var runs []entities.AgentRun
+	err := q.Order("id DESC").Limit(limit).Find(&runs).Error
+	return runs, err
+}
+
+// LastRunByAgent returns the agent's newest run, or nil if it has none.
+func (r *GormRepository) LastRunByAgent(ctx context.Context, agentID uint) (*entities.AgentRun, error) {
+	var runs []entities.AgentRun
+	if err := r.db.WithContext(ctx).Select("id", "status", "trigger", "started_at", "agent_id").
+		Where("agent_id = ?", agentID).Order("id DESC").Limit(1).Find(&runs).Error; err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return nil, nil
+	}
+	return &runs[0], nil
+}

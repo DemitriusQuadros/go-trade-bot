@@ -129,6 +129,33 @@ services:
     volumes:
       - ./config.yml:/root/config.yml:ro
 
+  # agent is the isolated agents-platform runtime (agents-platform A-02):
+  # consumes ONLY the asynq "agents" queue (agent:run - manual runs enqueued
+  # by the API and its own DB-backed cron schedules) and never runs strategy
+  # cycles. Its only exchange client is exchange.ReadOnlyClient (order
+  # placement/cancellation always fails); it ignores MODE/CONFIRM_LIVE.
+  # Same mem_limit/restart reasoning as worker/mcp above (it runs the same
+  # Lua runner via run_backtest/save_strategy_script; 512m is the same
+  # placeholder pending a real baseline). network_mode: host for the same
+  # config.yml "localhost" reason as mcp; /metrics is served on
+  # AGENT_RUNTIME.METRICS_PORT (default 9194 - 9193 is the worker's
+  # loopback settings bridge).
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET: agent
+    container_name: agent
+    restart: unless-stopped
+    mem_limit: 512m
+    network_mode: host
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./config.yml:/root/config.yml:ro
+
 volumes:
   redis_data:
   prometheus_data:

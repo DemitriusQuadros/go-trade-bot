@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useStrategies } from '@/hooks/queries';
 import { api } from '@/api/client';
 import { Strategy, StrategyMode, StrategyStatus } from '@/api/types';
@@ -18,6 +18,7 @@ import {
   Code2,
   Bot,
   Trash2,
+  GitBranch,
 } from 'lucide-react';
 
 export function Strategies() {
@@ -65,6 +66,21 @@ export function Strategies() {
       return matchStatus && matchMode && matchSearch;
     });
   }, [strategies, statusFilter, modeFilter, searchQuery]);
+
+  // Challenger links (B-02 §4), from the strategy DTO's challenger_of_id.
+  const { strategyById, activeChallengersOf } = useMemo(() => {
+    const byId = new Map<number, Strategy>();
+    const challengers = new Map<number, Strategy[]>();
+    (strategies ?? []).forEach((s) => byId.set(s.id, s));
+    (strategies ?? []).forEach((s) => {
+      if (s.challenger_of_id != null && s.status !== 'disabled') {
+        const list = challengers.get(s.challenger_of_id) ?? [];
+        list.push(s);
+        challengers.set(s.challenger_of_id, list);
+      }
+    });
+    return { strategyById: byId, activeChallengersOf: challengers };
+  }, [strategies]);
 
   const handleToggleStatus = async (strat: Strategy) => {
     const newStatus: StrategyStatus = strat.status === 'disabled' ? 'productive' : 'disabled';
@@ -290,6 +306,37 @@ export function Strategies() {
                   >
                     <td className="px-4 py-3 align-top max-w-xs">
                       <div className="font-semibold text-foreground truncate">{strat.name}</div>
+                      {strat.challenger_of_id != null && (
+                        <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1 min-w-0">
+                          <GitBranch className="w-3 h-3 shrink-0" />
+                          <span className="shrink-0">challenger of</span>
+                          <Link
+                            to={`/strategies/${strat.challenger_of_id}/edit`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-foreground hover:text-primary hover:underline truncate"
+                          >
+                            {strategyById.get(strat.challenger_of_id)?.name ?? `#${strat.challenger_of_id}`}
+                          </Link>
+                        </div>
+                      )}
+                      {(activeChallengersOf.get(strat.id)?.length ?? 0) > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {(() => {
+                            const list = activeChallengersOf.get(strat.id)!;
+                            return (
+                              <Link
+                                to={`/strategies/${list[0].id}/edit`}
+                                onClick={(e) => e.stopPropagation()}
+                                title={list.map((c) => `#${c.id} ${c.name}`).join('\n')}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/40 text-[10px] font-semibold hover:bg-primary/25"
+                              >
+                                <GitBranch className="w-3 h-3" />
+                                {list.length} challenger{list.length === 1 ? '' : 's'}
+                              </Link>
+                            );
+                          })()}
+                        </div>
+                      )}
                       <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 font-mono">
                         <span>#{strat.id}</span>
                         <span className="text-muted-foreground/50">·</span>

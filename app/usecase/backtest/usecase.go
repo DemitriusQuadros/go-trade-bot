@@ -71,6 +71,11 @@ type WalkForwardRequest struct {
 	TestMonths     int               `json:"test_months"`
 	StepMonths     int               `json:"step_months"`
 	FillPolicy     engine.FillPolicy `json:"fill_policy"`
+	// CandidateSourceHash is stamped onto the persisted run (agents-platform
+	// Phase B deploy gate): set by the gate runner when the in-memory
+	// strategy passed to RunWalkForwardForStrategy carries a CANDIDATE
+	// source rather than its saved one. Not settable over JSON.
+	CandidateSourceHash string `json:"-"`
 }
 
 type WalkForwardTradeLogPayload struct {
@@ -234,7 +239,29 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 	return run, nil
 }
 
+// RunWalkForward loads the strategy by ID and delegates to
+// RunWalkForwardForStrategy.
 func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardRequest) (entities.BacktestRun, error) {
+	if req.StrategyID == 0 {
+		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
+	}
+	if req.Symbol == "" {
+		return entities.BacktestRun{}, fmt.Errorf("symbol is required")
+	}
+	strat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
+	if err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
+	}
+	return u.RunWalkForwardForStrategy(ctx, strat, req)
+}
+
+// RunWalkForwardForStrategy is RunWalkForward on a caller-supplied,
+// possibly unsaved (in-memory) strategy - e.g. a strategy row with a
+// candidate ScriptSource swapped in (agents-platform Phase B deploy gate).
+// The persisted BacktestRun is linked to strat.ID (the real strategy row,
+// so it appears in that strategy's history); req.StrategyID is ignored.
+// The strategy is never written.
+func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat entities.Strategy, req WalkForwardRequest) (entities.BacktestRun, error) {
 	startTimer := time.Now()
 	strategyName := "unknown"
 	defer func() {
@@ -244,7 +271,7 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		}
 	}()
 
-	if req.StrategyID == 0 {
+	if strat.ID == 0 {
 		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
 	}
 	if req.Symbol == "" {
@@ -266,10 +293,6 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		req.StepMonths = req.TestMonths
 	}
 
-	strat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
-	if err != nil {
-		return entities.BacktestRun{}, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
-	}
 	strategyName = strat.Name
 
 	periodsPerYear := periodsPerYearForTimeframe(req.Timeframe)
@@ -350,6 +373,8 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 		MetricsJSON:    datatypes.JSON(metricsBytes),
 		InitialCapital: req.InitialCapital,
 		CreatedAt:      time.Now().UTC(),
+
+		CandidateSourceHash: req.CandidateSourceHash,
 	}
 
 	if err := u.backtestRepo.Create(ctx, &run); err != nil {

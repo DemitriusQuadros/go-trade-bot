@@ -38,6 +38,24 @@ type Configuration struct {
 	DryRun               DryRunConfig
 	Console              ConsoleConfig
 	Agent                Agent
+	AgentRuntime         AgentRuntime
+}
+
+// AgentRuntime configures the cmd/agent binary (agents-platform A-02 §1).
+// Read leniently with defaults - absent keys never block any binary.
+type AgentRuntime struct {
+	// Concurrency is the asynq worker count for the "agents" queue.
+	// AGENT_RUNTIME.CONCURRENCY, default 2.
+	Concurrency int
+	// MetricsPort is the port cmd/agent serves /metrics on.
+	// AGENT_RUNTIME.METRICS_PORT, default "9194" - NOT 9193, which is
+	// cmd/worker's default loopback settings-bridge port
+	// (INTERNAL_BRIDGE_ADDR 127.0.0.1:9193); both binaries run on the same
+	// host (host networking in docker-compose).
+	MetricsPort string
+	// SyncInterval is how often the cron PeriodicTaskManager re-reads agent
+	// schedules from the DB. AGENT_RUNTIME.SYNC_INTERVAL, default 30s.
+	SyncInterval time.Duration
 }
 
 // Agent holds model-provider credentials and selection for the AI strategy
@@ -213,6 +231,8 @@ func NewConfiguration() *Configuration {
 	agentGeminiKey := viper.GetString("AGENT.GEMINI_KEY")
 	agentGeminiModel := viper.GetString("AGENT.GEMINI_MODEL")
 
+	agentRuntime := loadAgentRuntime()
+
 	return &Configuration{
 		Broker: Broker{
 			ApiKey:           key,
@@ -259,7 +279,38 @@ func NewConfiguration() *Configuration {
 			GeminiKey:      agentGeminiKey,
 			GeminiModel:    agentGeminiModel,
 		},
+		AgentRuntime: agentRuntime,
 	}
+}
+
+// Defaults for AgentRuntime.
+const (
+	DefaultAgentConcurrency  = 2
+	DefaultAgentMetricsPort  = "9194"
+	DefaultAgentSyncInterval = 30 * time.Second
+)
+
+func loadAgentRuntime() AgentRuntime {
+	rt := AgentRuntime{
+		Concurrency:  viper.GetInt("AGENT_RUNTIME.CONCURRENCY"),
+		MetricsPort:  viper.GetString("AGENT_RUNTIME.METRICS_PORT"),
+		SyncInterval: viper.GetDuration("AGENT_RUNTIME.SYNC_INTERVAL"),
+	}
+	return rt.WithDefaults()
+}
+
+// WithDefaults fills zero values with the documented defaults.
+func (rt AgentRuntime) WithDefaults() AgentRuntime {
+	if rt.Concurrency <= 0 {
+		rt.Concurrency = DefaultAgentConcurrency
+	}
+	if rt.MetricsPort == "" {
+		rt.MetricsPort = DefaultAgentMetricsPort
+	}
+	if rt.SyncInterval <= 0 {
+		rt.SyncInterval = DefaultAgentSyncInterval
+	}
+	return rt
 }
 
 func setupViper() error {

@@ -49,7 +49,7 @@ func TestHandleStrategyTask_DisabledStrategy_TerminatesAndDoesNotReenqueue(t *te
 	dbStrategy := entities.Strategy{ID: 1, Name: "S1", StrategyName: "registered-test-strategy", Status: entities.Disabled, Mode: "dryrun"}
 	repo.On("GetByID", mock.Anything, uint(1)).Return(dbStrategy, nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 1, Name: "S1"})
 	task := asynq.NewTask(handler.StrategyTask+"S1", payload)
@@ -80,7 +80,7 @@ func TestHandleStrategyTask_RunsEngineForEachMonitoredSymbol(t *testing.T) {
 		return e.Status == entities.ExecutionStatus(entities.OK)
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 2, Name: "S2"})
 	task := asynq.NewTask(handler.StrategyTask+"S2", payload)
@@ -112,7 +112,7 @@ func TestHandleStrategyTask_StrategyNotInRegistry_RecordsErrorAndNotifies(t *tes
 		return e.Type == notifier.EventStrategyError && e.Data["context"] == "strategy not found in registry"
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 3, Name: "S3"})
 	task := asynq.NewTask(handler.StrategyTask+"S3", payload)
@@ -142,7 +142,7 @@ func TestHandleStrategyTask_EngineErrors_RecordsErrorStatus(t *testing.T) {
 		return e.Status == entities.ExecutionStatus(entities.Error)
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 4, Name: "S4"})
 	task := asynq.NewTask(handler.StrategyTask+"S4", payload)
@@ -171,7 +171,7 @@ func TestHandleStrategyTask_ModeCappedDownByProcessCeiling_RunsAtCeilingTier(t *
 		return e.Status == entities.ExecutionStatus(entities.OK)
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 5, Name: "S5"})
 	task := asynq.NewTask(handler.StrategyTask+"S5", payload)
@@ -202,7 +202,7 @@ func TestHandleStrategyTask_LiveModeExceedsCeiling_RefusesCycleAndNotifies(t *te
 		return e.Type == notifier.EventStrategyError && e.Data["context"] == "mode guard refusal"
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModePaper, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModePaper, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 6, Name: "S6"})
 	task := asynq.NewTask(handler.StrategyTask+"S6", payload)
@@ -235,7 +235,7 @@ func TestHandleStrategyTask_UnparseableMode_FailsClosedAndNotifies(t *testing.T)
 		return e.Type == notifier.EventStrategyError && e.Data["context"] == "mode guard refusal"
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeLive, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeLive, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 7, Name: "S7"})
 	task := asynq.NewTask(handler.StrategyTask+"S7", payload)
@@ -269,7 +269,7 @@ func TestHandleStrategyTask_EffectivePaperModeWithoutTestnet_RefusesCycleAndNoti
 		return e.Type == notifier.EventStrategyError && e.Data["context"] == "mode guard refusal"
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModePaper, false)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModePaper, false)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 8, Name: "S8"})
 	task := asynq.NewTask(handler.StrategyTask+"S8", payload)
@@ -301,7 +301,7 @@ func TestHandleStrategyTask_EffectivePaperModeWithTestnet_RunsNormally(t *testin
 		return e.Status == entities.ExecutionStatus(entities.OK)
 	})).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModePaper, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModePaper, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 10, Name: "S10"})
 	task := asynq.NewTask(handler.StrategyTask+"S10", payload)
@@ -320,7 +320,7 @@ func TestHandleStrategyTask_GetByIDFails_ReturnsNilAndDoesNothingElse(t *testing
 
 	repo.On("GetByID", mock.Anything, uint(9)).Return(entities.Strategy{}, errors.New("db down"))
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	payload, _ := json.Marshal(entities.Strategy{ID: 9, Name: "S9"})
 	task := asynq.NewTask(handler.StrategyTask+"S9", payload)
@@ -350,7 +350,7 @@ func TestHandleStrategyTask_DrainAdmissionGate_HoldsCycle_NoExecutionRecorded(t 
 	_ = json.Unmarshal(payload, &roundTripped)
 	worker.On("EnqueueStrategyTaskWithDelay", roundTripped, 5*time.Second).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 	processor.SetDraining(true)
 
 	task := asynq.NewTask(handler.StrategyTask+"S11", payload)
@@ -384,7 +384,7 @@ func TestStrategyProcessor_SetCeilingAndTestnet_TakeEffectOnNextCycle(t *testing
 
 	// Starts at ModeDryRun ceiling - a "live" strategy would normally be
 	// refused. After SetCeiling(ModeLive), the same strategy is admitted.
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, false)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, false)
 	processor.SetCeiling(strategies.ModeLive)
 	processor.SetTestnet(false)
 
@@ -410,7 +410,7 @@ func TestStrategyProcessor_InFlightCount_TracksEngineRunLifecycle(t *testing.T) 
 	worker.On("EnqueueStrategyTask", dbStrategy).Return(nil)
 	repo.On("SaveExecution", mock.Anything, mock.Anything).Return(nil)
 
-	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, notifySender, strategies.ModeDryRun, true)
+	processor := handler.NewStrategyProcessor(nil, worker, repo, eng, eng, notifySender, strategies.ModeDryRun, true)
 
 	var observedInFlight int64
 	eng.On("Run", mock.Anything, mock.Anything, mock.Anything, "BTCUSDT", strategies.ModeDryRun).

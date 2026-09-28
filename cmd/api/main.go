@@ -6,16 +6,22 @@ import (
 	"go-trade-bot/app/entities"
 	account "go-trade-bot/app/handler/web/account"
 	agenthandler "go-trade-bot/app/handler/web/agent"
+	agentreports "go-trade-bot/app/handler/web/agentreports"
+	agentshandler "go-trade-bot/app/handler/web/agents"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
 	candleimport "go-trade-bot/app/handler/web/candleimport"
 	optimize "go-trade-bot/app/handler/web/optimize"
 	performancehistory "go-trade-bot/app/handler/web/performancehistory"
+	proposalshandler "go-trade-bot/app/handler/web/proposals"
 	realtime "go-trade-bot/app/handler/web/realtime"
 	scripthandler "go-trade-bot/app/handler/web/script"
 	settings "go-trade-bot/app/handler/web/settings"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
+	webhooktargets "go-trade-bot/app/handler/web/webhooktargets"
+	"go-trade-bot/app/repository/agentplatform"
+	proposalrepo "go-trade-bot/app/repository/proposal"
 	"go-trade-bot/app/strategies"
 	_ "go-trade-bot/app/strategies/mlgrpc"
 	strategyscript "go-trade-bot/app/strategies/script"
@@ -40,7 +46,12 @@ type Route interface {
 }
 
 func main() {
-	fx.New(
+	fx.New(appOptions()).Run()
+}
+
+// appOptions is the full fx graph (extracted so a test can fx.ValidateApp it).
+func appOptions() fx.Option {
+	return fx.Options(
 		modules.ConfigurationModule,
 		modules.DbModule,
 		modules.ExchangeModule,
@@ -58,6 +69,7 @@ func main() {
 		modules.SettingsModule,
 		modules.ScriptModule,
 		modules.AgentModule,
+		modules.AgentPlatformModule,
 		fx.Provide(
 			NewHTTPServer,
 			AsRoute(strategy.NewStrategyHandler),
@@ -71,7 +83,11 @@ func main() {
 			AsRoute(candleimport.NewCandleImportHandler),
 			AsRoute(settings.NewSettingsHandler),
 			AsRoute(scripthandler.NewScriptHandler),
-			AsRoute(agenthandler.NewAgentHandler),
+			AsRoute(agenthandler.NewAgentHandlerWithPersonas),
+			AsRoute(agentshandler.NewAgentsHandler),
+			AsRoute(agentreports.NewAgentReportsHandler),
+			AsRoute(webhooktargets.NewWebhookTargetsHandler),
+			AsRoute(proposalshandler.NewProposalsHandler),
 			fx.Annotate(
 				NewServeMux,
 				fx.ParamTags(`group:"routes"`, ``),
@@ -84,7 +100,7 @@ func main() {
 		}),
 		fx.Invoke(RegisterScriptStrategy),
 		fx.Invoke(func(*http.Server) {}),
-	).Run()
+	)
 }
 
 // RegisterScriptStrategy wires the "script" strategy into the global registry
@@ -174,7 +190,27 @@ func Migrate(db *gorm.DB) error {
 		&entities.ScriptState{},
 		&entities.AgentInstruction{},
 		&entities.AgentRun{},
+		// Agents platform (Phase A-01) - keep in sync across cmd/api,
+		// cmd/mcp and cmd/agent.
+		&entities.Agent{},
+		&entities.AgentStrategyBinding{},
+		&entities.StrategyMemoryEntry{},
+		&entities.AgentReport{},
+		&entities.WebhookTarget{},
+		&entities.AgentUsage{},
+		// Agents platform Phase B-01.
+		&entities.StrategyChangeProposal{},
+		&entities.DeployGateConfig{},
 	); err != nil {
+		return err
+	}
+	// Seed the deploy gate thresholds (idempotent).
+	if err := proposalrepo.NewGormRepository(db).EnsureGateConfig(context.Background()); err != nil {
+		return err
+	}
+
+	// Seed the default "Copilot" agent persona (idempotent).
+	if _, err := agentplatform.NewGormRepository(db).EnsureDefaultAgent(context.Background()); err != nil {
 		return err
 	}
 

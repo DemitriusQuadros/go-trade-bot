@@ -10,6 +10,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,15 +39,47 @@ type Repository interface {
 	ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error)
 }
 
+// PersonaChat is the agents-platform half of the chat transport (A-02 §5
+// "Chat"): resolve the requested persona, pre-flight its RunGuard, and run
+// it. Optional - when nil the handler keeps its pre-platform behaviour
+// (RunToolLoop with the default agent).
+type PersonaChat interface {
+	// ResolveAgent returns the agent with id, or the default agent for nil.
+	ResolveAgent(ctx context.Context, id *uint) (entities.Agent, error)
+	CheckGuard(ctx context.Context, agent entities.Agent) error
+	Run(ctx context.Context, req agentusecase.RunRequest) (entities.AgentRun, error)
+	AgentNames(ctx context.Context) map[uint]string
+}
+
 const defaultListLimit = 20
 
 type AgentHandler struct {
 	useCase    UseCase
 	repository Repository
+	personas   PersonaChat
 }
 
 func NewAgentHandler(u UseCase, r Repository) *AgentHandler {
 	return &AgentHandler{useCase: u, repository: r}
+}
+
+// NewAgentHandlerWithPersonas is NewAgentHandler plus persona-aware chat
+// (agent_id, 409 for a paused/halted agent, agent names on runs).
+func NewAgentHandlerWithPersonas(u UseCase, r Repository, p PersonaChat) *AgentHandler {
+	return &AgentHandler{useCase: u, repository: r, personas: p}
+}
+
+func (h *AgentHandler) names(ctx context.Context) map[uint]string {
+	if h.personas == nil {
+		return map[uint]string{}
+	}
+	return h.personas.AgentNames(ctx)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "message": message})
 }
 
 func (h *AgentHandler) Handlers() []handler.Configuration {
@@ -106,6 +139,9 @@ type sendMessageRequest struct {
 	// at all.
 	StrategyID *uint                    `json:"strategy_id,omitempty"`
 	History    []sendMessageHistoryTurn `json:"history,omitempty"`
+	// AgentID selects the persona that answers (agents-platform A-02 §5);
+	// omitted = the default "Copilot" agent.
+	AgentID *uint `json:"agent_id,omitempty"`
 }
 
 // strategyContextMarker prefixes every user input that carries the
@@ -244,6 +280,11 @@ func (h *AgentHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		// rather than the whole request failing.
 	}
 
+	if h.personas != nil {
+		h.sendPersonaMessage(w, r, req, userInput, history)
+		return
+	}
+
 	run, err := h.useCase.RunToolLoop(r.Context(), "chat_ui", userInput, history, req.StrategyID)
 	if err != nil && run.ID == 0 {
 		// RunToolLoop only returns a zero-ID run alongside an error when it
@@ -257,6 +298,43 @@ func (h *AgentHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(ToRunResponse(run))
+}
+
+// sendPersonaMessage is SendMessage's agents-platform path: the requested
+// persona (default if agent_id is omitted) answers; a paused agent, the
+// global kill switch or an exhausted budget is a 409 before any model call.
+func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request, req sendMessageRequest, userInput string, history []agentusecase.PriorTurn) {
+	ctx := r.Context()
+	agent, err := h.personas.ResolveAgent(ctx, req.AgentID)
+	if err != nil {
+		var ce *customerror.CustomError
+		if errors.As(err, &ce) && ce.Code == http.StatusNotFound {
+			writeJSONError(w, http.StatusNotFound, "not_found", ce.Message)
+			return
+		}
+		customerror.WriteHTTPError(w, err)
+		return
+	}
+	if gErr := h.personas.CheckGuard(ctx, agent); gErr != nil {
+		writeJSONError(w, http.StatusConflict, "agent_unavailable", "agent "+strconv.Quote(agent.Name)+" cannot run: "+gErr.Error())
+		return
+	}
+
+	run, err := h.personas.Run(ctx, agentusecase.RunRequest{
+		Agent:        agent,
+		Trigger:      "chat_ui",
+		UserInput:    userInput,
+		DisplayInput: req.Input,
+		History:      history,
+		StrategyID:   req.StrategyID,
+	})
+	if err != nil && run.ID == 0 {
+		customerror.WriteHTTPError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(ToRunResponseWithNames(run, map[uint]string{agent.ID: agent.Name}))
 }
 
 // ListRuns implements Frontend Spec 01's GET /agent/runs and Frontend Spec
@@ -290,7 +368,7 @@ func (h *AgentHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(ToRunListResponse(runs))
+	_ = json.NewEncoder(w).Encode(ToRunListResponseWithNames(runs, h.names(r.Context())))
 }
 
 func (h *AgentHandler) GetRun(w http.ResponseWriter, r *http.Request) {
@@ -308,5 +386,5 @@ func (h *AgentHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(ToRunResponse(run))
+	_ = json.NewEncoder(w).Encode(ToRunResponseWithNames(run, h.names(r.Context())))
 }

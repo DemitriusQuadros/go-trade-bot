@@ -17,12 +17,14 @@ strategy-example payloads that used to live under `docs/prd/`, `docs/specs/`, `d
 ```bash
 go run cmd/api/main.go        # HTTP API server (port 8080) — also serves the embedded web frontend
 go run cmd/worker/main.go     # Asynq task worker + monitoring UI (port 9191)
+go run cmd/agent/main.go      # Agents runtime: "agents" asynq queue + agent cron scheduler, /metrics on 9194
 ```
 
 Or via Makefile:
 ```bash
 make run-api-local
 make run-worker-local
+make run-agent-local
 make web-dev          # Vite dev server for frontend development (hot reload, proxies API calls)
 make web-build         # Build the React app and copy it into cmd/api/webui/dist for go:embed
 ```
@@ -60,7 +62,11 @@ working directory by default, or from the path in `CONFIG_PATH` env var. **`conf
 across Phases 1-4 and the web frontend pivot: `MODE`, `CONFIRM_LIVE`, `TESTNET`, `BROKER.TESTNET_KEY`/
 `TESTNET_SECRET`, `WEBHOOK_URL`, `DRY_RUN.{SLIPPAGE_PCT,FEE_PCT,FILL_DELAY}`, and `API_TOKEN` (auth). Check
 `internal/configuration/configuration.go` for the authoritative current list before configuring a new
-environment.
+environment. It does now document the agent keys: `AGENT.{PROVIDER,ANTHROPIC_KEY,ANTHROPIC_MODEL,GEMINI_KEY,
+GEMINI_MODEL}`, `AGENT_RUNTIME.{CONCURRENCY (default 2), METRICS_PORT (default "9194"), SYNC_INTERVAL
+(default 30s)}` and `API_BASE_URL` (used for report deep links). `AGENT_RUNTIME.METRICS_PORT` deliberately
+defaults to 9194, not 9193: 9193 is cmd/worker's loopback settings bridge (`INTERNAL_BRIDGE_ADDR`), and
+cmd/agent runs on the same host (host networking in docker-compose).
 
 ## Architecture
 
@@ -87,9 +93,35 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
 - **worker** — Asynq async task processor that executes trading strategies on their configured cycles via
   the pluggable `Strategy` interface (see below). Serves the Asynqmon monitoring UI + `/metrics` at port
   9191. Refuses to start with `MODE=live` unless `CONFIRM_LIVE=true`, and unless `Testnet=false` (a live
-  process must never point at the testnet exchange adapter).
+  process must never point at the testnet exchange adapter). Holds the Redis **strategy-cycle lock**
+  (`strategy-cycle:<id>`, `internal/lock.CycleKeyPrefix`, TTL 5 min) around every cycle (agents-platform
+  Phase B - the only Phase B change in the trading worker, `processor.SetCycleLock` in `cmd/worker/main.go`):
+  taken before the strategy row is read, released after the execution row is written. If an
+  `agent:apply_proposal` holds it, the cycle is held and re-enqueued after 5 s (like the drain gate; if that
+  re-enqueue fails the task errors so asynq retries it). A Redis error on acquire **fails open** (the cycle runs
+  as before Phase B) because the apply side fails closed - it never writes without the lock.
 
-Each entry point defines its own `modules/` directory with FX dependency injection modules.
+- **agent** — the isolated agents-platform runtime (agents-platform Phase A). Consumes ONLY the asynq
+  `agents` queue (`agent:run` tasks - manual runs enqueued by `POST /api/agents/{id}/run`, plus its own cron
+  schedules from `asynq.PeriodicTaskManager` over a DB-backed provider that re-syncs every
+  `AGENT_RUNTIME.SYNC_INTERVAL`), never the default queue cmd/worker serves. `agent:run` has `MaxRetry(0)`,
+  a 10 min timeout, and `Unique(2m)` for cron runs. Serves `/metrics` on `AGENT_RUNTIME.METRICS_PORT`
+  (`agent_runs_total`, `agent_run_duration_seconds`, `agent_cost_usd_total`, `agent_tokens_total`,
+  `agent_blocked_order_attempts_total`). **Safety invariant: its only `exchange.ExchangeClient` is
+  `exchange.ReadOnlyClient`** (`internal/exchange/readonly.go`; `PlaceOrder`/`CancelOrder` always return
+  `ErrReadOnlyClient` and never reach the inner client) - `cmd/agent/modules/exchange.go` never provides the
+  undecorated/swappable client, and `cmd/agent/main_test.go` asserts the fx graph can't resolve one. It
+  ignores `MODE`/`CONFIRM_LIVE` entirely. Migrates the same entity list as cmd/api. Also serves
+  `agent:apply_proposal` (Phase B, queue `agents`, `MaxRetry(3)`, 2 min timeout) - the ONLY code path that
+  changes a live strategy's code, see "Agents platform (Phase B)" below.
+- **mcp** — MCP server exposing the agent tool registry to external MCP clients (stdio or `--transport=http`).
+  MCP tool calls act as the default "Copilot" agent's permissions; `notify` is never exposed over MCP; no
+  strategy writer lock is wired here (nil Lock).
+
+Each entry point defines its own `modules/` directory with FX dependency injection modules. The `Migrate`
+entity lists in `cmd/api/main.go`, `cmd/mcp/main.go` and `cmd/agent/main.go` must stay in sync; all three
+also call `agentplatform.EnsureDefaultAgent` (seeds the one `IsDefault` "Copilot" persona) and
+`proposal.EnsureGateConfig` (seeds the `DeployGateConfig` singleton, Phase B).
 
 There is no more `cmd/backtest` or `cmd/candleimport` (one-shot CLIs from Phase 2) — both were removed once
 their functionality was fully superseded by the API: backtests run via `POST /backtest`/`/backtest/walkforward`
@@ -150,10 +182,96 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   script errors).
 - **`app/engine/`** — The single execution engine (`engine.go`) driving all `ExecutionMode`s by injecting a
   different `Feed`/exchange combination, not by branching engine logic: `backtest.go`/`replay_driver.go`
-  (simulated fills against `ReplayFeed`), `dryrun.go` (live prices, simulated fills), `montecarlo.go` (trade
-  reordering for robustness testing). Has panic recovery per strategy cycle (`strategy_panics_total` metric
-  + webhook alert).
+  (simulated fills against `ReplayFeed`), `dryrun.go` (`NewDryRunDriver`, a LiveFeed-driven
+  replay driver that nothing wires), `simulated_stop.go` (the worker's dryrun stop-loss evaluator, run via
+  `Engine.PreCycle`), `montecarlo.go` (trade reordering for robustness testing). Has panic recovery per
+  strategy cycle (`strategy_panics_total` metric + webhook alert).
 - **`app/workers/strategy/`** — Asynq client wrapper that enqueues a strategy for its next cycle.
+- **Agents platform (Phase A)** — agents are configurable persona rows, not code:
+  - `app/entities/agentplatform.go`: `Agent` (goal prompt, provider/model override, permissions, cron
+    triggers, webhook target ids, daily budget, paused, `IsDefault`), `AgentStrategyBinding`,
+    `StrategyMemoryEntry` (memory shared PER STRATEGY across all agents + the operator), `AgentReport`
+    (typed blocks + server-rendered HTML snapshot), `WebhookTarget`, `AgentUsage` (per agent per UTC day,
+    incl. `BudgetAlertSent` dedupe flag). `AgentRun` gained `AgentID`/`TriggerDetail`/`ChainDepth`/
+    `ParentRunID`/tokens/`CostUSD`; `Settings` gained `AgentsPaused` (global kill switch).
+  - `app/repository/agentplatform/`: one repo for all of the above (+ `ReportDataSource`, the DB-backed
+    `agentreport.DataSource`). Mock in `mocks/` is hand-generated in mockery style (mockery's embedded
+    go1.24 parser can't load this go1.25 module).
+  - `app/usecase/agent/`: `AgentUseCase.Run(RunRequest)` is the persona-aware loop; `RunToolLoop` is a thin
+    wrapper using the default agent. System prompt = house rules + persona + operating context + shared
+    memory (last 30 entries per context strategy, ~24k char cap) + authoring doc. Tools are tagged with a
+    permission and filtered per persona, and re-checked at dispatch. `RunGuard` (`guard.go`) re-checks the
+    kill switch / agent pause / daily budget before EVERY model call (fails closed). New tools
+    (`tools_platform.go`): `read_memory`, `write_journal`, `list_reports`, `write_report` (always granted)
+    and `notify` (permission `notify`, max 10 per run) - none can touch `entities.Strategy`, orders or
+    settings. `save_strategy_script` (gate unchanged) now takes a one-writer lock per existing strategy;
+    and refuses to update any productive or live-mode strategy on every path (chat, cron/manual, MCP) -
+    live changes only ever land via an operator-approved proposal (Phase B).
+  - `app/usecase/agentplatform/`: management usecase behind the REST API (validation, next_run_at, usage,
+    webhook targets, memory, kill switch).
+  - `app/handler/tasks/agent/`: `agent:run` processor + `CronProvider` (one schedule per (agent, cron spec)
+    for agents that are not paused and have >=1 binding; nothing while the kill switch is on; fails closed).
+  - `app/workers/agent/`: `agent:run` enqueue helper (queue `agents`).
+  - REST (all under `/api`): `app/handler/web/agents/` (`/agents` CRUD, `/agents/{id}/pause|run|runs|usage`,
+    `PUT /agents/kill-switch`, `/strategies/{id}/memory`), `app/handler/web/agentreports/`
+    (`/agent-reports`, `/{id}`, `/{id}/html` with a `default-src 'none'` CSP, `?token=` and `?theme=`),
+    `app/handler/web/webhooktargets/` (CRUD + `/test`; url/secret masked). `POST /agent/runs` accepts
+    `agent_id`; a paused/halted persona is a 409. The kill switch is written ONLY by
+    `PUT /agents/kill-switch`: `GET /settings` shows `agents_paused` read-only and `PUT /settings` ignores it
+    (the settings repo's `Save` omits the column).
+- **Agents platform (Phase B-01: challengers, deploy gate, proposals)** — spec
+  `docs/specs/agents-platform/phase-b-01-backend-auto-improve.md`:
+  - Data: `Strategy.ChallengerOfID` (a challenger = dryrun/testing clone of a live or productive champion) and
+    `Strategy.CreatedByAgentID` (additive, keeps agent-created strategies in that agent's scope) - both set only
+    at creation; `StrategyRepository.Update` omits them (a full-column Save would otherwise unlink a challenger on
+    every edit). `entities.StrategyChangeProposal` (`promote_challenger` | `gate_failed_change`; pending ->
+    approved -> applied, or rejected/superseded/failed; `LastFlatCheckAt`), `entities.DeployGateConfig` singleton
+    (ID 1: min Sharpe delta 0, max DD ratio 1.10, min trades 20, min PF 1.0, lookback 6 / train 3 / test 1 months,
+    timeframe "" = the strategy's cycle interval), `AgentUsage.StrategiesCreated`, `BacktestRun.CandidateSourceHash`.
+    Repo: `app/repository/proposal/`. `strategy_response` DTO has `challenger_of_id`.
+  - `BacktestUseCase.RunWalkForwardForStrategy(ctx, strat, req)` runs walk-forward on an in-memory (unsaved)
+    strategy; `RunWalkForward` = load by id -> delegate. Runs persist under `strat.ID`.
+  - Deploy gate: `app/usecase/agent/deploygate` (pure `Evaluate`: trades >= min, Sharpe >= baseline + delta,
+    maxDD <= baseline x ratio (0 baseline DD -> candidate must be 0), PF >= min (+Inf passes), NaN fails; a
+    0-trade baseline counts as Sharpe 0/DD 0) and `gate_runner.go` (`GateRunner`: two walk-forwards over the
+    last `LookbackMonths` on the first monitored symbol - baseline = current source, candidate = new source -
+    then `Evaluate` on the persisted runs; fewer than 90% of the expected candles -> failing
+    `insufficient_history` check). Thresholds come ONLY from `DeployGateConfig`; tool args can't carry numbers.
+  - Tools (`tools_phaseb.go`): `create_challenger` (edit_testing; champion must be bound + live/productive; one
+    active challenger per champion, auto-bound, finding on the champion), `deploy_to_testing` (edit_testing;
+    non-live, non-productive, in-scope targets; daily `MaxAutoDeploysPerDay` cap (0 = disabled) via a
+    conditional counter; writer lock; Lua compile check; gate; pass -> `StrategyUseCase.Update` (+ScriptVersion)
+    after re-checking the target didn't change/go live during the gate; fail -> pending `gate_failed_change`
+    proposal), `propose_promotion` (propose_live; >= 7 days challenger age or rationale `EARLY:`; forward-test
+    evidence from closed signals since the challenger's creation + a recorded, non-blocking gate run;
+    supersedes older pending proposals for the champion; warning notification with
+    `<APIBaseURL>/agents/proposals/<id>`), `create_strategy` (create_strategy; testing + backtest/dryrun,
+    auto-bound, max 3 per agent per UTC day in `AgentUsage.StrategiesCreated`), `list_proposals` and
+    `get_deploy_gate_config` (always granted). `save_strategy_script` now only UPDATES backtest-mode drafts
+    (dryrun -> "use deploy_to_testing (gated)"); its create path is unchanged (records `CreatedByAgentID`).
+    Evidence JSON: `{"gate": {passed, checks:[{name,passed,candidate,baseline,threshold,detail}], baseline_run_id,
+    candidate_run_id}, "gate_context": {...}, "forward_test": {since, age_days, challenger:{trades,win_rate_pct,
+    net_pnl,max_adverse}, champion:{...}}}`; non-finite floats are the strings "+Inf"/"-Inf"/"NaN".
+  - Write scope (`strategy_scope.go`): bound strategies ∪ challengers of bound champions ∪ strategies the agent
+    created. Every strategy-writing tool refuses anything else (fails closed without the platform repo). This
+    applies to chat and MCP too (the default Copilot has no bindings by default).
+  - REST (`app/handler/web/proposals/`, cmd/api): `GET /proposals?status=a,b&strategy_id=&agent_id=&limit=
+    &before_id=` (strategy_id matches target OR challenger), `GET /proposals/pending-count`, `GET /proposals/{id}`,
+    `POST /proposals/{id}/approve|reject` (`{"note"?}`, pending only, both return the detail DTO; approve with a
+    changed target source -> 409 `{"error":"superseded"}`; approve enqueues `agent:apply_proposal`, and reverts to
+    pending if the enqueue fails), `GET|PUT /deploy-gate` (ratios > 0, min_trades >= 1, months >= 1,
+    lookback >= train + test, known timeframe).
+  - Apply (`app/usecase/proposal.Applier`, cmd/agent `agent:apply_proposal`): approved only; target source !=
+    base -> superseded; promotions and live/productive targets wait for flat (no open signal) - each re-check is a
+    NEW task `ProcessIn(1m)`, failing with "never flat" 7 days after approval; a `gate_failed_change` on a
+    non-live, non-productive target applies immediately. The write is `StrategyRepository.ReplaceScriptSource`
+    under the `strategy-cycle:<id>` lock: one transaction re-checks base source + open signals, updates ONLY
+    `script_source`/`updated_at` (never Mode/Status), writes a ScriptVersion and clears ScriptState when flat.
+    Then: status applied, operator-authored finding memory entry, info notification, and (promotions) the
+    challenger is disabled. Residual race (documented in `replace_source.go`): a cycle whose lock TTL expired
+    could still open a position concurrently; the new code then manages it.
+  - `app/usecase/agent` must never import `app/repository/strategy` / `app/usecase/proposal`
+    (`phaseb_isolation_test.go` walks its imports), so no LLM tool can reach `ReplaceScriptSource`.
 
 There is no more `app/services/algorithm/` (deleted in Phase 1 — that's where Grid/Bollinger/Scalping used
 to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `internal/exchange/`, below).
@@ -174,13 +292,29 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
   parameters on the added methods (`Ma`/`Apo`/`Ppo`/`MacdExt`/`Stoch`/`StochF`/`StochRsi`) are hardcoded to
   `MATypeSMA` in the adapter — see `talib_adapter.go`'s "Additional indicators" section.
 - **`metrics_provider/`** — Sharpe/Drawdown/WinRate/ProfitFactor computation, wrapping `cinar/indicator/v2`.
-- **`notifier/`** — Generic webhook notifier for trade/error events.
+- **`notifier/`** — Generic webhook notifier for trade/error events (`WEBHOOK_URL`), plus the agents'
+  multi-target notifier (`agent_notifier.go`: generic/discord/slack/telegram formatters, link-only, async
+  delivery with one retry, never logs target URLs or the telegram token).
 - **`report/`** — HTML backtest report generation.
 - **`grpc/`** — `strategy.proto` + generated stubs for the `mlgrpc` strategy adapter.
 - **`configuration/`** — Viper-based config loader. Keys map to `config.yml`/env vars. See its source for
   the authoritative current field list (config.example.yml is stale, see Commands above).
 - **`memcache/`** — Thread-safe in-memory key-value store, still used by the Grid strategy for cross-cycle
   state (injected via `Context.Config["_cache"]`, not a package-level global).
+- **`report/agentreport/`** — agent report renderer: typed blocks (`summary`, `callout`, `kpi_grid`,
+  `equity_chart`, `trade_table`, `code_diff`, `recommendation`, `text_table`) validated and rendered with
+  `html/template` only into one self-contained Console Pro HTML document (tokens copied from
+  `web/src/index.css` - keep in sync by hand). Data-bearing blocks carry ids; values are resolved from the
+  DB, never from model-supplied numbers. Golden files in `testdata/` (`go test ./internal/report/agentreport
+  -update` to regenerate).
+- **`lock/`** — one-writer-per-strategy lock for agent runs: Redis (`SET NX PX` + compare-and-delete Lua,
+  key `agent:strategy-lock:<id>`, TTL 15 min; the same type with `CycleKeyPrefix` is the Phase B
+  `strategy-cycle:<id>` lock shared by cmd/worker and `agent:apply_proposal`) and an in-memory variant. The Redis test runs only with
+  `REDIS_TEST_ADDR` set.
+- **`cronspec/`** — agent cron validation/next-fire (robfig/cron standard parser, UTC).
+- **`modelprovider/`** — LLM ACL (Anthropic/Gemini). `CompletionResult.Usage` carries tokens;
+  `pricing.go`'s `EstimateCostUSD` uses a HAND-MAINTAINED price table (conservative fallback, never 0);
+  `ConfigProviderFactory` serves per-persona provider/model overrides.
 - **`customerror/`** — `CustomError{Code, Message}` — errors carry HTTP status codes.
 - **`metrics/`** — Prometheus counter/gauge/histogram wrapper (`MetricsCollector`). The worker's `/metrics`
   endpoint on `:9191` was, for a long time, silently unreachable (mounted the wrong routes) despite
@@ -195,9 +329,29 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
    (per-strategy `Mode` capped by the process-wide `MODE` env var — refuses the cycle rather than silently
    downgrading if a `live`-configured strategy exceeds a lower ceiling) → runs the strategy's hooks →
    records `StrategyExecution` → re-enqueues for next cycle.
-3. `GenerateBuySignal`/`GenerateSellSignal` place **real orders** via `ExchangeClient` (this is not a
-   paper-trading simulator) and submit a real `STOP_MARKET` stop-loss order at position-open time — not a
-   software-polled stop.
+3. Order routing is by **effective** mode (fix-01; `StrategyProcessor.engineFor` in
+   `app/handler/tasks/strategy/handler.go`, two engines wired in `cmd/worker/modules/engine.go`):
+   - `live` → the real engine: `GenerateBuySignal`/`GenerateSellSignal` place **real orders** on the process
+     `ExchangeClient` and submit a real exchange-side `STOP_MARKET` stop-loss at position-open time — not a
+     software-polled stop. `paper` uses the same real engine, whose client is the testnet adapter
+     (`gateMode` refuses paper without `Testnet=true`).
+   - `dryrun` → the simulated engine (`modules.NewDryRunEngine`): `exchange.DryRunExchange`
+     (`internal/exchange/dryrun.go`) wraps the real client in `exchange.NewReadOnlyClient`, so market data is
+     real but any order call that reached the real client would get `ErrReadOnlyClient`. MARKET orders fill
+     at the latest ticker ± `DRY_RUN.SLIPPAGE_PCT` (fees from `DRY_RUN.FEE_PCT` via `SignalUseCase.FeePct`);
+     order IDs are `SIM-…`. The stop-loss is a **simulated resting stop** persisted on the Order row
+     (`StopLossOrderID` `SIM-STOP-…`, `StopLossPrice`); `engine.SimulatedStopEvaluator` (the dryrun engine's
+     `PreCycle` hook) checks closed candles since the entry before any hook runs and, on `Low ≤ stop`, closes
+     the position at stop − slippage through the normal `GenerateSellSignal` stop-reconciliation path (exit
+     reason `simulated_stop_loss`). `Order.SimStopEvaluatedAt` is the persisted watermark so a candle is never
+     evaluated twice. Dryrun Signal/Order rows are still written (`Signal.Mode = "dryrun"`); the real account
+     row is read for sizing but never written by simulated fills (`signal.DryRunAccount`; a virtual balance
+     is a follow-up); simulated orders count in `dryrun_simulated_orders_total{side,type}`, never in
+     `order_execution_*`. The worker logs `worker: order routing live=… paper=… dryrun=…` at startup.
+   - `backtest` → refused by the worker (no hook runs, NOT re-enqueued, one `strategy.error`
+     notification); backtests only run through the backtest API.
+   - `GenerateSellSignal` refuses to close a `SIM-` position on a real client (e.g. `POST
+     /api/signal/close/{id}` from `cmd/api`) or a real position on the simulator.
 4. Strategies with `status = "disabled"` are skipped and NOT re-enqueued (their `Terminate` hook fires once).
 
 ### Frontend (`web/`)
@@ -235,6 +389,8 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 - Prometheus scrapes the API and worker; Alertmanager is also in the docker-compose stack (Phase 2).
   Grafana dashboards are in `docs/grafana/`.
 - Asynqmon UI available at `http://localhost:9191/tasks/monitoring` when the worker is running.
+- `docker-compose.yml` has an `agent` service (cmd/agent, `mem_limit: 512m`, `restart: unless-stopped`,
+  host networking like `mcp`).
 - `docker-compose.yml`'s `worker` service (there was none before backend-06) has `mem_limit: 512m` as a
   backstop against a runaway Lua script (ADR-022 — there's no per-script memory ceiling at the Go/Lua
   level) plus `restart: unless-stopped` so an OOM-kill doesn't permanently take the worker down. **512m is
@@ -248,6 +404,17 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 - The `algorithm` API field/column removal (see `app/entities/strategy.go` above) has no back-compat
   mapping — any external client still sending `algorithm` instead of `strategy_name` will break.
 
+### Known follow-ups from the agents platform (Phase A/B)
+- `save_strategy_script` refuses productive/live strategies on every path (chat, cron/manual, MCP) and, since
+  Phase B, only updates backtest-mode drafts; live changes go through challenger -> proposal -> operator approval.
+- Phase B scope is strict for chat too: the default Copilot can only change strategies bound to it or that it
+  created, so chat edits of operator-created drafts now need a binding.
+- The deploy gate needs >= 90% candle coverage over the lookback (6 months by default) at the gate timeframe;
+  with the known ~1000-candle import limit most gates fail with `insufficient_history` (-> proposal) until
+  history is imported.
+- Budget alerts dedupe per agent per UTC day across processes via `AgentUsage.BudgetAlertSent`.
+- The model price table in `internal/modelprovider/pricing.go` must be updated by hand.
+
 ## Safety notes (this executes real trades with real money)
 
 - `Mode` (per-strategy) and the process-wide `MODE` env var form a dual-layer guard — both default to the
@@ -255,3 +422,16 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 - `MODE=live` requires `CONFIRM_LIVE=true` at worker startup, and requires `Testnet=false`.
 - Never let a strategy's effective mode silently downgrade past `live` — the engine refuses the cycle
   instead, by design (see `app/handler/tasks/strategy/handler.go`'s `gateMode`).
+- `cmd/agent` must only ever get `exchange.ReadOnlyClient`. No agent tool can place/cancel orders or touch
+  settings/credentials, and no agent tool can change a live-mode or productive strategy's source, mode or
+  status. The strategy-writing tools are `save_strategy_script` (creates; updates backtest drafts),
+  `deploy_to_testing` (non-live/non-productive, in-scope, behind the Go deploy gate), `create_challenger`
+  (dryrun/testing clones) and `create_strategy` - all force Mode backtest/dryrun and Status testing.
+- The ONLY path that changes a live strategy's code is `agent:apply_proposal` (cmd/agent) after an operator
+  `POST /api/proposals/{id}/approve` over authenticated REST; it writes `script_source` only (never Mode or
+  Status), under the `strategy-cycle:<id>` lock, when the strategy is flat. Deploy gate numbers are computed in
+  Go from persisted backtest runs with thresholds from `DeployGateConfig` - the model can't supply either.
+- Only effective-`live` (real client) and `paper` (testnet client) worker cycles can place exchange orders.
+  Effective-`dryrun` cycles run on `exchange.DryRunExchange`, which reaches the real client only through
+  `exchange.ReadOnlyClient`; effective-`backtest` cycles are refused and not re-enqueued (fix-01). Don't
+  route dryrun to the real engine or give the dryrun stack an unwrapped client.

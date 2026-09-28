@@ -15,3 +15,22 @@ REDIS:
 
 PROMETHEUS:
   ADDRESS: localhost:9090
+
+# AI agent (model provider credentials). PROVIDER: anthropic | gemini.
+# Agent personas may override provider/model individually (Agents page).
+AGENT:
+  PROVIDER: anthropic
+  ANTHROPIC_KEY: ""
+  ANTHROPIC_MODEL: ""   # empty = adapter default
+  GEMINI_KEY: ""
+  GEMINI_MODEL: ""      # empty = adapter default
+
+# cmd/agent runtime (agents platform). All optional - defaults shown.
+AGENT_RUNTIME:
+  CONCURRENCY: 2        # asynq workers on the "agents" queue
+  METRICS_PORT: "9194"  # /metrics for cmd/agent (9193 is the worker's loopback settings bridge)
+  SYNC_INTERVAL: 30s    # how often cron schedules are re-read from the DB
+
+# Base URL used in agent report deep links sent to webhooks
+# (<API_BASE_URL>/agents/reports/<id>).
+API_BASE_URL: http://localhost:8080

@@ -31,7 +31,7 @@ type AgentRun struct {
 	ID            uint   `gorm:"primaryKey"`
 	Provider      string // "anthropic" | "gemini"
 	Model         string
-	Trigger       string // "mcp_tool" (Phase 1) | "chat_ui" | "monitor" (Phase 2)
+	Trigger       string // "mcp_tool" | "chat_ui" | "monitor" | "cron" | "manual"
 	Status        AgentRunStatus
 	ErrorMessage  string
 	InputSummary  string         `gorm:"type:text"` // triggering user prompt/event, truncated to a bounded length
@@ -51,4 +51,14 @@ type AgentRun struct {
 	StrategyID *uint
 	StartedAt  time.Time
 	FinishedAt time.Time
+
+	// Agents platform (Phase A-01) additions - all additive/nullable so rows
+	// recorded before the platform landed stay valid.
+	AgentID       *uint          `gorm:"index"` // the persona that ran; nil for legacy rows
+	TriggerDetail datatypes.JSON `gorm:"type:jsonb"`
+	ChainDepth    int
+	ParentRunID   *uint
+	InputTokens   int64
+	OutputTokens  int64
+	CostUSD       float64
 }

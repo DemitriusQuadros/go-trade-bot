@@ -9,8 +9,14 @@ import (
 	"go-trade-bot/app/entities"
 	agenthandler "go-trade-bot/app/handler/web/agent"
 	repoagent "go-trade-bot/app/repository/agent"
+	"go-trade-bot/app/repository/agentplatform"
+	candle_repo "go-trade-bot/app/repository/candle"
 	snapshot_repo "go-trade-bot/app/repository/performancesnapshot"
+	proposalrepo "go-trade-bot/app/repository/proposal"
+	settings_repo "go-trade-bot/app/repository/settings"
+	signalrepo "go-trade-bot/app/repository/signal"
 	strategy_repo "go-trade-bot/app/repository/strategy"
+	strategyscript "go-trade-bot/app/strategies/script"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
@@ -19,6 +25,7 @@ import (
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/modelprovider"
+	"go-trade-bot/internal/notifier"
 
 	"go.uber.org/fx"
 	"gorm.io/gorm"
@@ -82,6 +89,15 @@ var AgentModule = fx.Module("agent",
 			optimize agentusecase.OptimizeUseCase,
 			optimizeWorker agentusecase.OptimizeWorker,
 			cfg *configuration.Configuration,
+			platform agentplatform.Repository,
+			settings settings_repo.Repository,
+			factory *modelprovider.ConfigProviderFactory,
+			n *notifier.MultiTargetNotifier,
+			renderer agentusecase.ReportRenderer,
+			strategyLock agentusecase.StrategyLock,
+			db *gorm.DB,
+			bt *backtestusecase.BacktestUseCase,
+			runner *strategyscript.Runner,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
@@ -92,6 +108,17 @@ var AgentModule = fx.Module("agent",
 			} else if cfg.Agent.Provider == "gemini" {
 				uc.ModelName = cfg.Agent.GeminiModel
 			}
+			// Agents platform: persona-aware chat (memory, usage/budget,
+			// kill switch, reports, notify, strategy writer lock).
+			uc.Platform = platform
+			uc.Providers = factory
+			uc.Notifier = n
+			uc.Reports = renderer
+			uc.Guard = agentusecase.NewDefaultGuard(settings, platform, n)
+			uc.Lock = strategyLock
+			uc.APIBaseURL = cfg.APIBaseURL
+			// Phase B-01: gated deploys, challengers, proposals (chat).
+			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
 			return uc
 		},
 		func(uc *agentusecase.AgentUseCase) agenthandler.UseCase { return uc },

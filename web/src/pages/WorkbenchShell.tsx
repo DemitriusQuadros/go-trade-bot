@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { NavLink } from 'react-router-dom';
 import { useStrategy } from '@/hooks/queries';
 import {
@@ -12,6 +12,7 @@ import {
 import { SharedPriceChart } from '@/components/charts/SharedPriceChart';
 import { TraceAnnotationPanel } from '@/components/charts/TraceAnnotationPanel';
 import { ConsolePanel } from '@/components/domain/ConsolePanel';
+import { AgentNotesPanel } from '@/components/domain/AgentNotesPanel';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { usePersistedOpen, usePersistedEnum, usePersistedNumber } from '@/hooks/usePersistedOpen';
@@ -27,6 +28,7 @@ import {
   Columns2,
   ChartCandlestick,
   RefreshCw,
+  GitBranch,
 } from 'lucide-react';
 
 // Editor tab content vs. the chart: which gets the screen. 'split' is the
@@ -235,6 +237,11 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   const isEdit = mode === 'edit';
 
   const { data: existingStrategy, isLoading: isStrategyLoading } = useStrategy(strategyId || 0);
+  // Challenger banner (B-02 §4): a challenger is a dryrun clone an agent
+  // iterates on; its champion is the (usually live) strategy it may one day
+  // be promoted into. 0 disables the query for non-challengers.
+  const championId = isEdit ? existingStrategy?.challenger_of_id ?? 0 : 0;
+  const { data: champion } = useStrategy(championId);
 
   const [draft, setDraft] = useState<ScriptEditorState>(DEFAULT_DRAFT);
   const [activeTraceSource, setActiveTraceSource] = useState<TraceSource>('editor');
@@ -519,6 +526,29 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
         </div>
       </div>
 
+      {championId > 0 && (
+        <div
+          role="note"
+          className="mt-3 shrink-0 px-3 py-2 rounded-lg border border-primary/40 bg-primary/10 text-xs text-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-sans"
+        >
+          <GitBranch className="w-4 h-4 text-primary shrink-0" />
+          <span>
+            Challenger of{' '}
+            <Link to={`/strategies/${championId}/edit`} className="font-semibold hover:text-primary hover:underline">
+              {champion?.name ?? `strategy #${championId}`}
+            </Link>{' '}
+            ({existingStrategy?.mode ?? 'dryrun'}). Changes here never touch the live strategy until a promotion is
+            approved.
+          </span>
+          <Link
+            to={`/agents/proposals?strategy_id=${championId}`}
+            className="ml-auto text-primary hover:underline whitespace-nowrap"
+          >
+            View proposals
+          </Link>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 flex flex-col gap-2 mt-4">
         <div ref={splitRowRef} className="flex-1 min-h-0 flex">
           {/* Side panel: editor/REPL/backtest content. Always mounted (CSS
@@ -611,6 +641,15 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             <CollapsibleSection id="workbench.console" title="Console" defaultOpen>
               <ConsolePanel entries={consoleLog} />
             </CollapsibleSection>
+          </div>
+        )}
+
+        {/* Shared per-strategy agent memory (agents platform A-03 §9) -
+            only once the strategy exists. Collapsed by default so it
+            doesn't take space from the chart until asked for. */}
+        {strategyId != null && (
+          <div className="shrink-0 max-h-64 overflow-y-auto">
+            <AgentNotesPanel strategyId={strategyId} />
           </div>
         )}
       </div>

@@ -14,6 +14,7 @@ import (
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/indicators"
 	"go-trade-bot/internal/memcache"
+	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/notifier"
 
 	"github.com/stretchr/testify/assert"
@@ -241,6 +242,35 @@ func TestEngine_Run_RecoversFromPanic(t *testing.T) {
 	})
 	strategy.AssertNotCalled(t, "Terminate", mock.Anything)
 	assert.Equal(t, true, capturedEvent.Data["panic"])
+}
+
+// Regression: strategy_panics_total is registered with {strategy, symbol}
+// in cmd/api and cmd/worker. Incrementing it with a different label set
+// makes prometheus panic inside Run's recover, which would turn a recovered
+// strategy panic into a worker crash. The test engine above has no collector,
+// so this wires a real one with the production label set.
+func TestEngine_Run_RecoversFromPanic_WithMetricsCollector(t *testing.T) {
+	e, signalUC, accountReader, exchangeClient, notifySender := newTestEngine()
+	e.Metrics = metrics.NewMetricsCollector([]metrics.MetricConfig{{
+		Name:       "strategy_panics_total",
+		Help:       "test",
+		Type:       metrics.Counter,
+		LabelNames: []string{"strategy", "symbol"},
+	}})
+	stubCandleFetches(exchangeClient, "BTCUSDT")
+	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{}, nil)
+	notifySender.On("Send", mock.Anything, mock.Anything).Return(nil)
+
+	strategy := new(mocks.Strategy)
+	strategy.On("Before", mock.Anything).Run(func(args mock.Arguments) {
+		panic("division by zero")
+	})
+
+	assert.NotPanics(t, func() {
+		err := e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun)
+		assert.Error(t, err)
+	})
 }
 
 func TestEngine_Run_GoLong_WithPositionSizing(t *testing.T) {

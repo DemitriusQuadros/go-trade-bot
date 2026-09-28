@@ -29,7 +29,12 @@ type Settings struct {
 	PrometheusURL string
 	GrafanaURL    string
 	AsynqmonURL   string
-	UpdatedAt     time.Time
+	// AgentsPaused is the global agents kill switch (agents-platform A-01):
+	// when true no agent run (cron, manual or chat) starts, and in-flight
+	// runs halt before their next model call. Never read by any trading
+	// path - it only gates app/usecase/agent.
+	AgentsPaused bool
+	UpdatedAt    time.Time
 }
 
 // ToConfiguration builds a *configuration.Configuration carrying just the

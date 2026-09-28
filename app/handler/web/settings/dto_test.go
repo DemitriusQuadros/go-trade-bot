@@ -1,11 +1,14 @@
 package settings
 
 import (
+	"encoding/json"
+
 	"testing"
 
 	"go-trade-bot/app/entities"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMergeInto_NewSecret_Overwrites(t *testing.T) {
@@ -68,4 +71,19 @@ func TestMergeInto_PreservesIDAndOutOfScopeFields(t *testing.T) {
 	assert.Equal(t, "http://localhost:8080", merged.APIBaseURL)
 	assert.Equal(t, "tok", merged.APIToken)
 	assert.True(t, merged.AllowInsecureNoAuth)
+}
+
+// agents-platform: PUT /settings must ignore agents_paused entirely - the
+// kill switch is owned by PUT /agents/kill-switch.
+func TestMergeInto_IgnoresAgentsPausedInBody(t *testing.T) {
+	var req PlatformSettingsUpdateRequestDTO
+	require.NoError(t, json.Unmarshal([]byte(`{"mode":"dryrun","agents_paused":true,"confirm_live":true}`), &req))
+	assert.False(t, req.MergeInto(entities.Settings{AgentsPaused: false}).AgentsPaused)
+	assert.True(t, req.MergeInto(entities.Settings{AgentsPaused: true}).AgentsPaused)
+}
+
+func TestToSettingsResponse_ExposesAgentsPaused(t *testing.T) {
+	b, err := json.Marshal(ToSettingsResponse(entities.Settings{AgentsPaused: true}))
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"agents_paused":true`)
 }

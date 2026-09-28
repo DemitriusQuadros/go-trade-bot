@@ -16,6 +16,11 @@ const (
 	metricOrderErrors   = "order_execution_errors_total"
 )
 
+// ExitReasonSimulatedStopLoss is the ExitSignal.ExitReason the dryrun
+// simulated-stop evaluator (app/engine.SimulatedStopEvaluator) closes a
+// position with (fix-01).
+const ExitReasonSimulatedStopLoss = "simulated_stop_loss"
+
 type EntrySignal struct {
 	Symbol     string
 	StrategyID uint
@@ -189,6 +194,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		Symbol:     e.Symbol,
 		Status:     entities.Open,
 		StrategyID: e.StrategyID,
+		Mode:       e.Mode,
 		CreatedAt:  filledAt,
 		UpdatedAt:  filledAt,
 		Orders: []entities.Order{
@@ -310,6 +316,21 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	}
 
 	order := openSignal.Orders[0]
+
+	// fix-01: a simulated (SIM-) position must never be closed with a real
+	// order, and a real position must never be "closed" by the simulator
+	// while its coins (and possibly its real stop) stay on the exchange.
+	// Refuse before touching the exchange. Pre-fix-01 rows and every
+	// live/paper row have non-SIM IDs and a real client, so this never fires
+	// on the live path.
+	if exchange.IsSimulatedOrderID(order.BrokerOrderID) != exchange.IsSimulatedClient(s.Exchange) {
+		msg := fmt.Sprintf("refusing to close %s signal %d: order %q is %s but this exchange client is %s",
+			e.Symbol, openSignal.ID, order.BrokerOrderID,
+			simulatedLabel(exchange.IsSimulatedOrderID(order.BrokerOrderID)),
+			simulatedLabel(exchange.IsSimulatedClient(s.Exchange)))
+		s.notify(ctx, s.errorEventExit(e, msg))
+		return fmt.Errorf("%s", msg)
+	}
 
 	if order.StopLossOrderID != "" {
 		cancelErr := s.Exchange.CancelOrder(ctx, e.Symbol, order.StopLossOrderID)
@@ -433,6 +454,12 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 		return err
 	}
 
+	message := fmt.Sprintf("Position closed for %s via exchange stop-loss (reconciled on race)", e.Symbol)
+	exitReason := "stop_loss"
+	if e.ExitReason == ExitReasonSimulatedStopLoss {
+		message = fmt.Sprintf("Position closed for %s via simulated stop-loss (dryrun)", e.Symbol)
+		exitReason = ExitReasonSimulatedStopLoss
+	}
 	s.notify(ctx, notifier.Event{
 		Type:       notifier.EventPositionClosed,
 		Timestamp:  time.Now(),
@@ -440,18 +467,25 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 		Strategy:   e.StrategyName,
 		Symbol:     e.Symbol,
 		Mode:       e.Mode,
-		Message:    fmt.Sprintf("Position closed for %s via exchange stop-loss (reconciled on race)", e.Symbol),
+		Message:    message,
 		Data: map[string]any{
 			"entry_price": openSignal.Orders[0].EntryPrice,
 			"exit_price":  exitPrice,
 			"quantity":    openSignal.Orders[0].Quantity,
 			"profit":      profit,
-			"exit_reason": "stop_loss",
+			"exit_reason": exitReason,
 			"reconciled":  true,
 		},
 	})
 
 	return nil
+}
+
+func simulatedLabel(simulated bool) string {
+	if simulated {
+		return "simulated"
+	}
+	return "real"
 }
 
 func exitReasonOrDefault(reason string) string {

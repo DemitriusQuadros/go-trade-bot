@@ -18,6 +18,7 @@ import (
 	"go-trade-bot/app/strategies"
 	settings_usecase "go-trade-bot/app/usecase/settings"
 	"go-trade-bot/internal/exchange"
+	"go-trade-bot/internal/lock"
 	"time"
 
 	// Blank-imported for their init() side effect only: each package
@@ -95,6 +96,16 @@ func RegisterScriptStrategy(runner *script.Runner, store script.ScriptStateStore
 	})
 }
 
+// MigrateSignalTables makes sure the signals/orders columns the worker writes
+// exist before any cycle runs (fix-01 added signals.mode and
+// orders.sim_stop_evaluated_at). cmd/api/cmd/agent/cmd/mcp migrate the full
+// schema; this is the worker's narrow copy so a worker started before them
+// can never place a real order and then fail to persist its Signal row. A
+// failure aborts startup.
+func MigrateSignalTables(db *gorm.DB) error {
+	return db.AutoMigrate(&entities.Signal{}, &entities.Order{})
+}
+
 type RedisConfiguration struct {
 	Addr string
 }
@@ -133,6 +144,7 @@ func RegisterHandlers(
 	candleRepo candle_repo.Repository,
 	repository repository.StrategyRepository,
 	eng *engine.Engine,
+	dryRun modules.DryRunEngine,
 	notifySender notifier.NotificationSender,
 	optimizeProcessor *optimize_tasks.OptimizeProcessor,
 	snapshotProcessor *performance_tasks.SnapshotProcessor,
@@ -155,7 +167,16 @@ func RegisterHandlers(
 	// it as the settings usecase's ProcessorGate (drain admission
 	// gate/in-flight counter) and mount the internal settings-apply route
 	// on the metrics server below.
-	processor := handler.NewStrategyProcessor(collector, worker, repository, eng, notifySender, processCeiling, cfg.Testnet)
+	//
+	// fix-01: cycles are routed by effective mode - live/paper to eng (the
+	// real client), dryrun to dryRun.Engine (simulated fills over a read-only
+	// client), backtest refused.
+	processor := handler.NewStrategyProcessor(collector, worker, repository, eng, dryRun.Engine, notifySender, processCeiling, cfg.Testnet)
+	log.Print(processor.OrderRoutingSummary())
+	// Agents platform Phase B-01 §5: the strategy-cycle:<id> lock, shared
+	// with cmd/agent's agent:apply_proposal so an approved code swap never
+	// lands mid-cycle.
+	processor.SetCycleLock(lock.NewRedisCycleLockFromAddr(cfg.Redis.Addr))
 
 	// Spec backend-05 (ADR-016): this process's own settings usecase
 	// instance, with a real ProcessorGate (processor) and no WorkerClient
@@ -367,6 +388,7 @@ func main() {
 			NewAsynqScheduler,
 		),
 		fx.Invoke(RegisterScriptStrategy),
+		fx.Invoke(MigrateSignalTables),
 		fx.Invoke(RegisterHandlers),
 	)
 

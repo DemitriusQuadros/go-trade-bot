@@ -8,6 +8,7 @@ import (
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/modelprovider"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -179,10 +180,22 @@ func TestSaveStrategyScript_StatusAlwaysTesting(t *testing.T) {
 	}))
 }
 
+// withBoundDefaultAgent wires a fake platform whose default agent is bound
+// to strategyIDs - Phase B's write scope (B-01 §6) fails closed without it.
+func withBoundDefaultAgent(t *testing.T, uc *agentusecase.AgentUseCase, strategyIDs ...uint) {
+	t.Helper()
+	platform := newFakePlatform()
+	def, err := platform.EnsureDefaultAgent(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, platform.SetBindings(context.Background(), def.ID, strategyIDs))
+	uc.Platform = platform
+}
+
 // TestSaveStrategyScript_UpdateAlsoClampsMode proves the gate applies on
 // the Update path (existing StrategyID) exactly as it does on Save (create)
 // - an agent iterating on a draft strategy cannot "upgrade" it to live by
-// switching from create to update.
+// switching from create to update. Phase B-01: the update path only accepts
+// backtest-mode drafts, so the fixture is a backtest-mode strategy.
 func TestSaveStrategyScript_UpdateAlsoClampsMode(t *testing.T) {
 	uc, strategyUC := newAgentUseCaseForGateTest(t, map[string]any{
 		"strategy_id":   7,
@@ -193,6 +206,8 @@ func TestSaveStrategyScript_UpdateAlsoClampsMode(t *testing.T) {
 		"cycle_minutes": 15,
 		"mode":          "live",
 	})
+	withBoundDefaultAgent(t, uc, 7)
+	strategyUC.On("GetByID", mock.Anything, uint(7)).Return(entities.Strategy{ID: 7, Status: entities.Testing, Mode: "backtest"}, nil)
 	strategyUC.On("Update", mock.Anything, mock.MatchedBy(func(s entities.Strategy) bool {
 		return s.ID == 7 && s.Mode == "dryrun" && s.Status == entities.Testing
 	})).Return(nil)
@@ -200,6 +215,56 @@ func TestSaveStrategyScript_UpdateAlsoClampsMode(t *testing.T) {
 	_, err := uc.RunToolLoop(context.Background(), "mcp_tool", "input", nil, nil)
 	require.NoError(t, err)
 	strategyUC.AssertExpectations(t)
+}
+
+// B-01 AC#4: updating a backtest-mode draft is allowed (mode stays backtest
+// when requested).
+func TestSaveStrategyScript_UpdateBacktestDraftAllowed(t *testing.T) {
+	uc, strategyUC := newAgentUseCaseForGateTest(t, map[string]any{
+		"strategy_id": 7, "name": "Draft", "description": "desc", "script_source": "function GoLong() end",
+		"symbols": []string{"BTCUSDT"}, "cycle_minutes": 15, "mode": "backtest",
+	})
+	withBoundDefaultAgent(t, uc, 7)
+	strategyUC.On("GetByID", mock.Anything, uint(7)).Return(entities.Strategy{ID: 7, Status: entities.Testing, Mode: "backtest"}, nil)
+	strategyUC.On("Update", mock.Anything, mock.MatchedBy(func(s entities.Strategy) bool {
+		return s.ID == 7 && s.Mode == "backtest" && s.Status == entities.Testing
+	})).Return(nil)
+
+	_, err := uc.RunToolLoop(context.Background(), "mcp_tool", "input", nil, nil)
+	require.NoError(t, err)
+	strategyUC.AssertExpectations(t)
+}
+
+// B-01 AC#4: updating a dryrun strategy is refused with "use
+// deploy_to_testing" - there is exactly one (gated) rule for changing code
+// that runs.
+func TestSaveStrategyScript_UpdateDryrunRefused(t *testing.T) {
+	uc, strategyUC := newAgentUseCaseForGateTest(t, map[string]any{
+		"strategy_id": 7, "name": "Existing", "description": "desc", "script_source": "function GoLong() end",
+		"symbols": []string{"BTCUSDT"}, "cycle_minutes": 15, "mode": "dryrun",
+	})
+	withBoundDefaultAgent(t, uc, 7)
+	strategyUC.On("GetByID", mock.Anything, uint(7)).Return(entities.Strategy{ID: 7, Status: entities.Testing, Mode: "dryrun"}, nil)
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "input", nil, nil)
+	require.NoError(t, err)
+	strategyUC.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	assert.Contains(t, string(run.ToolCallsJSON), "use deploy_to_testing")
+}
+
+// B-01 AC#11: an out-of-scope backtest draft is refused.
+func TestSaveStrategyScript_UpdateOutOfScopeRefused(t *testing.T) {
+	uc, strategyUC := newAgentUseCaseForGateTest(t, map[string]any{
+		"strategy_id": 7, "name": "Draft", "description": "desc", "script_source": "function GoLong() end",
+		"symbols": []string{"BTCUSDT"}, "cycle_minutes": 15, "mode": "backtest",
+	})
+	withBoundDefaultAgent(t, uc, 99) // bound to something else
+	strategyUC.On("GetByID", mock.Anything, uint(7)).Return(entities.Strategy{ID: 7, Status: entities.Testing, Mode: "backtest"}, nil)
+
+	run, err := uc.RunToolLoop(context.Background(), "mcp_tool", "input", nil, nil)
+	require.NoError(t, err)
+	strategyUC.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	assert.Contains(t, string(run.ToolCallsJSON), "outside agent")
 }
 
 // TestBuildToolRegistry_NoLiveCapableTool is Acceptance Criterion #9: audit

@@ -34,5 +34,10 @@ type BacktestRun struct {
 	// script strategy's run (backend-07). Empty for native Go strategies and
 	// for walk-forward runs (no aggregation).
 	ExecutionTraceJSON datatypes.JSON `json:"execution_trace_json,omitempty" gorm:"type:jsonb"`
-	CreatedAt          time.Time      `json:"created_at"`
+	// CandidateSourceHash is the sha256 (hex) of the script source a deploy
+	// gate run evaluated when that source was a CANDIDATE (not the
+	// strategy's saved source) - agents-platform Phase B. Empty for every
+	// run on the strategy's own saved source.
+	CandidateSourceHash string    `json:"candidate_source_hash,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
 }

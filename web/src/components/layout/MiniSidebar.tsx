@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Cpu,
@@ -14,12 +14,18 @@ import {
   LineChart,
   Terminal,
   ListChecks,
+  Bot,
+  FileText,
+  GitPullRequest,
 } from 'lucide-react';
-import { usePlatformSettings } from '@/hooks/queries';
+import { usePendingProposalCount, usePlatformSettings } from '@/hooks/queries';
+import { AgentKillSwitch } from '@/components/domain/AgentKillSwitch';
 
 export function MiniSidebar() {
   const [expanded, setExpanded] = useState(false);
   const { data: settings } = usePlatformSettings();
+  // Polled every 60s; approve/reject invalidate it immediately (B-02 §2).
+  const { data: pendingProposals = 0 } = usePendingProposalCount();
 
   return (
     <aside
@@ -70,6 +76,27 @@ export function MiniSidebar() {
           dataWalkthrough="nav-backtest"
         />
         <NavItem to="/optimization" icon={<TrendingUp className="w-5 h-5" />} label="Optimization" expanded={expanded} />
+        {/* /agents/reports is nested under /agents, so /agents is
+            a prefix of it - activeWhen keeps Agents highlighted on its
+            editor/runs pages but not on a report page. */}
+        <NavItem
+          to="/agents"
+          icon={<Bot className="w-5 h-5" />}
+          label="Agents"
+          expanded={expanded}
+          activeWhen={(path) =>
+            path.startsWith('/agents') && !path.startsWith('/agents/reports') && !path.startsWith('/agents/proposals')
+          }
+        />
+        <NavItem to="/agents/reports" icon={<FileText className="w-5 h-5" />} label="Reports" expanded={expanded} />
+        <NavItem
+          to="/agents/proposals"
+          icon={<GitPullRequest className="w-5 h-5" />}
+          label="Proposals"
+          expanded={expanded}
+          badge={pendingProposals}
+          badgeLabel={`${pendingProposals} pending proposal${pendingProposals === 1 ? '' : 's'}`}
+        />
 
         <GroupLabel expanded={expanded}>Manage</GroupLabel>
         <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label="Candle Import" expanded={expanded} />
@@ -121,6 +148,12 @@ export function MiniSidebar() {
           </>
         )}
       </nav>
+
+      {/* Global agents kill switch - pinned to the footer so it's reachable
+          from every page without scrolling the nav. */}
+      <div className="shrink-0 border-t border-border p-2">
+        <AgentKillSwitch expanded={expanded} />
+      </div>
     </aside>
   );
 }
@@ -146,13 +179,26 @@ function NavItem({
   label,
   expanded,
   dataWalkthrough,
+  activeWhen,
+  badge,
+  badgeLabel,
+  badgeMax = 99,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   expanded: boolean;
   dataWalkthrough?: string;
+  // Count chip (e.g. pending proposals). Hidden at 0. Collapsed rail: a
+  // small dot-count over the icon; expanded: a pill after the label.
+  badge?: number;
+  badgeLabel?: string;
+  badgeMax?: number;
+  // Overrides NavLink's own prefix matching when two entries share a
+  // prefix (/agents vs /agents/reports).
+  activeWhen?: (pathname: string) => boolean;
 }) {
+  const location = useLocation();
   return (
     <NavLink
       to={to}
@@ -160,14 +206,25 @@ function NavItem({
       data-walkthrough={dataWalkthrough}
       className={({ isActive }) =>
         `flex items-center gap-3 px-2 py-2 rounded-md transition-colors overflow-hidden ${
-          isActive
+          (activeWhen ? activeWhen(location.pathname) : isActive)
             ? 'bg-accent text-accent-foreground font-semibold'
             : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
         }`
       }
-      title={expanded ? undefined : label}
+      title={expanded ? undefined : badge ? `${label} (${badgeLabel ?? badge})` : label}
+      aria-label={badge ? `${label}, ${badgeLabel ?? badge}` : undefined}
     >
-      <div className="shrink-0">{icon}</div>
+      <div className="shrink-0 relative">
+        {icon}
+        {!!badge && !expanded && (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1.5 -right-2 min-w-[1rem] h-4 px-1 rounded-full bg-warning text-warning-foreground text-[9px] font-bold leading-4 text-center"
+          >
+            {badge > badgeMax ? `${badgeMax}+` : badge}
+          </span>
+        )}
+      </div>
       <span
         className={`text-sm whitespace-nowrap transition-opacity duration-300 ${
           expanded ? 'opacity-100' : 'opacity-0 w-0'
@@ -175,6 +232,14 @@ function NavItem({
       >
         {label}
       </span>
+      {!!badge && expanded && (
+        <span
+          aria-hidden="true"
+          className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full bg-warning text-warning-foreground text-[10px] font-bold leading-5 text-center"
+        >
+          {badge > badgeMax ? `${badgeMax}+` : badge}
+        </span>
+      )}
     </NavLink>
   );
 }

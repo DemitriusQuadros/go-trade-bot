@@ -34,6 +34,9 @@ run-api-local: ## Run the API project locally
 run-worker-local: ## Run the Worker project locally
 	go run ./cmd/worker
 
+run-agent-local: ## Run the agents runtime (cmd/agent) locally
+	go run ./cmd/agent
+
 web-build: ## Build React web frontend and copy to embed dist
 	cd web && npm ci && npm run build
 	rm -rf cmd/api/webui/dist/assets cmd/api/webui/dist/index.html

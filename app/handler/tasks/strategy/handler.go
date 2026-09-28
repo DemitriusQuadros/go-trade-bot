@@ -51,6 +51,20 @@ type Engine interface {
 	Run(ctx context.Context, strategy strategies.Strategy, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode) error
 }
 
+// CycleLock is the strategy-cycle:<id> lock (agents-platform Phase B-01 §5,
+// internal/lock with lock.CycleKeyPrefix). cmd/agent's agent:apply_proposal
+// holds it while it swaps an approved proposal's code into a strategy; the
+// worker holds it for the whole cycle, so a cycle and an apply are mutually
+// exclusive. Optional: a nil lock (tests, legacy wiring) means no locking.
+type CycleLock interface {
+	Acquire(ctx context.Context, strategyID uint, holder string, ttl time.Duration) (bool, error)
+	Release(ctx context.Context, strategyID uint, holder string) error
+}
+
+// cycleLockTTL bounds how long a crashed worker keeps a strategy's cycle
+// lock (an apply waits at most this long).
+const cycleLockTTL = 5 * time.Minute
+
 // StrategyProcessor is an fx-provided singleton (Spec backend-05): its
 // ceiling/testnet/inFlight/draining fields need to be readable and mutable
 // from outside HandleStrategyTask (by the settings usecase's drain-then-swap
@@ -61,15 +75,28 @@ type StrategyProcessor struct {
 	collector  *metrics.MetricsCollector
 	worker     StrategyWorker
 	repository StrategyRepository
-	engine     Engine
-	notifier   notifier.NotificationSender
-	ceiling    atomic.Int32 // strategies.ExecutionMode, process-wide MODE ceiling (Spec 10)
-	testnet    atomic.Bool
-	inFlight   atomic.Int64 // incremented/decremented around each engine.Run call
-	draining   atomic.Bool  // true while a risk-bearing settings swap is pending
+	// engine executes effective live/paper cycles against the process's
+	// real exchange client (the testnet adapter when Testnet=true).
+	engine Engine
+	// dryRunEngine executes effective dryrun cycles against a simulated
+	// exchange built around exchange.NewReadOnlyClient (fix-01). nil means
+	// dryrun cycles are refused - never routed to engine.
+	dryRunEngine Engine
+	notifier     notifier.NotificationSender
+	ceiling      atomic.Int32 // strategies.ExecutionMode, process-wide MODE ceiling (Spec 10)
+	testnet      atomic.Bool
+	inFlight     atomic.Int64 // incremented/decremented around each engine.Run call
+	draining     atomic.Bool  // true while a risk-bearing settings swap is pending
+	cycleLock    CycleLock    // optional; see CycleLock
 }
 
-// NewStrategyProcessor takes the process-wide MODE ceiling (Spec 10) as an
+// NewStrategyProcessor takes two engines (fix-01): realEngine for effective
+// live/paper cycles and dryRunEngine for effective dryrun cycles, which must
+// be built around a simulated, read-only exchange (cmd/worker/modules'
+// NewDryRunEngine). A nil dryRunEngine refuses dryrun cycles. Effective
+// backtest cycles are never run by the worker.
+//
+// It also takes the process-wide MODE ceiling (Spec 10) as an
 // already-parsed strategies.ExecutionMode, and testnet as a plain bool,
 // rather than a raw *configuration.Configuration, so this package stays free
 // of any internal/configuration dependency - the caller (cmd/worker/main.go's
@@ -81,21 +108,29 @@ func NewStrategyProcessor(
 	collector *metrics.MetricsCollector,
 	w StrategyWorker,
 	r StrategyRepository,
-	e Engine,
+	realEngine Engine,
+	dryRunEngine Engine,
 	n notifier.NotificationSender,
 	processCeiling strategies.ExecutionMode,
 	testnet bool,
 ) *StrategyProcessor {
 	p := &StrategyProcessor{
-		collector:  collector,
-		worker:     w,
-		repository: r,
-		engine:     e,
-		notifier:   n,
+		collector:    collector,
+		worker:       w,
+		repository:   r,
+		engine:       realEngine,
+		dryRunEngine: dryRunEngine,
+		notifier:     n,
 	}
 	p.ceiling.Store(int32(processCeiling))
 	p.testnet.Store(testnet)
 	return p
+}
+
+// SetCycleLock installs the strategy-cycle lock (call once at wiring time,
+// before the asynq server starts).
+func (p *StrategyProcessor) SetCycleLock(l CycleLock) {
+	p.cycleLock = l
 }
 
 // SetDraining toggles the admission gate (Spec backend-05 SS3). While true,
@@ -142,6 +177,36 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 		return nil
 	}
 
+	// Strategy-cycle lock (agents-platform Phase B-01 §5): taken before the
+	// strategy row is read and held until the cycle is recorded, so an
+	// approved proposal's code swap (cmd/agent) never lands mid-cycle.
+	if p.cycleLock != nil {
+		holder := fmt.Sprintf("worker-cycle:%d:%d", strategy.ID, time.Now().UnixNano())
+		acquired, lockErr := p.cycleLock.Acquire(ctx, strategy.ID, holder, cycleLockTTL)
+		switch {
+		case lockErr != nil:
+			// Fail open: keep trading exactly as before Phase B. The apply
+			// side fails closed (it never writes without the lock), so a
+			// Redis error cannot let an apply overlap this cycle.
+			log.Printf("strategy %d: cycle lock unavailable, running without it: %v", strategy.ID, lockErr)
+		case !acquired:
+			// An apply is swapping this strategy's code right now (a few
+			// milliseconds): hold the cycle like the drain gate does.
+			if err := p.worker.EnqueueStrategyTaskWithDelay(strategy, drainAdmissionDelay); err != nil {
+				return fmt.Errorf("strategy %d: cycle lock busy and re-enqueue failed: %w", strategy.ID, err)
+			}
+			return nil
+		default:
+			defer func() {
+				rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := p.cycleLock.Release(rctx, strategy.ID, holder); err != nil {
+					log.Printf("strategy %d: could not release the cycle lock (expires in %s): %v", strategy.ID, cycleLockTTL, err)
+				}
+			}()
+		}
+	}
+
 	nStrategy, err := p.repository.GetByID(ctx, strategy.ID)
 	if err != nil {
 		log.Printf("Error getting strategy by ID: %v", err)
@@ -155,6 +220,23 @@ func (p *StrategyProcessor) HandleStrategyTask(ctx context.Context, t *asynq.Tas
 		// per disable event (the only way this handler runs again for an
 		// already-disabled strategy is a fresh manual enqueue).
 		p.terminateIfRegistered(nStrategy)
+		return nil
+	}
+
+	// fix-01: backtest mode is only valid through the backtest API. A cycle
+	// whose effective mode is backtest is refused without running any hook
+	// and is NOT re-enqueued, so it is logged and notified exactly once.
+	if p.isBacktestCycle(nStrategy) {
+		msg := fmt.Sprintf("strategy %q: effective mode is backtest; the worker never runs backtest-mode strategies (use the backtest API) - not re-enqueued", nStrategy.Name)
+		log.Print(msg)
+		p.notifyError(nStrategy, msg, "backtest mode refusal")
+		p.repository.SaveExecution(ctx, entities.StrategyExecution{
+			StrategyID: strategy.ID,
+			Status:     entities.ExecutionStatus(entities.Error),
+			Message:    msg,
+			ExecutedAt: time.Now(),
+			Strategy:   strategy,
+		})
 		return nil
 	}
 
@@ -207,10 +289,18 @@ func (p *StrategyProcessor) processStrategy(ctx context.Context, nStrategy entit
 		return fmt.Errorf("%s", msg)
 	}
 
+	eng, ok, refusalReason := p.engineFor(mode)
+	if !ok {
+		msg := fmt.Sprintf("strategy %q: %s", nStrategy.Name, refusalReason)
+		log.Print(msg)
+		p.notifyError(nStrategy, msg, "order routing refusal")
+		return fmt.Errorf("%s", msg)
+	}
+
 	var firstErr error
 	for _, symbol := range nStrategy.MonitoredSymbols {
 		p.inFlight.Add(1)
-		err := p.engine.Run(ctx, strategyInstance, nStrategy, symbol, mode)
+		err := eng.Run(ctx, strategyInstance, nStrategy, symbol, mode)
 		p.inFlight.Add(-1)
 		if err != nil {
 			log.Printf("Error executing %s for symbol %s: %v", nStrategy.Name, symbol, err)
@@ -260,6 +350,66 @@ func (p *StrategyProcessor) gateMode(nStrategy entities.Strategy) (mode strategi
 	}
 
 	return effective, true, ""
+}
+
+// engineFor routes a cycle by its effective mode (fix-01): live and paper run
+// on the real engine (paper's real client is the testnet adapter - gateMode
+// already refuses paper without Testnet), dryrun runs on the simulated
+// engine, and anything else is refused. There is deliberately no fallback
+// from dryrun to the real engine.
+func (p *StrategyProcessor) engineFor(mode strategies.ExecutionMode) (Engine, bool, string) {
+	switch mode {
+	case strategies.ModeLive, strategies.ModePaper:
+		if p.engine == nil {
+			return nil, false, fmt.Sprintf("no real-exchange engine configured for %s mode", mode)
+		}
+		return p.engine, true, ""
+	case strategies.ModeDryRun:
+		if p.dryRunEngine == nil {
+			return nil, false, "no simulated dryrun engine configured; refusing to run a dryrun cycle"
+		}
+		return p.dryRunEngine, true, ""
+	default:
+		return nil, false, fmt.Sprintf("the worker does not execute %s mode", mode)
+	}
+}
+
+// isBacktestCycle reports whether nStrategy's effective mode (strategy Mode
+// capped by the process ceiling, as in gateMode) is backtest. Unparseable
+// modes and live-over-ceiling strategies return false and keep gateMode's
+// existing refusal path.
+func (p *StrategyProcessor) isBacktestCycle(nStrategy entities.Strategy) bool {
+	strategyMode, err := strategies.ParseExecutionMode(nStrategy.Mode)
+	if err != nil || strategyMode == strategies.ModeLive {
+		return false
+	}
+	ceiling := strategies.ExecutionMode(p.ceiling.Load())
+	effective := strategyMode
+	if strategyMode > ceiling {
+		effective = ceiling
+	}
+	return effective == strategies.ModeBacktest
+}
+
+// OrderRoutingSummary is the worker's startup log line (fix-01) describing
+// where each effective mode's orders go under the current ceiling/testnet.
+func (p *StrategyProcessor) OrderRoutingSummary() string {
+	ceiling := strategies.ExecutionMode(p.ceiling.Load())
+	testnet := p.testnet.Load()
+
+	live := "disabled"
+	if ceiling >= strategies.ModeLive && !testnet && p.engine != nil {
+		live = "real"
+	}
+	paper := "disabled"
+	if ceiling >= strategies.ModePaper && testnet && p.engine != nil {
+		paper = "testnet"
+	}
+	dryrun := "disabled"
+	if ceiling >= strategies.ModeDryRun && p.dryRunEngine != nil {
+		dryrun = "simulated"
+	}
+	return fmt.Sprintf("worker: order routing live=%s paper=%s dryrun=%s", live, paper, dryrun)
 }
 
 func (p *StrategyProcessor) terminateIfRegistered(nStrategy entities.Strategy) {

@@ -23,7 +23,16 @@ type toolCallResponse struct {
 // entities are never JSON-encoded directly in this codebase (no json tags,
 // PascalCase keys), matching every other app/handler/web/* response.
 type AgentRunResponse struct {
-	ID           uint               `json:"id"`
+	ID uint `json:"id"`
+	// Agents platform (A-02 §5) additions. agent_id/agent_name are omitted
+	// for legacy runs recorded before personas existed.
+	AgentID       *uint           `json:"agent_id,omitempty"`
+	AgentName     string          `json:"agent_name,omitempty"`
+	TriggerDetail json.RawMessage `json:"trigger_detail,omitempty"`
+	InputTokens   int64           `json:"input_tokens"`
+	OutputTokens  int64           `json:"output_tokens"`
+	CostUSD       float64         `json:"cost_usd"`
+
 	Provider     string             `json:"provider"`
 	Model        string             `json:"model"`
 	Trigger      string             `json:"trigger"`
@@ -52,6 +61,10 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 
 	resp := AgentRunResponse{
 		ID:           run.ID,
+		AgentID:      run.AgentID,
+		InputTokens:  run.InputTokens,
+		OutputTokens: run.OutputTokens,
+		CostUSD:      run.CostUSD,
 		Provider:     run.Provider,
 		Model:        run.Model,
 		Trigger:      run.Trigger,
@@ -62,6 +75,9 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 		ToolCalls:    calls,
 		StrategyID:   run.StrategyID,
 	}
+	if len(run.TriggerDetail) > 0 && json.Valid(run.TriggerDetail) {
+		resp.TriggerDetail = json.RawMessage(run.TriggerDetail)
+	}
 	if !run.StartedAt.IsZero() {
 		resp.StartedAt = run.StartedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
@@ -69,6 +85,25 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 		resp.FinishedAt = run.FinishedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 	return resp
+}
+
+// ToRunResponseWithNames is ToRunResponse plus agent_name resolved from
+// names (agent id -> name).
+func ToRunResponseWithNames(run entities.AgentRun, names map[uint]string) AgentRunResponse {
+	resp := ToRunResponse(run)
+	if run.AgentID != nil {
+		resp.AgentName = names[*run.AgentID]
+	}
+	return resp
+}
+
+// ToRunListResponseWithNames maps runs with agent names.
+func ToRunListResponseWithNames(runs []entities.AgentRun, names map[uint]string) []AgentRunResponse {
+	out := make([]AgentRunResponse, len(runs))
+	for i, r := range runs {
+		out[i] = ToRunResponseWithNames(r, names)
+	}
+	return out
 }
 
 func ToRunListResponse(runs []entities.AgentRun) []AgentRunResponse {

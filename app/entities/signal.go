@@ -26,7 +26,12 @@ type Signal struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Status     SignalStatus `gorm:"type:varchar(10);not null"`
-	Orders     []Order      `gorm:"foreignKey:SignalID"`
+	// Mode is the effective execution mode ("live", "paper", "dryrun") the
+	// position was opened under (fix-01). Dryrun rows are simulated: their
+	// order IDs carry exchange.SimulatedOrderIDPrefix ("SIM-") and no real
+	// exchange order ever backs them. Empty on rows created before fix-01.
+	Mode   string  `gorm:"type:varchar(16);default:''"`
+	Orders []Order `gorm:"foreignKey:SignalID"`
 }
 
 type Order struct {
@@ -48,6 +53,11 @@ type Order struct {
 	ExecutedQty     float32    `gorm:"not null"`
 	IsClosing       bool       `gorm:"default:false"`
 	Profit          float32    `gorm:"not null"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// SimStopEvaluatedAt is the OpenTime of the last closed candle the
+	// dryrun simulated-stop evaluator (app/engine.SimulatedStopEvaluator)
+	// checked against StopLossPrice, so a candle is never evaluated twice
+	// across cycles/replicas (fix-01). Always nil for live/paper orders.
+	SimStopEvaluatedAt *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

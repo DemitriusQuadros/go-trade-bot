@@ -42,8 +42,14 @@ func (r StrategyRepository) GetAll(ctx context.Context) ([]entities.Strategy, er
 // non-zero primary key issues a full-column UPDATE, including zero-valued
 // fields, unless told otherwise. Without this Omit, every single edit
 // silently wiped the row's real creation date to 0001-01-01.
+//
+// ChallengerOfID/CreatedByAgentID (agents-platform Phase B) are omitted for
+// the same reason: they are set once at creation, and no update path (the
+// REST DTO, save_strategy_script, UpdateStatus/UpdateMode) carries them - a
+// full-column Save would otherwise silently unlink a challenger from its
+// champion on every edit.
 func (r StrategyRepository) Update(ctx context.Context, strategy entities.Strategy) error {
-	return r.db.WithContext(ctx).Omit("CreatedAt").Save(&strategy).Error
+	return r.db.WithContext(ctx).Omit("CreatedAt", "ChallengerOfID", "CreatedByAgentID").Save(&strategy).Error
 }
 
 // Delete removes a strategy and every row that references it, in one
@@ -85,6 +91,11 @@ func (r StrategyRepository) Delete(ctx context.Context, id uint) error {
 			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.ScriptState{}) },
 			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.ScriptVersion{}) },
 			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.AgentRun{}) },
+			// Agents platform (A-01): bindings and the strategy's shared
+			// memory go with it. AgentReports are kept - one report may
+			// span several strategies.
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.AgentStrategyBinding{}) },
+			func(tx *gorm.DB) *gorm.DB { return tx.Where("strategy_id = ?", id).Delete(&entities.StrategyMemoryEntry{}) },
 		} {
 			if err := del(tx).Error; err != nil {
 				return err

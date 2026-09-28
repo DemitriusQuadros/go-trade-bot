@@ -40,8 +40,26 @@ type Strategy struct {
 	Mode                  string                      `gorm:"default:'dryrun'"`
 	MonitoredSymbols      datatypes.JSONSlice[string] `gorm:"type:jsonb"`
 	StrategyConfiguration StrategyConfiguration       `gorm:"embedded"`
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// ChallengerOfID links a challenger (agents-platform Phase B) to its
+	// champion: a dryrun/testing clone of a live or productive strategy that
+	// agents iterate on freely, then propose for promotion. Set only at
+	// creation - StrategyRepository.Update never writes it.
+	ChallengerOfID *uint `gorm:"index"`
+	// CreatedByAgentID records the agent persona that created this strategy
+	// (create_strategy / create_challenger / save_strategy_script's create
+	// path), so it stays in that agent's write scope even if the operator
+	// later edits the agent's bindings. Set only at creation.
+	CreatedByAgentID *uint `gorm:"index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// IsLiveOrProductive reports whether s is a live-mode or productive
+// strategy - the set no agent tool may ever modify (agents-platform Phase
+// B safety invariant). Its code changes only via an operator-approved
+// proposal applied by agent:apply_proposal.
+func (s Strategy) IsLiveOrProductive() bool {
+	return s.Status == Productive || s.Mode == "live"
 }
 
 type StrategyConfiguration struct {

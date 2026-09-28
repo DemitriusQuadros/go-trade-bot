@@ -96,6 +96,14 @@ func (a *GeminiAdapter) Complete(ctx context.Context, req CompletionRequest) (Co
 	}
 
 	result := CompletionResult{Text: resp.Text(), StopReason: "end_turn"}
+	if um := resp.UsageMetadata; um != nil {
+		// Thinking tokens are billed as output; tool-use prompt tokens as
+		// input.
+		result.Usage = Usage{
+			InputTokens:  int64(um.PromptTokenCount) + int64(um.ToolUsePromptTokenCount),
+			OutputTokens: int64(um.CandidatesTokenCount) + int64(um.ThoughtsTokenCount),
+		}
+	}
 	calls := resp.FunctionCalls()
 	if len(calls) > 0 {
 		result.StopReason = "tool_use"

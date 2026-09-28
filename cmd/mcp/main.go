@@ -17,6 +17,8 @@ import (
 	"log"
 
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/repository/agentplatform"
+	proposalrepo "go-trade-bot/app/repository/proposal"
 	"go-trade-bot/app/strategies"
 	strategyscript "go-trade-bot/app/strategies/script"
 	"go-trade-bot/cmd/mcp/modules"
@@ -31,6 +33,20 @@ func main() {
 	flag.Parse()
 
 	fx.New(
+		appOptions(),
+		fx.Invoke(func(srv *server.Server, lc fx.Lifecycle) {
+			lc.Append(fx.Hook{
+				OnStart: func(ctx context.Context) error { return srv.Start(*transport) },
+				OnStop:  func(ctx context.Context) error { return srv.Stop(ctx) },
+			})
+		}),
+	).Run()
+}
+
+// appOptions is the fx graph minus the transport start hook (extracted so a
+// test can fx.ValidateApp it).
+func appOptions() fx.Option {
+	return fx.Options(
 		modules.ConfigurationModule,
 		modules.DbModule,
 		modules.MetricsModule,
@@ -58,13 +74,7 @@ func main() {
 			}
 		}),
 		fx.Invoke(RegisterScriptStrategy),
-		fx.Invoke(func(srv *server.Server, lc fx.Lifecycle) {
-			lc.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error { return srv.Start(*transport) },
-				OnStop:  func(ctx context.Context) error { return srv.Stop(ctx) },
-			})
-		}),
-	).Run()
+	)
 }
 
 // RegisterScriptStrategy wires the "script" strategy into the global
@@ -82,7 +92,7 @@ func RegisterScriptStrategy(runner *strategyscript.Runner, store strategyscript.
 // including the Backend Spec 02 additions (AgentInstruction/AgentRun), so
 // this binary never depends on cmd/api having started first.
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&entities.Strategy{},
 		&entities.StrategyExecution{},
 		&entities.Signal{},
@@ -99,5 +109,25 @@ func Migrate(db *gorm.DB) error {
 		&entities.ScriptState{},
 		&entities.AgentInstruction{},
 		&entities.AgentRun{},
-	)
+		// Agents platform (Phase A-01) - keep in sync across cmd/api,
+		// cmd/mcp and cmd/agent.
+		&entities.Agent{},
+		&entities.AgentStrategyBinding{},
+		&entities.StrategyMemoryEntry{},
+		&entities.AgentReport{},
+		&entities.WebhookTarget{},
+		&entities.AgentUsage{},
+		// Agents platform Phase B-01.
+		&entities.StrategyChangeProposal{},
+		&entities.DeployGateConfig{},
+	); err != nil {
+		return err
+	}
+	// Seed the deploy gate thresholds (idempotent).
+	if err := proposalrepo.NewGormRepository(db).EnsureGateConfig(context.Background()); err != nil {
+		return err
+	}
+	// Seed the default "Copilot" agent persona (idempotent).
+	_, err := agentplatform.NewGormRepository(db).EnsureDefaultAgent(context.Background())
+	return err
 }

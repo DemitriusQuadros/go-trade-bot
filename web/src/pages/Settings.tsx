@@ -23,6 +23,9 @@ import { ApiError } from '@/api/client';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
+import { WebhookTargetsSection } from '@/components/domain/WebhookTargetsSection';
+import { DeployGateSection } from '@/components/domain/DeployGateSection';
+import { useLocation } from 'react-router-dom';
 
 type SavePhase = 'idle' | 'saving-safe' | 'saving-risk' | 'error';
 
@@ -69,6 +72,15 @@ export function Settings() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingLiveConfirm, setPendingLiveConfirm] = useState(false);
+  const location = useLocation();
+
+  // BrowserRouter doesn't scroll to #fragments on its own - honour deep
+  // links like /settings#agent-notifications once the page has rendered.
+  useEffect(() => {
+    if (!location.hash || !loadedSettings) return;
+    const el = document.getElementById(location.hash.slice(1));
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location.hash, loadedSettings]);
 
   useEffect(() => {
     if (loadedSettings) {
@@ -449,6 +461,16 @@ export function Settings() {
           <span>Save Settings</span>
         </button>
       </div>
+
+      {/* Agent notification targets - saved per target (own dialog), not by
+          the Save Settings button above. Deep-linked as
+          /settings#agent-notifications from the agent editor. */}
+      <WebhookTargetsSection />
+
+      {/* Agents platform Phase B deploy gate - saved on its own via
+          PUT /deploy-gate, not by the Save Settings button. Deep-linkable as
+          /settings#deploy-gate. */}
+      <DeployGateSection />
 
       {/* Sticky Save Bar & Feedback */}
       <SettingsSaveBar phase={phase} error={errorMessage} />

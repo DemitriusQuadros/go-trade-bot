@@ -23,9 +23,12 @@ type StrategyResponseDTO struct {
 	// frontend's WorkbenchShell already expected it on the fetched
 	// Strategy - silently falling back to a blank template every time an
 	// existing script strategy was opened for editing.
-	ScriptSource string    `json:"script_source,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ScriptSource string `json:"script_source,omitempty"`
+	// ChallengerOfID is the champion's id when this strategy is an
+	// agents-platform challenger (Phase B), else null.
+	ChallengerOfID *uint     `json:"challenger_of_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func ToStrategyResponse(s entities.Strategy) StrategyResponseDTO {
@@ -48,6 +51,7 @@ func ToStrategyResponse(s entities.Strategy) StrategyResponseDTO {
 		Cycle:            int(s.StrategyConfiguration.Cycle),
 		Configuration:    configJSON,
 		ScriptSource:     s.ScriptSource,
+		ChallengerOfID:   s.ChallengerOfID,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}

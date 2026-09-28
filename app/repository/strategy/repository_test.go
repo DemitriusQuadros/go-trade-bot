@@ -149,6 +149,9 @@ func TestStrategyRepository_Delete_CascadesEverything(t *testing.T) {
 		&entities.ScriptState{},
 		&entities.ScriptVersion{},
 		&entities.AgentRun{},
+		&entities.AgentStrategyBinding{},
+		&entities.StrategyMemoryEntry{},
+		&entities.AgentReport{},
 	))
 
 	repo := repository.NewStrategyRepository(db)
@@ -169,6 +172,9 @@ func TestStrategyRepository_Delete_CascadesEverything(t *testing.T) {
 	require.NoError(t, db.Create(&entities.ScriptState{StrategyID: strat.ID}).Error)
 	require.NoError(t, db.Create(&entities.ScriptVersion{StrategyID: strat.ID}).Error)
 	require.NoError(t, db.Create(&entities.AgentRun{StrategyID: &strat.ID}).Error)
+	require.NoError(t, db.Create(&entities.AgentStrategyBinding{AgentID: 1, StrategyID: strat.ID}).Error)
+	require.NoError(t, db.Create(&entities.StrategyMemoryEntry{StrategyID: strat.ID, Kind: entities.MemoryJournal, Content: "x"}).Error)
+	require.NoError(t, db.Create(&entities.AgentReport{AgentID: 1, StrategyIDs: []uint{strat.ID}, Title: "kept"}).Error)
 
 	// Same shapes for the OTHER strategy - must survive the delete untouched,
 	// so the cascade is proven scoped to the deleted strategy's own rows,
@@ -199,6 +205,11 @@ func TestStrategyRepository_Delete_CascadesEverything(t *testing.T) {
 	assertZeroRowsFor(&entities.ScriptState{}, "strategy_id = ?", strat.ID)
 	assertZeroRowsFor(&entities.ScriptVersion{}, "strategy_id = ?", strat.ID)
 	assertZeroRowsFor(&entities.AgentRun{}, "strategy_id = ?", strat.ID)
+	assertZeroRowsFor(&entities.AgentStrategyBinding{}, "strategy_id = ?", strat.ID)
+	assertZeroRowsFor(&entities.StrategyMemoryEntry{}, "strategy_id = ?", strat.ID)
+	var reportCount int64
+	require.NoError(t, db.Model(&entities.AgentReport{}).Count(&reportCount).Error)
+	assert.Equal(t, int64(1), reportCount, "agent reports are kept on strategy delete")
 
 	// The other strategy and everything under it must be untouched.
 	_, err = repo.GetByID(ctx, otherStrat.ID)

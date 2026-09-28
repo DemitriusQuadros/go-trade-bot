@@ -23,6 +23,15 @@ import (
 type Tool struct {
 	Def     modelprovider.ToolDefinition
 	Execute func(ctx context.Context, args json.RawMessage) (result string, err error)
+	// Permission is what an agent persona must be granted to be offered
+	// (and to execute) this tool. "" = granted to every agent.
+	Permission entities.AgentPermission
+}
+
+// withPermission tags a tool with its required permission.
+func withPermission(t Tool, p entities.AgentPermission) Tool {
+	t.Permission = p
+	return t
 }
 
 // buildToolRegistry is the complete, closed list of everything the model
@@ -33,19 +42,37 @@ type Tool struct {
 // tool capable of setting Status = Productive, placing a real order, or
 // changing Testnet/exchange credentials - these are absent entirely, not
 // merely blocked by a runtime check.
+//
+// Agents platform (A-01 §4.2): every tool is tagged with the permission an
+// agent persona needs to be offered it. The new platform tools (memory,
+// reports, notify - tools_platform.go) write only their own tables and can
+// never modify entities.Strategy, place/cancel orders, or touch settings.
 func (u AgentUseCase) buildToolRegistry() []Tool {
 	return []Tool{
-		u.listStrategiesTool(),          // read
-		u.getStrategyTool(),             // read
-		u.listBacktestsTool(),           // read
-		u.getBacktestTool(),             // read
-		u.getOpenPositionsTool(),        // read
-		u.getPerformanceSnapshotsTool(), // read
-		u.runBacktestTool(),             // writes a BacktestRun only, never a Strategy row
-		u.listOptimizationsTool(),       // read
-		u.runOptimizationTool(),         // writes an OptimizationRun only, never a Strategy row
-		u.getOptimizationResultsTool(),  // read
-		u.saveStrategyScriptTool(),      // WRITE - the only tool that can touch entities.Strategy
+		withPermission(u.listStrategiesTool(), entities.PermRead),
+		withPermission(u.getStrategyTool(), entities.PermRead),
+		withPermission(u.listBacktestsTool(), entities.PermRead),
+		withPermission(u.getBacktestTool(), entities.PermRead),
+		withPermission(u.getOpenPositionsTool(), entities.PermRead),
+		withPermission(u.getPerformanceSnapshotsTool(), entities.PermRead),
+		withPermission(u.runBacktestTool(), entities.PermBacktest),           // writes a BacktestRun only, never a Strategy row
+		withPermission(u.listOptimizationsTool(), entities.PermRead),         // read
+		withPermission(u.runOptimizationTool(), entities.PermOptimize),       // writes an OptimizationRun only, never a Strategy row
+		withPermission(u.getOptimizationResultsTool(), entities.PermRead),    // read
+		withPermission(u.saveStrategyScriptTool(), entities.PermEditTesting), // WRITE - creates strategies / updates backtest-mode drafts only
+		u.readMemoryTool(),   // always granted
+		u.writeJournalTool(), // always granted
+		u.listReportsTool(),  // always granted
+		u.writeReportTool(),  // always granted
+		withPermission(u.notifyTool(), entities.PermNotify),
+		// Phase B-01 (tools_phaseb.go). None can change a live-mode or
+		// productive strategy's source, mode or status.
+		withPermission(u.createChallengerTool(), entities.PermEditTesting),  // WRITE - creates a dryrun/testing clone; the champion is only read
+		withPermission(u.deployToTestingTool(), entities.PermEditTesting),   // WRITE - non-live, non-productive, in-scope strategies only, behind the Go deploy gate
+		withPermission(u.proposePromotionTool(), entities.PermProposeLive),  // files a pending proposal only; applying needs operator approval over REST
+		withPermission(u.createStrategyTool(), entities.PermCreateStrategy), // WRITE - new testing strategies (backtest/dryrun), max 3/day
+		u.listProposalsTool(),       // always granted, read-only
+		u.getDeployGateConfigTool(), // always granted, read-only
 	}
 }
 
@@ -291,6 +318,47 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 				StrategyConfiguration: entities.StrategyConfiguration{
 					Cycle: entities.Cycle(in.CycleMinutes),
 				},
+			}
+
+			// Agents platform (A-02 §4): one writer per existing strategy.
+			// Taken before the write; the gate above is unchanged.
+			if in.StrategyID != 0 {
+				release, lockErr := u.acquireStrategyLock(ctx, in.StrategyID)
+				if lockErr != nil {
+					return "", lockErr
+				}
+				defer release()
+
+				// Live/productive strategies are never edited by any agent
+				// path (chat, cron/manual, MCP) - the Mode/Status clamp above
+				// would otherwise replace a live strategy's script and silently
+				// take it out of live trading. Live changes go through an
+				// operator-approved proposal (agents platform Phase B).
+				existing, getErr := u.Strategy.GetByID(ctx, in.StrategyID)
+				if getErr != nil {
+					return "", fmt.Errorf("save_strategy_script: could not load strategy %d: %w", in.StrategyID, getErr)
+				}
+				if existing.IsLiveOrProductive() {
+					return "", fmt.Errorf("save_strategy_script: strategy %d is %s/%s - agents may only edit non-productive, non-live strategies; use create_challenger + propose_promotion, or record a finding or write a report instead", in.StrategyID, existing.Status, existing.Mode)
+				}
+				// Phase B-01 §4: one rule for changing code that runs - only
+				// backtest-mode drafts are updated here; everything else goes
+				// through the gated deploy_to_testing.
+				if existing.Mode != strategies.ModeBacktest.String() {
+					return "", fmt.Errorf("save_strategy_script: strategy %d is in %s mode - use deploy_to_testing (gated) to change it; save_strategy_script only updates backtest-mode drafts", in.StrategyID, existing.Mode)
+				}
+				agent, _, agentErr := u.toolAgent(ctx)
+				if agentErr != nil {
+					return "", agentErr
+				}
+				if scopeErr := u.inWriteScope(ctx, agent, existing); scopeErr != nil {
+					return "", fmt.Errorf("save_strategy_script: %w", scopeErr)
+				}
+			} else if agent, _, agentErr := u.toolAgent(ctx); agentErr == nil && agent.ID != 0 {
+				// Record the creator so the new draft stays in this agent's
+				// write scope (Phase B-01 §6).
+				agentID := agent.ID
+				s.CreatedByAgentID = &agentID
 			}
 
 			var saved entities.Strategy
@@ -652,7 +720,7 @@ func summarizeOptimizationForModel(run entities.OptimizationRun) string {
 // machine-parseable first line), so RunToolLoop can populate
 // AgentRun.StrategyID without widening the Tool.Execute signature.
 func strategyIDFromToolResult(toolName string, _ json.RawMessage, resultText string) (uint, bool) {
-	if toolName != "save_strategy_script" {
+	if toolName != "save_strategy_script" && toolName != "create_strategy" {
 		return 0, false
 	}
 	const prefix = "strategy_id="

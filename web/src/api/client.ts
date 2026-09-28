@@ -29,6 +29,23 @@ import { ScriptVersion,
   ReplResponse,
   AgentRun,
   AgentHistoryTurn,
+  Agent,
+  AgentRequest,
+  AgentRunEnqueuedResponse,
+  AgentUsage,
+  AgentReportSummary,
+  AgentReport,
+  AgentReportFilter,
+  WebhookTarget,
+  WebhookTargetRequest,
+  WebhookTestResponse,
+  StrategyMemoryEntry,
+  Proposal,
+  ProposalDetail,
+  ProposalFilter,
+  ProposalDecisionRequest,
+  DeployGateConfig,
+  PendingProposalCount,
 } from './types';
 
 const TOKEN_STORAGE_KEY = 'gtb_api_token';
@@ -265,11 +282,131 @@ export const api = {
     strategyId?: number,
     history?: AgentHistoryTurn[],
     opts?: { signal?: AbortSignal },
-  ) => api.post<AgentRun>('/agent/runs', { input, strategy_id: strategyId, history }, opts),
+    // agent_id (A-02 §5): which persona answers - omitted means the default
+    // "Copilot" agent. A paused/halted agent answers 409.
+    agentId?: number,
+  ) => api.post<AgentRun>('/agent/runs', { input, strategy_id: strategyId, history, agent_id: agentId }, opts),
   listAgentRuns: (limit = 20, opts?: { signal?: AbortSignal }) =>
     api.get<AgentRun[]>(`/agent/runs?limit=${limit}`, opts),
   listAgentRunsForStrategy: (strategyId: number, limit = 20, opts?: { signal?: AbortSignal }) =>
     api.get<AgentRun[]>(`/agent/runs?strategy_id=${strategyId}&limit=${limit}`, opts),
   getAgentRun: (id: number, opts?: { signal?: AbortSignal }) =>
     api.get<AgentRun>(`/agent/runs/${id}`, opts),
+
+  // --- Agents platform (A-02 §5) --------------------------------------
+  listAgents: (opts?: { signal?: AbortSignal }) => api.get<Agent[]>('/agents', opts),
+  getAgent: (id: number, opts?: { signal?: AbortSignal }) => api.get<Agent>(`/agents/${id}`, opts),
+  createAgent: (req: AgentRequest) => api.post<Agent>('/agents', req),
+  updateAgent: (id: number, req: AgentRequest) => api.put<Agent>(`/agents/${id}`, req),
+  deleteAgent: (id: number) => api.delete<void>(`/agents/${id}`),
+  pauseAgent: (id: number, paused: boolean) => api.post<Agent>(`/agents/${id}/pause`, { paused }),
+  runAgent: (id: number, prompt?: string) =>
+    api.post<AgentRunEnqueuedResponse>(`/agents/${id}/run`, prompt ? { prompt } : {}),
+  listAgentRunsForAgent: (id: number, limit = 20, beforeId?: number, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(
+      `/agents/${id}/runs${buildQuery({ limit, before_id: beforeId })}`,
+      opts,
+    ),
+  getAgentUsage: (id: number, days = 30, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentUsage>(`/agents/${id}/usage?days=${days}`, opts),
+
+  // Global agents kill switch. PUT /settings ignores agents_paused; this is
+  // the only way to change it.
+  setAgentsKillSwitch: (paused: boolean) =>
+    api.put<{ agents_paused: boolean }>('/agents/kill-switch', { paused }),
+
+  // Agent reports
+  listAgentReports: (filter: AgentReportFilter = {}, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentReportSummary[]>(`/agent-reports${buildQuery({ ...filter })}`, opts),
+  getAgentReport: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentReport>(`/agent-reports/${id}`, opts),
+  // iframe src - browsers can't attach an Authorization header to an
+  // iframe request, so the token rides as ?token= (same pattern as
+  // getReportUrl above). theme makes the server-rendered report match the
+  // app's current light/dark mode.
+  getAgentReportHtmlUrl: (id: number, theme?: 'dark' | 'light') => {
+    const token = getToken();
+    return `${API_PREFIX}/agent-reports/${id}/html${buildQuery({ token: token ?? undefined, theme })}`;
+  },
+
+  // Webhook targets (agent notifications)
+  listWebhookTargets: (opts?: { signal?: AbortSignal }) =>
+    api.get<WebhookTarget[]>('/webhook-targets', opts),
+  createWebhookTarget: (req: WebhookTargetRequest) =>
+    api.post<WebhookTarget>('/webhook-targets', req),
+  updateWebhookTarget: (id: number, req: WebhookTargetRequest) =>
+    api.put<WebhookTarget>(`/webhook-targets/${id}`, req),
+  deleteWebhookTarget: (id: number) => api.delete<void>(`/webhook-targets/${id}`),
+  testWebhookTarget: (id: number) =>
+    api.post<WebhookTestResponse>(`/webhook-targets/${id}/test`),
+
+  // Shared per-strategy memory
+  listStrategyMemory: (
+    strategyId: number,
+    params: { kinds?: string[]; limit?: number; before_id?: number } = {},
+    opts?: { signal?: AbortSignal },
+  ) =>
+    api.get<StrategyMemoryEntry[]>(
+      `/strategies/${strategyId}/memory${buildQuery({
+        kinds: params.kinds?.length ? params.kinds.join(',') : undefined,
+        limit: params.limit,
+        before_id: params.before_id,
+      })}`,
+      opts,
+    ),
+  addStrategyMemoryNote: (strategyId: number, content: string) =>
+    api.post<StrategyMemoryEntry>(`/strategies/${strategyId}/memory`, { content }),
+
+  // --- Agents platform Phase B: proposals + deploy gate (B-01 §5) -------
+  listProposals: (filter: ProposalFilter = {}, opts?: { signal?: AbortSignal }) =>
+    api.get<Proposal[]>(`/proposals${buildQuery({ ...filter })}`, opts),
+  getProposal: (id: number, opts?: { signal?: AbortSignal }) =>
+    api.get<ProposalDetail>(`/proposals/${id}`, opts),
+  // Only from `pending`. Returns the detail DTO; 409 `superseded` when the
+  // target's source changed since the proposal was filed (the backend marks
+  // it superseded) - surfaced as a thrown ApiError(409).
+  approveProposal: (id: number, req: ProposalDecisionRequest = {}) =>
+    api.post<ProposalDetail>(`/proposals/${id}/approve`, req),
+  rejectProposal: (id: number, req: ProposalDecisionRequest = {}) =>
+    api.post<ProposalDetail>(`/proposals/${id}/reject`, req),
+  getPendingProposalCount: (opts?: { signal?: AbortSignal }) =>
+    api.get<PendingProposalCount>('/proposals/pending-count', opts),
+  getDeployGateConfig: (opts?: { signal?: AbortSignal }) =>
+    api.get<DeployGateConfig>('/deploy-gate', opts),
+  updateDeployGateConfig: (req: DeployGateConfig) =>
+    api.put<DeployGateConfig>('/deploy-gate', req),
 };
+
+// buildQuery renders "?a=1&b=x" from the defined (non-undefined, non-empty)
+// entries of params, or "" when there are none.
+function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    qs.set(k, String(v));
+  }
+  const str = qs.toString();
+  return str ? `?${str}` : '';
+}
+
+// apiErrorMessage extracts the human-readable message from a failed call.
+// Handlers answer errors as {"error": code, "message": text} (A-02 §5);
+// older ones answer plain text. Falls back to the Error's own message.
+export function apiErrorMessage(err: unknown, fallback = 'Request failed'): string {
+  if (err instanceof ApiError) {
+    const body = err.body?.trim();
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as { message?: unknown; error?: unknown };
+        if (typeof parsed.message === 'string' && parsed.message) return parsed.message;
+        if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+      } catch {
+        return body;
+      }
+    }
+    return `${fallback} (HTTP ${err.status})`;
+  }
+  if (err instanceof NetworkError) return 'Could not reach the server. Check that the API is running.';
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}

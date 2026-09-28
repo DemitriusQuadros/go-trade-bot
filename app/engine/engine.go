@@ -70,6 +70,12 @@ type Engine struct {
 	// when the requested backtest timeframe has full coverage, truncating
 	// most cycles to "no candles returned" without surfacing an error.
 	Timeframe string
+
+	// PreCycle, if set, runs at the start of Run before the Context is
+	// built (fix-01). Only the worker's dryrun engine sets it (the simulated
+	// stop-loss evaluator); every other engine leaves it nil, so Run is
+	// unchanged for them.
+	PreCycle CycleHook
 }
 
 func NewEngine(
@@ -101,10 +107,16 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("strategy %s panicked processing %s: %v", dbStrategy.Name, symbol, r)
-			e.incrementPanicCounter(dbStrategy.Name)
+			e.incrementPanicCounter(dbStrategy.Name, symbol)
 			e.notifyErrorWithPanic(dbStrategy, symbol, mode, err.Error(), true)
 		}
 	}()
+
+	if e.PreCycle != nil {
+		if hookErr := e.PreCycle.BeforeCycle(ctx, dbStrategy, symbol, mode); hookErr != nil {
+			return hookErr
+		}
+	}
 
 	strategyCtx, buildErr := e.buildContext(ctx, dbStrategy, symbol, mode)
 	if buildErr != nil {
@@ -327,11 +339,16 @@ func (e *Engine) notifyErrorWithPanic(dbStrategy entities.Strategy, symbol strin
 	})
 }
 
-func (e *Engine) incrementPanicCounter(strategyName string) {
+// incrementPanicCounter must pass exactly the label set strategy_panics_total
+// is registered with ({strategy, symbol} in cmd/api and cmd/worker metrics
+// modules): a mismatch makes prometheus' CounterVec.With panic, and this runs
+// inside Run's recover - it would turn a recovered strategy panic into a
+// process crash.
+func (e *Engine) incrementPanicCounter(strategyName, symbol string) {
 	if e.Metrics == nil {
 		return
 	}
-	e.Metrics.IncrementCounter(metricStrategyPanics, map[string]string{"strategy": strategyName})
+	e.Metrics.IncrementCounter(metricStrategyPanics, map[string]string{"strategy": strategyName, "symbol": symbol})
 }
 
 func strategyStopLossPct(dbStrategy entities.Strategy) float64 {

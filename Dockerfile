@@ -7,6 +7,8 @@ RUN go mod download
 
 COPY . .
 
+# TARGET selects the binary under cmd/: api | worker | mcp | agent
+# (docker-compose sets it per service).
 ARG TARGET
 
 # Discovered building cmd/mcp on a low-memory host (observed: 2 CPU / ~2GB

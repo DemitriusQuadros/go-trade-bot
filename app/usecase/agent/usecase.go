@@ -15,14 +15,18 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/agent"
+	"go-trade-bot/app/repository/agentplatform"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/modelprovider"
+	"go-trade-bot/internal/notifier"
+	"go-trade-bot/internal/report/agentreport"
 
 	"gorm.io/datatypes"
 )
@@ -49,8 +53,41 @@ const DefaultMaxToolLoopIterations = 8
 // Tool.Def/Execute pair onto the chosen MCP SDK's tool-registration API.
 // This is the ONLY exported way to reach the registry - there is no
 // generic "invoke any usecase method by name" path.
+//
+// Agents platform (A-02 §5 "MCP"): MCP calls run with the DEFAULT agent's
+// permissions - tools it isn't granted are not registered, and every
+// permission-gated tool re-checks the default agent's current permissions
+// at call time (the operator may edit them while cmd/mcp runs). The notify
+// tool is never exposed over MCP. write_report/write_journal invoked over
+// MCP attribute to the default agent (see tools_platform.go).
 func (u AgentUseCase) Tools() []Tool {
-	return u.buildToolRegistry()
+	registered, lookupErr := u.DefaultAgent(context.Background())
+	var out []Tool
+	for _, t := range u.buildToolRegistry() {
+		if t.Def.Name == notifyToolName {
+			continue
+		}
+		if t.Permission == "" {
+			out = append(out, t)
+			continue
+		}
+		if lookupErr == nil && !registered.HasPermission(t.Permission) {
+			continue
+		}
+		inner, perm, name := t.Execute, t.Permission, t.Def.Name
+		t.Execute = func(ctx context.Context, args json.RawMessage) (string, error) {
+			agent, err := u.DefaultAgent(ctx)
+			if err != nil {
+				return "", fmt.Errorf("%s: could not load the default agent's permissions: %w", name, err)
+			}
+			if !agent.HasPermission(perm) {
+				return "", fmt.Errorf("%s: the default agent %q does not have permission %q", name, agent.Name, perm)
+			}
+			return inner(ctx, args)
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // Narrow interfaces, each scoped to exactly what the agent needs - matches
@@ -102,12 +139,12 @@ type OptimizeWorker interface {
 // not re-declared locally, since that package already defines the minimal
 // interface this usecase needs and nothing more.
 type AgentUseCase struct {
-	Model                 modelprovider.ModelProvider
-	Repository            agent.Repository
-	Strategy              StrategyUseCase
-	Backtest              BacktestUseCase
-	Signal                SignalUseCase
-	Snapshot              PerformanceSnapshotUseCase
+	Model      modelprovider.ModelProvider
+	Repository agent.Repository
+	Strategy   StrategyUseCase
+	Backtest   BacktestUseCase
+	Signal     SignalUseCase
+	Snapshot   PerformanceSnapshotUseCase
 	// Optimize/OptimizeWorker are optional (nil-safe: buildToolRegistry
 	// always registers the tools, but a nil check inside each Execute
 	// closure reports a clear "not available" error rather than panicking)
@@ -123,6 +160,38 @@ type AgentUseCase struct {
 	// construction from configuration.Agent, not per-call.
 	Provider  string
 	ModelName string
+
+	// Agents platform (A-01/A-02) dependencies - all optional and set
+	// post-construction like Optimize, so legacy wiring/tests keep working:
+	// nil Platform = synthetic default persona, no memory/usage/reports;
+	// nil Providers = always u.Model; nil Guard = never halted; nil Lock =
+	// no strategy writer locking (cmd/mcp); nil Notifier = notify tool
+	// reports "not available"; nil Reports = write_report "not available".
+	Platform   agentplatform.Repository
+	Providers  modelprovider.ProviderFactory
+	Notifier   notifier.AgentNotifier
+	Reports    ReportRenderer
+	Guard      RunGuard
+	Lock       StrategyLock
+	APIBaseURL string // for report/proposal deep links (<APIBaseURL>/agents/reports/<id>, /agents/proposals/<id>)
+
+	// Agents platform Phase B-01 dependencies - optional like the above:
+	// nil Gate/Proposals = deploy_to_testing / propose_promotion /
+	// list_proposals / get_deploy_gate_config report "not available" (they
+	// never fall back to an ungated write); nil ForwardTest = no forward-
+	// test evidence; nil Validator = the script runner's compile check;
+	// nil Clock = time.Now.
+	Gate        DeployGate
+	Proposals   ProposalStore
+	ForwardTest ClosedSignalReader
+	Validator   ScriptValidator
+	Clock       func() time.Time
+}
+
+// ReportRenderer validates and renders report blocks (internal/report/agentreport).
+type ReportRenderer interface {
+	Validate(blocks []agentreport.Block) error
+	Render(ctx context.Context, meta agentreport.ReportMeta, blocks []agentreport.Block) (string, error)
 }
 
 func NewAgentUseCase(
@@ -257,6 +326,111 @@ func buildHistoryMessages(history []PriorTurn) []modelprovider.Message {
 // draft, before its first save_strategy_script call) - the opportunistic
 // path below still catches that case once the tool call resolves an ID.
 func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string, history []PriorTurn, knownStrategyID *uint) (entities.AgentRun, error) {
+	agent, err := u.DefaultAgent(ctx)
+	if err != nil {
+		return entities.AgentRun{}, fmt.Errorf("agent: failed to load default agent: %w", err)
+	}
+	return u.Run(ctx, RunRequest{
+		Agent:      agent,
+		Trigger:    trigger,
+		UserInput:  userInput,
+		History:    history,
+		StrategyID: knownStrategyID,
+	})
+}
+
+// RunRequest is one persona-aware agent run (agents-platform A-01 §4).
+type RunRequest struct {
+	Agent         entities.Agent // required; the persona
+	Trigger       string         // "chat_ui" | "cron" | "manual" | "mcp_tool"
+	TriggerDetail json.RawMessage
+	UserInput     string
+	// DisplayInput, when set, is what gets written to shared memory as the
+	// chat_user entry instead of UserInput (the chat handler prefixes
+	// UserInput with a strategy-context marker that should not be stored).
+	DisplayInput string
+	History      []PriorTurn // chat_ui only
+	StrategyID   *uint       // context strategy (chat selection or the single binding being evaluated)
+	ChainDepth   int
+	ParentRunID  *uint
+}
+
+// DefaultAgent returns the default "Copilot" persona. Without a Platform
+// repository (legacy wiring/tests) it is a synthetic, unsaved persona with
+// every Phase A permission - i.e. exactly the pre-platform behaviour.
+func (u AgentUseCase) DefaultAgent(ctx context.Context) (entities.Agent, error) {
+	if u.Platform == nil {
+		return syntheticDefaultAgent(), nil
+	}
+	return u.Platform.GetDefaultAgent(ctx)
+}
+
+// ResolveAgent returns the agent with id, or the default agent when id is
+// nil. Without a Platform only the default agent exists.
+func (u AgentUseCase) ResolveAgent(ctx context.Context, id *uint) (entities.Agent, error) {
+	if id == nil || *id == 0 {
+		return u.DefaultAgent(ctx)
+	}
+	if u.Platform == nil {
+		return entities.Agent{}, fmt.Errorf("agent %d not found: the agents platform is not configured", *id)
+	}
+	return u.Platform.GetAgent(ctx, *id)
+}
+
+// AgentNames maps agent id -> name (empty without a Platform).
+func (u AgentUseCase) AgentNames(ctx context.Context) map[uint]string {
+	return u.agentNames(ctx)
+}
+
+func syntheticDefaultAgent() entities.Agent {
+	return entities.Agent{
+		Name:        entities.DefaultAgentName,
+		IsDefault:   true,
+		Permissions: agentplatform.DefaultAgentPermissions(),
+	}
+}
+
+// CheckGuard runs the RunGuard for agent (nil Guard = always allowed).
+// Exposed so transports (the chat handler's 409, the manual-run endpoint)
+// can pre-flight a run.
+func (u AgentUseCase) CheckGuard(ctx context.Context, agent entities.Agent) error {
+	if u.Guard == nil {
+		return nil
+	}
+	return u.Guard.Check(ctx, agent)
+}
+
+// modelFor picks the ModelProvider and the provider/model names recorded
+// on the run and used for pricing. An agent with no provider/model
+// override uses the process default (u.Model) exactly as before.
+func (u AgentUseCase) modelFor(agent entities.Agent) (modelprovider.ModelProvider, string, string, error) {
+	if u.Providers == nil || (agent.Provider == "" && agent.Model == "") {
+		return u.Model, u.Provider, u.ModelName, nil
+	}
+	provider, modelName := agent.Provider, agent.Model
+	if resolver, ok := u.Providers.(interface {
+		Resolve(provider, model string) (string, string)
+	}); ok {
+		provider, modelName = resolver.Resolve(provider, modelName)
+	} else if provider == "" {
+		provider = u.Provider
+	}
+	m, err := u.Providers.For(agent.Provider, agent.Model)
+	return m, provider, modelName, err
+}
+
+// Run drives one agent turn end-to-end for a persona: builds the system
+// prompt (house rules, persona, operating context, shared strategy memory,
+// authoring doc), exposes only the tools the persona's permissions grant,
+// re-checks the RunGuard (kill switch / pause / budget) before EVERY model
+// call, accounts token usage and cost per call, executes tool calls
+// (re-checking permissions at dispatch), and repeats until the model stops
+// calling tools or MaxToolLoopIterations is hit. AgentRun is persisted
+// incrementally after every tool call so a crash mid-loop leaves a partial
+// audit trail. Strategy writer locks acquired during the run are released
+// when Run returns.
+func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRun, error) {
+	agent := req.Agent
 	maxIterations := u.MaxToolLoopIterations
 	if maxIterations <= 0 {
 		maxIterations = DefaultMaxToolLoopIterations
@@ -266,36 +440,37 @@ func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string
 	if err != nil {
 		return entities.AgentRun{}, fmt.Errorf("agent: failed to load instruction: %w", err)
 	}
-	system := instruction.Content
-	if system != "" {
-		system += "\n\n"
-	}
-	system += strategyAuthoringDoc
 
-	run, err := u.Repository.CreateRun(ctx, entities.AgentRun{
-		Provider:     u.Provider,
-		Model:        u.ModelName,
-		Trigger:      trigger,
+	model, providerName, modelName, modelErr := u.modelFor(agent)
+
+	newRun := entities.AgentRun{
+		Provider:     providerName,
+		Model:        modelName,
+		Trigger:      req.Trigger,
 		Status:       entities.AgentRunOK,
-		InputSummary: truncate(userInput, 4000),
-		StrategyID:   knownStrategyID,
+		InputSummary: truncate(req.UserInput, 4000),
+		StrategyID:   req.StrategyID,
 		StartedAt:    time.Now(),
-	})
+		ChainDepth:   req.ChainDepth,
+		ParentRunID:  req.ParentRunID,
+	}
+	if agent.ID != 0 {
+		id := agent.ID
+		newRun.AgentID = &id
+	}
+	if len(req.TriggerDetail) > 0 {
+		newRun.TriggerDetail = datatypes.JSON(req.TriggerDetail)
+	}
+	run, err := u.Repository.CreateRun(ctx, newRun)
 	if err != nil {
 		return entities.AgentRun{}, fmt.Errorf("agent: failed to create run: %w", err)
 	}
 
-	registry := u.buildToolRegistry()
-	toolDefs := make([]modelprovider.ToolDefinition, 0, len(registry))
-	tools := make(map[string]Tool, len(registry))
-	for _, t := range registry {
-		toolDefs = append(toolDefs, t.Def)
-		tools[t.Def.Name] = t
-	}
+	scope := &runScope{agent: agent, runID: run.ID, locks: map[uint]bool{}}
+	ctx = withRunScope(ctx, scope)
+	defer u.releaseLocks(scope)
 
-	messages := append(buildHistoryMessages(history), modelprovider.Message{Role: "user", Content: userInput})
 	var records []toolCallRecord
-
 	finish := func(status entities.AgentRunStatus, errMsg string) (entities.AgentRun, error) {
 		run.Status = status
 		run.ErrorMessage = errMsg
@@ -312,8 +487,37 @@ func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string
 		return run, nil
 	}
 
+	if modelErr != nil {
+		return finish(entities.AgentRunError, fmt.Sprintf("model provider unavailable: %v", modelErr))
+	}
+
+	system := u.buildSystemPrompt(ctx, instruction.Content, req)
+
+	fullRegistry := u.buildToolRegistry()
+	toolDefs := make([]modelprovider.ToolDefinition, 0, len(fullRegistry))
+	granted := make(map[string]Tool, len(fullRegistry))
+	known := make(map[string]Tool, len(fullRegistry))
+	for _, t := range fullRegistry {
+		known[t.Def.Name] = t
+		if toolGranted(agent, t) {
+			toolDefs = append(toolDefs, t.Def)
+			granted[t.Def.Name] = t
+		}
+	}
+
+	messages := append(buildHistoryMessages(req.History), modelprovider.Message{Role: "user", Content: req.UserInput})
+
 	for i := 0; i < maxIterations; i++ {
-		result, err := u.Model.Complete(ctx, modelprovider.CompletionRequest{
+		// A-01 §4.3: kill switch / pause / budget re-checked before EVERY
+		// model call, so an in-flight run halts at its next iteration.
+		if gErr := u.CheckGuard(ctx, agent); gErr != nil {
+			return finish(entities.AgentRunError, "halted: "+gErr.Error())
+		}
+		if i == 0 {
+			u.onRunStarted(ctx, agent, req, run)
+		}
+
+		result, err := model.Complete(ctx, modelprovider.CompletionRequest{
 			System:   system,
 			Messages: messages,
 			Tools:    toolDefs,
@@ -321,6 +525,7 @@ func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string
 		if err != nil {
 			return finish(entities.AgentRunError, fmt.Sprintf("model completion failed: %v", err))
 		}
+		u.recordUsage(ctx, &run, agent, providerName, modelName, result.Usage)
 
 		// Record this turn as a single assistant message covering BOTH any
 		// text the model produced AND every tool call it made - not just
@@ -348,23 +553,30 @@ func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string
 		}
 
 		if result.StopReason != "tool_use" || len(result.ToolCalls) == 0 {
-			run.Status = entities.AgentRunOK
 			// This is the model's actual answer - previously computed and
 			// then silently discarded here, so the copilot UI had nothing
 			// to show but tool-call cards. See entities.AgentRun.ResponseText.
 			run.ResponseText = result.Text
+			u.onRunSucceeded(ctx, agent, req, run)
 			return finish(entities.AgentRunOK, "")
 		}
 
 		for _, call := range result.ToolCalls {
 			record := toolCallRecord{Tool: call.Name, Args: call.Args, Timestamp: time.Now()}
 
-			tool, ok := tools[call.Name]
 			var toolResultText string
-			if !ok {
-				toolResultText = fmt.Sprintf("error: unknown tool %q", call.Name)
+			tool, ok := granted[call.Name]
+			switch {
+			case !ok:
+				// Dispatch re-check (A-01 §4.2): a tool the model was never
+				// shown, or an unknown name, is never executed.
+				if t, exists := known[call.Name]; exists {
+					toolResultText = fmt.Sprintf("error: tool %q is not available to agent %q (requires permission %q)", call.Name, agent.Name, t.Permission)
+				} else {
+					toolResultText = fmt.Sprintf("error: unknown tool %q", call.Name)
+				}
 				record.Error = toolResultText
-			} else {
+			default:
 				toolResultText, err = tool.Execute(ctx, call.Args)
 				if err != nil {
 					// Edge case (AC#7): malformed/failed tool calls are fed
@@ -398,6 +610,99 @@ func (u AgentUseCase) RunToolLoop(ctx context.Context, trigger, userInput string
 	// AC#6: exceeding the iteration cap without end_turn is an explicit
 	// error, never a silently-returned partial/misleading success.
 	return finish(entities.AgentRunError, fmt.Sprintf("tool loop exceeded %d iterations", maxIterations))
+}
+
+// toolGranted reports whether agent may use t ("" permission = always).
+func toolGranted(agent entities.Agent, t Tool) bool {
+	return t.Permission == "" || agent.HasPermission(t.Permission)
+}
+
+// onRunStarted runs once, after the first guard check passes: counts the
+// run in today's AgentUsage and writes the chat_user memory entry.
+func (u AgentUseCase) onRunStarted(ctx context.Context, agent entities.Agent, req RunRequest, run entities.AgentRun) {
+	if u.Platform == nil {
+		return
+	}
+	if agent.ID != 0 {
+		if err := u.Platform.IncRuns(ctx, agent.ID, time.Now()); err != nil {
+			log.Printf("agent: failed to count run for agent %d: %v", agent.ID, err)
+		}
+	}
+	if req.Trigger == "chat_ui" && req.StrategyID != nil {
+		content := req.DisplayInput
+		if content == "" {
+			content = req.UserInput
+		}
+		u.appendMemory(ctx, entities.StrategyMemoryEntry{
+			StrategyID: *req.StrategyID,
+			AgentRunID: runIDPtr(run.ID),
+			Kind:       entities.MemoryChatUser,
+			Content:    content,
+		})
+	}
+}
+
+// onRunSucceeded writes the chat_agent memory entry for a successful chat
+// run with a context strategy.
+func (u AgentUseCase) onRunSucceeded(ctx context.Context, agent entities.Agent, req RunRequest, run entities.AgentRun) {
+	if u.Platform == nil || req.Trigger != "chat_ui" || req.StrategyID == nil || run.ResponseText == "" {
+		return
+	}
+	entry := entities.StrategyMemoryEntry{
+		StrategyID: *req.StrategyID,
+		AgentRunID: runIDPtr(run.ID),
+		Kind:       entities.MemoryChatAgent,
+		Content:    run.ResponseText,
+	}
+	if agent.ID != 0 {
+		id := agent.ID
+		entry.AuthorAgentID = &id
+	}
+	u.appendMemory(ctx, entry)
+}
+
+func (u AgentUseCase) appendMemory(ctx context.Context, e entities.StrategyMemoryEntry) {
+	if _, err := u.Platform.AppendMemory(ctx, e); err != nil {
+		log.Printf("agent: failed to append %s memory for strategy %d: %v", e.Kind, e.StrategyID, err)
+	}
+}
+
+func runIDPtr(id uint) *uint {
+	if id == 0 {
+		return nil
+	}
+	return &id
+}
+
+// recordUsage adds one completion's usage + estimated cost to the run and
+// to today's (UTC) AgentUsage row.
+func (u AgentUseCase) recordUsage(ctx context.Context, run *entities.AgentRun, agent entities.Agent, provider, modelName string, usage modelprovider.Usage) {
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
+		return
+	}
+	cost := modelprovider.EstimateCostUSD(provider, modelName, usage)
+	run.InputTokens += usage.InputTokens
+	run.OutputTokens += usage.OutputTokens
+	run.CostUSD += cost
+	if u.Platform != nil && agent.ID != 0 {
+		if err := u.Platform.AddUsage(ctx, agent.ID, time.Now(), usage.InputTokens, usage.OutputTokens, cost); err != nil {
+			log.Printf("agent: failed to record usage for agent %d: %v", agent.ID, err)
+		}
+	}
+}
+
+// releaseLocks releases every strategy writer lock the run acquired.
+func (u AgentUseCase) releaseLocks(scope *runScope) {
+	if u.Lock == nil {
+		return
+	}
+	for _, id := range scope.heldLocks() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := u.Lock.Release(ctx, id, scope.holder()); err != nil {
+			log.Printf("agent: failed to release strategy lock %d for %s: %v", id, scope.holder(), err)
+		}
+		cancel()
+	}
 }
 
 func truncate(s string, max int) string {

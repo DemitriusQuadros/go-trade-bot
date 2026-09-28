@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"context"
+	"time"
+
 	"go-trade-bot/app/entities"
 
 	"gorm.io/gorm"
@@ -90,4 +93,26 @@ func (r SignalRepository) GetAll() ([]entities.Signal, error) {
 		return nil, err
 	}
 	return signals, nil
+}
+
+// ListClosedSince returns strategyID's closed signals (with orders) that
+// were opened at or after since, oldest first - the forward-test evidence
+// source for agents-platform Phase B's propose_promotion.
+func (r SignalRepository) ListClosedSince(ctx context.Context, strategyID uint, since time.Time) ([]entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.WithContext(ctx).
+		Preload("Orders").
+		Where("strategy_id = ? AND status = ? AND created_at >= ?", strategyID, entities.Closed, since).
+		Order("id ASC").
+		Find(&signals).Error
+	return signals, err
+}
+
+// UpdateSimStopEvaluatedAt persists the dryrun simulated-stop watermark
+// (fix-01): the OpenTime of the last closed candle evaluated against the
+// order's StopLossPrice. Only that one column is written.
+func (r SignalRepository) UpdateSimStopEvaluatedAt(orderID uint, evaluatedAt time.Time) error {
+	return r.db.Model(&entities.Order{}).
+		Where("id = ?", orderID).
+		Update("sim_stop_evaluated_at", evaluatedAt).Error
 }

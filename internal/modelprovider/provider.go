@@ -40,10 +40,19 @@ type CompletionRequest struct {
 	Tools    []ToolDefinition
 }
 
+// Usage is the token accounting for one Complete call, populated by each
+// adapter from its SDK's response usage metadata (agents-platform A-01 §3).
+// Zero for UnconfiguredProvider.
+type Usage struct {
+	InputTokens  int64
+	OutputTokens int64
+}
+
 type CompletionResult struct {
 	Text       string
 	ToolCalls  []ToolCall
 	StopReason string // "end_turn" | "tool_use" | "max_tokens" | "error"
+	Usage      Usage
 }
 
 // ModelProvider is the one abstraction app/usecase/agent (Backend Spec 03)

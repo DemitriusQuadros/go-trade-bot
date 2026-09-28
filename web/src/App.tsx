@@ -17,6 +17,14 @@ import { Help } from '@/pages/Help';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Walkthrough, WALKTHROUGH_STORAGE_KEY } from '@/components/domain/Walkthrough';
 import { EditorBridgeProvider } from '@/context/EditorBridgeContext';
+import { ToastProvider } from '@/context/ToastContext';
+import { Agents } from '@/pages/Agents';
+import { AgentEditor } from '@/pages/AgentEditor';
+import { AgentRuns } from '@/pages/AgentRuns';
+import { AgentReports } from '@/pages/AgentReports';
+import { AgentReportDetail } from '@/pages/AgentReportDetail';
+import { Proposals } from '@/pages/Proposals';
+import { ProposalDetail } from '@/pages/ProposalDetail';
 
 export function App() {
   const [showWalkthrough, setShowWalkthrough] = useState(false);
@@ -46,6 +54,7 @@ export function App() {
     <AuthGate>
       <BrowserRouter>
       <EditorBridgeProvider>
+      <ToastProvider>
         <AppLayout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -71,6 +80,22 @@ export function App() {
                 history browser with no launch form of its own. */}
             <Route path="/backtest" element={<BacktestRuns />} />
             <Route path="/optimization" element={<Optimization />} />
+            {/* Agents platform (A-03). Static segments (new, reports) outrank
+                :id in react-router's ranking, so /agents/reports never
+                resolves to the editor. All of these are client-side only -
+                cmd/api's SPA fallback serves index.html for them on a hard
+                refresh (every backend route lives under /api). */}
+            <Route path="/agents" element={<Agents />} />
+            <Route path="/agents/new" element={<AgentEditor key="new" />} />
+            <Route path="/agents/reports" element={<AgentReports />} />
+            <Route path="/agents/reports/:id" element={<AgentReportDetail />} />
+            {/* Phase B (B-02): proposals inbox + detail. /agents/proposals/:id
+                is the webhook deep-link target - same hard-refresh story as
+                reports above (static "proposals" segment outranks :id). */}
+            <Route path="/agents/proposals" element={<Proposals />} />
+            <Route path="/agents/proposals/:id" element={<ProposalDetail />} />
+            <Route path="/agents/:id" element={<AgentEditor />} />
+            <Route path="/agents/:id/runs" element={<AgentRuns />} />
             {/* Positions, Execution Log, and Agent History used to be three
                 separate pages - all three are filtered views over the same
                 object (one strategy's trading activity), now tabs on one
@@ -93,6 +118,7 @@ export function App() {
             onSkip={handleWalkthroughSkip}
           />
         )}
+      </ToastProvider>
       </EditorBridgeProvider>
       </BrowserRouter>
     </AuthGate>
