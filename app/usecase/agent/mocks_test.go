@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"go-trade-bot/app/entities"
+	repoagent "go-trade-bot/app/repository/agent"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/modelprovider"
@@ -86,6 +87,11 @@ func (m *mockAgentRepository) GetRun(ctx context.Context, id uint) (entities.Age
 
 func (m *mockAgentRepository) ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error) {
 	args := m.Called(ctx, limit, strategyID)
+	return args.Get(0).([]entities.AgentRun), args.Error(1)
+}
+
+func (m *mockAgentRepository) ListRunsFiltered(ctx context.Context, f repoagent.RunFilter) ([]entities.AgentRun, error) {
+	args := m.Called(ctx, f)
 	return args.Get(0).([]entities.AgentRun), args.Error(1)
 }
 

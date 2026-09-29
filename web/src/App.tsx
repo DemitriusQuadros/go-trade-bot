@@ -10,13 +10,14 @@ import { BacktestPane } from '@/pages/BacktestPane';
 import { BacktestRuns } from '@/pages/BacktestRuns';
 import { Activity } from '@/pages/Activity';
 import { Optimization } from '@/pages/Optimization';
-import { AgentCopilotWidget } from '@/components/domain/AgentCopilotWidget';
+import { AgentMode } from '@/pages/AgentMode';
 import { Settings } from '@/pages/Settings';
 import { CandleImport } from '@/pages/CandleImport';
 import { Help } from '@/pages/Help';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Walkthrough, WALKTHROUGH_STORAGE_KEY } from '@/components/domain/Walkthrough';
 import { EditorBridgeProvider } from '@/context/EditorBridgeContext';
+import { ChatSessionProvider } from '@/context/ChatSessionContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { Agents } from '@/pages/Agents';
 import { AgentEditor } from '@/pages/AgentEditor';
@@ -55,6 +56,10 @@ export function App() {
       <BrowserRouter>
       <EditorBridgeProvider>
       <ToastProvider>
+      {/* One chat shared by Agent mode and the Code-mode dock - inside the
+          router (reads ?strategy=) and EditorBridgeProvider (reads the
+          Workbench's strategy), above every route. */}
+      <ChatSessionProvider>
         <AppLayout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -99,10 +104,13 @@ export function App() {
             {/* Positions, Execution Log, and Agent History used to be three
                 separate pages - all three are filtered views over the same
                 object (one strategy's trading activity), now tabs on one
-                Activity page instead. /agent (standalone full-page chat) is
-                gone too - replaced by the floating AgentCopilotWidget mounted
-                below, alongside these Routes. */}
+                Activity page instead. */}
             <Route path="/activity" element={<Activity />} />
+            {/* Agent mode (Phase D-02): the full-screen conversation, with
+                optional ?strategy=<id>&agent=<id>. Client-side only - cmd/api's
+                SPA fallback serves index.html on refresh. AppLayout drops the
+                sidebar and the Code-mode dock on this route. */}
+            <Route path="/agent" element={<AgentMode />} />
             <Route path="/candles" element={<CandleImport />} />
             <Route path="/settings" element={<Settings />} />
             <Route
@@ -111,13 +119,13 @@ export function App() {
             />
           </Routes>
         </AppLayout>
-        <AgentCopilotWidget />
         {showWalkthrough && (
           <Walkthrough
             onComplete={handleWalkthroughComplete}
             onSkip={handleWalkthroughSkip}
           />
         )}
+      </ChatSessionProvider>
       </ToastProvider>
       </EditorBridgeProvider>
       </BrowserRouter>

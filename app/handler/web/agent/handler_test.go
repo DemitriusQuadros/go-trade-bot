@@ -11,6 +11,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	handler "go-trade-bot/app/handler/web/agent"
+	agentrepo "go-trade-bot/app/repository/agent"
 	agentusecase "go-trade-bot/app/usecase/agent"
 
 	"github.com/gorilla/mux"
@@ -41,6 +42,7 @@ type mockRepository struct {
 	err        error
 	gotLimit   int
 	gotStratID *uint
+	gotFilter  *agentrepo.RunFilter
 }
 
 func (m *mockRepository) GetRun(ctx context.Context, id uint) (entities.AgentRun, error) {
@@ -50,6 +52,13 @@ func (m *mockRepository) GetRun(ctx context.Context, id uint) (entities.AgentRun
 func (m *mockRepository) ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error) {
 	m.gotLimit = limit
 	m.gotStratID = strategyID
+	return m.runs, m.err
+}
+
+func (m *mockRepository) ListRunsFiltered(ctx context.Context, f agentrepo.RunFilter) ([]entities.AgentRun, error) {
+	m.gotFilter = &f
+	m.gotLimit = f.Limit
+	m.gotStratID = f.StrategyID
 	return m.runs, m.err
 }
 

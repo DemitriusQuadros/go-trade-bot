@@ -460,6 +460,19 @@ React + TypeScript + Vite SPA, built with `make web-build` and embedded into `cm
 `go:embed` (`cmd/api/webui/`). Talks to `cmd/api` over the same REST surface described above (all under
 `/api`), plus a consolidated SSE stream (`GET /api/stream/dashboard`) for live prices/positions.
 
+**Two modes (agents-platform Phase D, specs `phase-d-01`/`phase-d-02`)**: a header Agent|Code toggle
+(`Ctrl+Shift+.`). Agent mode is `/agent?strategy=&agent=` (`pages/AgentMode.tsx`: persona/strategy rails,
+full-screen transcript, shared `AgentNotesPanel` memory). Code mode is every other route, with the chat as the
+resizable right dock `components/domain/AgentDock.tsx` (`Ctrl+.`), which replaced the floating
+`AgentCopilotWidget` (deleted). Both views render one `context/ChatSessionContext.tsx` transcript per context
+(`general` | `strategy:N`), hydrated from `GET /api/agent/runs?trigger=chat_ui&strategy_id=N|none&before_id=`.
+Tool results render as rich cards (`components/domain/agentchat/cards/`: Backtest/Gate/CodeChange/Report/
+Proposal) driven by each tool call's server-computed `refs` (`app/handler/web/agent/refs.go`
+`ExtractToolRefs`, response-time only, never persisted; `web/src/lib/toolRefs.ts` mirrors it as a fallback -
+keep the two in sync when a tool's result format changes). `GET /agent/runs` also takes `trigger`
+(comma list), `agent_id`, `before_id`, `strategy_id=none`; `limit` is clamped to 100; run DTOs strip the
+`[Context: ...]` marker from `input_summary`.
+
 **Design system**: "Console Pro" (color tokens, typography, component conventions, chart/code-editor
 theming) — check existing components for conventions before adding or restyling any UI; the standalone
 design-system doc has been removed. Auth token lives in

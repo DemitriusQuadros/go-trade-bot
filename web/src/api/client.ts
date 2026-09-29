@@ -28,6 +28,7 @@ import { ScriptVersion,
   ReplRequest,
   ReplResponse,
   AgentRun,
+  AgentRunFilter,
   AgentHistoryTurn,
   Agent,
   AgentRequest,
@@ -270,11 +271,12 @@ export const api = {
   // AgentUseCase.RunToolLoop cmd/mcp exposes over MCP. sendAgentMessage
   // blocks until the full RunToolLoop turn completes (no streaming in v1).
   // strategyId is an optional additive hint (see app/handler/web/agent's
-  // sendMessageRequest.StrategyID) - sent by the floating copilot widget
-  // when it's open inside the strategy workbench, so the agent's answers
-  // can be strategy-aware without the operator repeating "for strategy #N".
-  // history is every prior turn of the CURRENT session (built by the
-  // widget from its own transcript) - without it, every message started a
+  // sendMessageRequest.StrategyID) - sent by the chat (ChatSessionContext)
+  // whenever its context is a strategy (the Workbench dock, or Agent mode's
+  // strategy picker), so the agent's answers can be strategy-aware without
+  // the operator repeating "for strategy #N".
+  // history is every prior turn of the CURRENT session (built by
+  // ChatSessionContext from its own transcript) - without it, every message started a
   // brand-new RunToolLoop with zero memory of anything discussed or
   // drafted earlier in the same chat, which made iterating on a script
   // ("draft this, now tighten the stop loss") impossible.
@@ -287,10 +289,19 @@ export const api = {
     // "Copilot" agent. A paused/halted agent answers 409.
     agentId?: number,
   ) => api.post<AgentRun>('/agent/runs', { input, strategy_id: strategyId, history, agent_id: agentId }, opts),
-  listAgentRuns: (limit = 20, opts?: { signal?: AbortSignal }) =>
-    api.get<AgentRun[]>(`/agent/runs?limit=${limit}`, opts),
-  listAgentRunsForStrategy: (strategyId: number, limit = 20, opts?: { signal?: AbortSignal }) =>
-    api.get<AgentRun[]>(`/agent/runs?strategy_id=${strategyId}&limit=${limit}`, opts),
+  // Filtered, cursor-paginated run listing (Phase D-01 §1), newest first.
+  // D-01 contract (reconciled): trigger is comma-separated; strategy_id may be the literal "none".
+  listAgentRuns: (filter: AgentRunFilter = {}, opts?: { signal?: AbortSignal }) =>
+    api.get<AgentRun[]>(
+      `/agent/runs${buildQuery({
+        limit: filter.limit ?? 20,
+        strategy_id: filter.strategy_id,
+        trigger: filter.trigger?.length ? filter.trigger.join(',') : undefined,
+        agent_id: filter.agent_id,
+        before_id: filter.before_id,
+      })}`,
+      opts,
+    ),
   getAgentRun: (id: number, opts?: { signal?: AbortSignal }) =>
     api.get<AgentRun>(`/agent/runs/${id}`, opts),
 

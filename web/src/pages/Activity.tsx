@@ -49,7 +49,7 @@ export function Activity() {
           <h1 className="text-2xl font-bold text-foreground">Activity</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Everything that's happened to your strategies - live positions, confirmed order fills, and what the
-            AI copilot has done.
+            AI agents have done.
           </p>
         </div>
 

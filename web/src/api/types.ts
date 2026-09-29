@@ -156,6 +156,8 @@ export interface BacktestRun {
   strategy_id: number;
   strategy_name: string;
   symbol: string;
+  // Not in the current BacktestRunResponse DTO; read when a backend adds it.
+  timeframe?: string;
   start_date: string;
   end_date: string;
   is_walk_forward: boolean;
@@ -544,10 +546,37 @@ export interface AgentToolCall {
   result?: string;
   error?: string;
   timestamp?: string;
+  // Phase D-01 §3: structured references the backend extracts from the
+  // result at response time. Absent on an older backend - read refs only
+  // through toolRefs() (lib/toolRefs.ts), which falls back to parsing.
+  // D-01 contract (reconciled): field name `refs`, always [] (never null) when present.
+  refs?: ToolRef[];
+}
+
+// Phase D-01 §3. `role` only disambiguates two refs of the same kind from
+// one call (challenger/champion, baseline/candidate, created).
+export type ToolRefKind = 'strategy' | 'backtest' | 'report' | 'proposal' | 'agent' | 'memory' | 'optimization';
+
+export interface ToolRef {
+  kind: ToolRefKind;
+  id: number;
+  role?: string;
+}
+
+// GET /agent/runs query (Phase D-01 §1). Every field optional; `strategy_id:
+// 'none'` returns only runs with no strategy. Newest first, before_id cursor.
+// D-01 contract (reconciled): param names limit/strategy_id/trigger/agent_id/before_id,
+// trigger sent comma-separated, strategy_id=none literal.
+export interface AgentRunFilter {
+  limit?: number;
+  strategy_id?: number | 'none';
+  trigger?: string[];
+  agent_id?: number;
+  before_id?: number;
 }
 
 // AgentHistoryTurn is the request-side shape sent as `history` on every
-// POST /agent/runs call - the copilot widget builds this from its own
+// POST /agent/runs call - ChatSessionContext builds this from its own
 // prior turns of the current session (see app/usecase/agent.PriorTurn)
 // so the agent has real conversational memory: without this, every message
 // started a brand-new, context-free RunToolLoop with no idea what an

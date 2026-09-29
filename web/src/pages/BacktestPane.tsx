@@ -12,6 +12,7 @@ import { DrawdownChart } from '@/components/charts/DrawdownChart';
 import { MonteCarloDistribution } from '@/components/charts/MonteCarloDistribution';
 import { BacktestLaunchForm } from '@/components/domain/BacktestLaunchForm';
 import { WorkbenchContext } from './WorkbenchShell';
+import { formatUtcDay } from '@/lib/time';
 import {
   Download,
   Dices,
@@ -179,7 +180,7 @@ export function BacktestPane() {
             {run.strategy_name ? ` — ${run.strategy_name}` : ''}
           </p>
           <p className="text-xs text-muted-foreground">
-            {new Date(run.start_date).toLocaleDateString()} — {new Date(run.end_date).toLocaleDateString()}
+            {formatUtcDay(run.start_date)} — {formatUtcDay(run.end_date)}
           </p>
         </div>
 

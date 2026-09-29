@@ -49,3 +49,11 @@ export function formatTokens(v: number | null | undefined): string {
   if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
   return String(v);
 }
+
+// Backtest ranges are UTC-midnight bounds - render them in UTC, or a
+// negative-offset browser shows the day before (2026-06-01 -> 31/05).
+export function formatUtcDay(iso: string | null | undefined): string {
+  if (!iso) return '?';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '?' : d.toLocaleDateString(undefined, { timeZone: 'UTC' });
+}

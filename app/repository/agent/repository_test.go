@@ -169,3 +169,63 @@ func TestListRunsByAgentAndLastRun(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, none)
 }
+
+// TestListRunsFiltered covers every RunFilter field alone and combined
+// (Phase D-01 §1).
+func TestListRunsFiltered(t *testing.T) {
+	db := setupTestDB(t)
+	repo := agent.NewGormRepository(db)
+	ctx := context.Background()
+	u := func(v uint) *uint { return &v }
+
+	type seed struct {
+		trigger    string
+		strategyID *uint
+		agentID    *uint
+	}
+	seeds := []seed{
+		{"chat_ui", u(5), u(1)}, // 1
+		{"cron", u(5), u(2)},    // 2
+		{"chat_ui", nil, u(1)},  // 3
+		{"manual", u(6), u(2)},  // 4
+		{"chat_ui", u(5), u(2)}, // 5
+		{"mcp_tool", nil, nil},  // 6
+	}
+	for _, s := range seeds {
+		_, err := repo.CreateRun(ctx, entities.AgentRun{Trigger: s.trigger, StrategyID: s.strategyID, AgentID: s.agentID, Status: entities.AgentRunOK})
+		require.NoError(t, err)
+	}
+
+	ids := func(f agent.RunFilter) []uint {
+		runs, err := repo.ListRunsFiltered(ctx, f)
+		require.NoError(t, err)
+		out := make([]uint, len(runs))
+		for i, r := range runs {
+			out[i] = r.ID
+		}
+		return out
+	}
+
+	assert.Equal(t, []uint{6, 5, 4, 3, 2, 1}, ids(agent.RunFilter{}), "no filter, newest first")
+	assert.Equal(t, []uint{6, 5}, ids(agent.RunFilter{Limit: 2}))
+	assert.Equal(t, []uint{5, 2, 1}, ids(agent.RunFilter{StrategyID: u(5)}))
+	assert.Equal(t, []uint{6, 3}, ids(agent.RunFilter{NoStrategy: true}))
+	assert.Equal(t, []uint{5, 4, 3, 1}, ids(agent.RunFilter{Triggers: []string{"chat_ui", "manual"}}))
+	assert.Equal(t, []uint{5, 4, 2}, ids(agent.RunFilter{AgentID: u(2)}))
+	assert.Equal(t, []uint{3, 2, 1}, ids(agent.RunFilter{BeforeID: u(4)}))
+
+	// Combinations.
+	assert.Equal(t, []uint{5, 1}, ids(agent.RunFilter{StrategyID: u(5), Triggers: []string{"chat_ui"}}))
+	assert.Equal(t, []uint{3}, ids(agent.RunFilter{NoStrategy: true, Triggers: []string{"chat_ui"}}))
+	assert.Equal(t, []uint{1}, ids(agent.RunFilter{StrategyID: u(5), Triggers: []string{"chat_ui"}, BeforeID: u(5)}))
+	assert.Equal(t, []uint{5}, ids(agent.RunFilter{StrategyID: u(5), Triggers: []string{"chat_ui"}, AgentID: u(2)}))
+	assert.Equal(t, []uint{2}, ids(agent.RunFilter{AgentID: u(2), BeforeID: u(4), Limit: 1}))
+	assert.Empty(t, ids(agent.RunFilter{Triggers: []string{"event"}}))
+
+	// ListRuns stays a thin wrapper with its old semantics.
+	runs, err := repo.ListRuns(ctx, 2, u(5))
+	require.NoError(t, err)
+	require.Len(t, runs, 2)
+	assert.Equal(t, uint(5), runs[0].ID)
+	assert.Equal(t, uint(2), runs[1].ID)
+}

@@ -9,7 +9,7 @@ interface ApplyScriptDialogProps {
   onCancel: () => void;
 }
 
-// Preview shown before AgentCopilotWidget pushes a save_strategy_script
+// Preview shown before the agent dock (AgentDock) pushes an agent-proposed
 // result into the live CodeMirror instance (via EditorBridgeContext). Never
 // applied silently - the operator may have in-progress edits in that
 // buffer, so this is the one required confirmation step between "the agent

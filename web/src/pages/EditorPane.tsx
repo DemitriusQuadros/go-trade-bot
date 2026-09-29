@@ -10,6 +10,7 @@ import { StrategyMetadataForm } from '@/components/domain/StrategyMetadataForm';
 import { LuaScriptEditor } from '@/components/domain/LuaScriptEditor';
 import {
   DEFAULT_LUA_TEMPLATE,
+  cycleTimeframe,
   toStrategyConfiguration,
   WorkbenchContext,
 } from './WorkbenchShell';
@@ -72,7 +73,7 @@ export function EditorPane() {
           strategy_id: draft.strategyId || undefined,
           source: draft.source,
           symbol: targetSymbol,
-          timeframe: `${draft.cycleMinutes}m`,
+          timeframe: cycleTimeframe(draft.cycleMinutes),
           end_time: null,
           window_candles: requestedWindow,
         },

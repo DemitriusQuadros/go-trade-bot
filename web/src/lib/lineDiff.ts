@@ -1,6 +1,6 @@
 // Small line-based diff (classic LCS backtrack) - just enough to render a
-// unified "Apply to editor" preview for AgentCopilotWidget's
-// save_strategy_script confirmation, without pulling in a diff dependency
+// unified "Apply to editor" preview (ApplyScriptDialog) and the chat's
+// CodeChangeCard, without pulling in a diff dependency
 // for one modal. Scripts here are Lua strategy sources, not multi-thousand-
 // line files, so an O(n*m) LCS table is plenty fast.
 export type DiffLine = { type: 'same' | 'add' | 'remove'; text: string };

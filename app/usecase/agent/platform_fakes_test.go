@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go-trade-bot/app/entities"
+	repoagent "go-trade-bot/app/repository/agent"
 	"go-trade-bot/app/repository/agentplatform"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/notifier"
@@ -404,6 +405,9 @@ func (r *fakeRunRepo) GetRun(_ context.Context, id uint) (entities.AgentRun, err
 	return r.runs[id], nil
 }
 func (r *fakeRunRepo) ListRuns(context.Context, int, *uint) ([]entities.AgentRun, error) {
+	return nil, nil
+}
+func (r *fakeRunRepo) ListRunsFiltered(context.Context, repoagent.RunFilter) ([]entities.AgentRun, error) {
 	return nil, nil
 }
 

@@ -20,6 +20,8 @@ import {
   ProposalDecisionRequest,
   DeployGateConfig,
 } from '@/api/types';
+import { ChatContextKey, strategyIdOfKey } from '@/lib/chatTurn';
+import { planTurnCards } from '@/lib/toolRefs';
 
 export const QUERY_KEYS = {
   account: ['account'],
@@ -39,6 +41,8 @@ export const QUERY_KEYS = {
   importSchedules: ['importSchedules'],
   agentRuns: (strategyId?: number) => ['agentRuns', strategyId],
   agentRun: (id: number) => ['agentRuns', 'detail', id],
+  chatTranscript: (contextKey: string) => ['agentRuns', 'chat', contextKey],
+  scriptVersions: (strategyId: number) => ['strategies', strategyId, 'versions'],
   // Agents platform (A-02 §5)
   agents: ['agents'],
   agent: (id: number) => ['agents', id],
@@ -133,10 +137,40 @@ export function useDeleteBacktest() {
 export function useAgentRuns(strategyId?: number, limit = 20) {
   return useQuery({
     queryKey: QUERY_KEYS.agentRuns(strategyId),
-    queryFn: ({ signal }) =>
-      strategyId
-        ? api.listAgentRunsForStrategy(strategyId, limit, { signal })
-        : api.listAgentRuns(limit, { signal }),
+    queryFn: ({ signal }) => api.listAgentRuns({ limit, strategy_id: strategyId || undefined }, { signal }),
+  });
+}
+
+const CHAT_TRANSCRIPT_PAGE = 20;
+
+// Chat history for one conversation context (Phase D-02 §1): chat_ui runs
+// for a strategy, or with no strategy for `general`. Newest first, 20 per
+// page; ChatSessionContext reverses it into a transcript. The `new` draft
+// context has no server history.
+export function useChatTranscript(contextKey: ChatContextKey) {
+  const strategyId = strategyIdOfKey(contextKey);
+  return useInfiniteQuery({
+    queryKey: QUERY_KEYS.chatTranscript(contextKey),
+    queryFn: ({ pageParam, signal }) =>
+      api.listAgentRuns(
+        {
+          limit: CHAT_TRANSCRIPT_PAGE,
+          trigger: ['chat_ui'],
+          // D-01 contract (reconciled): strategy_id=none selects runs with no strategy.
+          strategy_id: strategyId ?? 'none',
+          before_id: pageParam,
+        },
+        { signal },
+      ),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage && lastPage.length >= CHAT_TRANSCRIPT_PAGE ? lastPage[lastPage.length - 1].id : undefined,
+    enabled: contextKey !== 'new',
+    // The live session's turns are client state; history only needs a
+    // refresh when the operator comes back to it later.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 }
 
@@ -178,6 +212,14 @@ export function useSendAgentMessage() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agents });
       if (run.strategy_id != null) {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategyMemory(run.strategy_id) });
+      }
+      // Phase D-02 §7: refresh whatever the turn's cards show.
+      const plan = planTurnCards(run.tool_calls ?? []);
+      if (plan.hasReport) queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agentReports() });
+      if (plan.hasProposal) queryClient.invalidateQueries({ queryKey: QUERY_KEYS.proposals });
+      for (const id of plan.codeStrategyIds) {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scriptVersions(id) });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategy(id), exact: true });
       }
     },
   });
@@ -345,7 +387,7 @@ export function useFastRerun() {
 
 export const useScriptVersions = (id: number) => {
   return useQuery({
-    queryKey: ['strategies', id, 'versions'],
+    queryKey: QUERY_KEYS.scriptVersions(id),
     queryFn: ({ signal }) => api.getScriptVersions(id, { signal }),
     enabled: !!id,
   });

@@ -34,6 +34,25 @@ type Repository interface {
 	// (Frontend Spec 02's per-strategy audit filter) - a straightforward
 	// addition to the existing method rather than a second query method.
 	ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error)
+	// ListRunsFiltered is ListRuns with every filter of GET /agent/runs
+	// (Phase D-01 §1): newest first ("id DESC"), all filters ANDed.
+	ListRunsFiltered(ctx context.Context, f RunFilter) ([]entities.AgentRun, error)
+}
+
+// RunFilter selects AgentRun rows for ListRunsFiltered. Zero values mean
+// "no filter" (Limit <= 0 = 20).
+type RunFilter struct {
+	Limit int
+	// StrategyID restricts to runs of exactly this strategy.
+	StrategyID *uint
+	// NoStrategy restricts to runs with strategy_id IS NULL.
+	NoStrategy bool
+	// Triggers restricts to runs whose trigger is one of these values.
+	Triggers []string
+	// AgentID restricts to runs of this persona.
+	AgentID *uint
+	// BeforeID is a cursor: only runs with id < BeforeID.
+	BeforeID *uint
 }
 
 type GormRepository struct {
@@ -105,13 +124,34 @@ func (r *GormRepository) GetRun(ctx context.Context, id uint) (entities.AgentRun
 	return run, err
 }
 
+// ListRuns is a thin wrapper over ListRunsFiltered, kept for existing
+// callers (historyFromPersistedRuns' strategy-scoped replay).
 func (r *GormRepository) ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error) {
+	return r.ListRunsFiltered(ctx, RunFilter{Limit: limit, StrategyID: strategyID})
+}
+
+// ListRunsFiltered returns runs matching f newest-first. The limit is not
+// capped here - the HTTP handler caps it.
+func (r *GormRepository) ListRunsFiltered(ctx context.Context, f RunFilter) ([]entities.AgentRun, error) {
+	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 	query := r.db.WithContext(ctx).Order("id DESC").Limit(limit)
-	if strategyID != nil {
-		query = query.Where("strategy_id = ?", *strategyID)
+	if f.StrategyID != nil {
+		query = query.Where("strategy_id = ?", *f.StrategyID)
+	}
+	if f.NoStrategy {
+		query = query.Where("strategy_id IS NULL")
+	}
+	if len(f.Triggers) > 0 {
+		query = query.Where(`"trigger" IN ?`, f.Triggers)
+	}
+	if f.AgentID != nil {
+		query = query.Where("agent_id = ?", *f.AgentID)
+	}
+	if f.BeforeID != nil {
+		query = query.Where("id < ?", *f.BeforeID)
 	}
 	var runs []entities.AgentRun
 	err := query.Find(&runs).Error

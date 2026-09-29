@@ -17,6 +17,10 @@ type toolCallResponse struct {
 	Result    string          `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Timestamp string          `json:"timestamp,omitempty"`
+	// Refs are the entities this call produced or referenced, derived at
+	// response time by ExtractToolRefs (Phase D-01 §3) - never persisted,
+	// always an array (never null).
+	Refs []ToolRef `json:"refs"`
 }
 
 // AgentRunResponse is the snake_case DTO for entities.AgentRun - raw
@@ -63,6 +67,9 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 	if calls == nil {
 		calls = []toolCallResponse{}
 	}
+	for i := range calls {
+		calls[i].Refs = ExtractToolRefs(calls[i].Tool, calls[i].Result, calls[i].Error != "")
+	}
 
 	resp := AgentRunResponse{
 		ID:           run.ID,
@@ -75,7 +82,9 @@ func ToRunResponse(run entities.AgentRun) AgentRunResponse {
 		Trigger:      run.Trigger,
 		Status:       string(run.Status),
 		ErrorMessage: run.ErrorMessage,
-		InputSummary: run.InputSummary,
+		// The operator's raw text: strategy-scoped chat persists the input
+		// with the "[Context: ...]" marker (Phase D-01 §2).
+		InputSummary: stripStrategyContextMarker(run.InputSummary),
 		ResponseText: run.ResponseText,
 		ToolCalls:    calls,
 		StrategyID:   run.StrategyID,

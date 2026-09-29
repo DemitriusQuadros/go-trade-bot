@@ -1,0 +1,123 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
+import { Turn } from '@/lib/chatTurn';
+import { formatRelative, formatUsd } from '@/lib/time';
+import { MarkdownMessage } from '@/components/domain/MarkdownMessage';
+import { Spinner } from '@/components/ui/Spinner';
+import { TurnCards } from './TurnCards';
+import { ToolActivity } from './ToolActivity';
+import { ApplyTarget, ChatDensity } from './types';
+
+// One transcript turn (Phase D-02 §6), in this order: the operator's
+// message, the rich cards, the model's markdown answer, then the raw
+// "N tool calls" disclosure.
+export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDensity; apply?: ApplyTarget }) {
+  const compact = density === 'compact';
+  const text = compact ? 'text-xs' : 'text-sm';
+  const run = turn.run;
+  const pending = !run && !turn.failed && !turn.blocked;
+
+  return (
+    <div className="space-y-2 min-w-0" data-testid="chat-turn">
+      <div className="flex justify-end">
+        <div
+          className={`max-w-[85%] rounded-lg bg-secondary/60 border border-border text-foreground px-3 py-2 whitespace-pre-wrap break-words ${text}`}
+        >
+          {turn.input}
+        </div>
+      </div>
+
+      {pending && (
+        <div role="status" className={`flex items-center gap-2 text-muted-foreground pl-1 ${text}`}>
+          <Spinner size="sm" />
+          <span>{turn.agentName ?? 'Agent'} is working…</span>
+        </div>
+      )}
+
+      {turn.blocked && (
+        <div role="status" className={`flex items-start gap-2 rounded border border-warning/40 bg-warning/15 text-foreground px-3 py-2 ${text}`}>
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
+          <div>
+            <div className="font-semibold">{turn.agentName ?? 'This agent'} can't answer right now</div>
+            <div className="text-muted-foreground mt-0.5">{turn.blocked}</div>
+            <Link to="/agents" className="inline-block mt-1 text-primary hover:underline">
+              Open Agents
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {turn.failed && (
+        <div role="alert" className={`flex items-start gap-2 rounded border border-destructive/40 bg-destructive/15 text-destructive px-3 py-2 ${text}`}>
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-semibold">Request failed</div>
+            <div className="text-destructive/90 mt-0.5 break-words">{turn.failed}</div>
+          </div>
+        </div>
+      )}
+
+      {run && (
+        <div className="space-y-2 pl-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">{run.agent_name || turn.agentName || 'Copilot'}</span>
+            {run.cost_usd != null && (
+              <span className="font-mono tabular-nums" title="Model cost of this turn">
+                {formatUsd(run.cost_usd)}
+              </span>
+            )}
+            {run.hit_iteration_cap && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-warning/15 text-warning border-warning/40"
+                title="The agent hit its tool-loop iteration cap and was asked for a final answer"
+              >
+                iteration cap
+              </span>
+            )}
+            {turn.hydrated && run.started_at && (
+              <span title={new Date(run.started_at).toLocaleString()}>{formatRelative(run.started_at)}</span>
+            )}
+          </div>
+
+          {run.status === 'running' && (
+            <div className={`flex items-center gap-2 text-muted-foreground ${text}`}>
+              <Spinner size="sm" />
+              <span>Still running - reload later to see the answer.</span>
+            </div>
+          )}
+
+          {run.status === 'error' && (
+            <div role="alert" className={`flex items-start gap-2 rounded border border-destructive/40 bg-destructive/15 text-destructive px-3 py-2 ${text}`}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold">Agent run failed</div>
+                <div className="text-destructive/90 mt-0.5 break-words">
+                  {run.error_message || 'No error message was recorded for this run.'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <TurnCards toolCalls={run.tool_calls ?? []} density={density} apply={apply} />
+
+          {run.status === 'ok' && run.response_text && (
+            <div
+              className={`rounded-lg bg-card border border-border text-foreground px-3 py-2 min-w-0 ${
+                compact ? 'max-w-[95%]' : ''
+              }`}
+            >
+              <MarkdownMessage content={run.response_text} />
+            </div>
+          )}
+
+          {run.status === 'ok' && !run.response_text && (run.tool_calls ?? []).length === 0 && (
+            <div className={`${text} text-muted-foreground italic`}>Agent responded with no text and no tool calls.</div>
+          )}
+
+          <ToolActivity toolCalls={run.tool_calls ?? []} density={density} apply={apply} />
+        </div>
+      )}
+    </div>
+  );
+}

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"go-trade-bot/app/entities"
+	agentrepo "go-trade-bot/app/repository/agent"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
@@ -37,6 +38,7 @@ type UseCase interface {
 type Repository interface {
 	GetRun(ctx context.Context, id uint) (entities.AgentRun, error)
 	ListRuns(ctx context.Context, limit int, strategyID *uint) ([]entities.AgentRun, error)
+	ListRunsFiltered(ctx context.Context, f agentrepo.RunFilter) ([]entities.AgentRun, error)
 }
 
 // PersonaChat is the agents-platform half of the chat transport (A-02 §5
@@ -51,7 +53,19 @@ type PersonaChat interface {
 	AgentNames(ctx context.Context) map[uint]string
 }
 
-const defaultListLimit = 20
+const (
+	defaultListLimit = 20
+	// maxListLimit caps GET /agent/runs?limit= (Phase D-01 §1); larger
+	// values are clamped, not rejected.
+	maxListLimit = 100
+)
+
+// validRunTriggers are the AgentRun.Trigger values GET /agent/runs?trigger=
+// accepts (entities.AgentRun.Trigger's documented set).
+var validRunTriggers = map[string]bool{
+	"mcp_tool": true, "chat_ui": true, "monitor": true, "cron": true,
+	"manual": true, "event": true, "market": true, "chain": true,
+}
 
 type AgentHandler struct {
 	useCase    UseCase
@@ -337,31 +351,73 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(ToRunResponseWithNames(run, map[uint]string{agent.ID: agent.Name}))
 }
 
-// ListRuns implements Frontend Spec 01's GET /agent/runs and Frontend Spec
-// 02's ?strategy_id= filtered variant in the same endpoint.
+// ListRuns implements GET /agent/runs (Frontend Specs 01/02, Phase D-01 §1):
+//   - limit: default 20, capped at 100;
+//   - strategy_id: a number, or "none" for runs without a strategy;
+//   - trigger: comma-separated AgentRun triggers (unknown -> 400 invalid_trigger);
+//   - agent_id: one persona's runs;
+//   - before_id: cursor, only runs with id < before_id.
+//
+// Always newest first ("id DESC").
 func (h *AgentHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
-	limit := defaultListLimit
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+	q := r.URL.Query()
+	f := agentrepo.RunFilter{Limit: defaultListLimit}
+	if limitStr := q.Get("limit"); limitStr != "" {
 		parsed, err := strconv.Atoi(limitStr)
 		if err != nil || parsed <= 0 {
 			http.Error(w, "invalid limit", http.StatusBadRequest)
 			return
 		}
-		limit = parsed
+		f.Limit = min(parsed, maxListLimit)
 	}
 
-	var strategyID *uint
-	if idStr := r.URL.Query().Get("strategy_id"); idStr != "" {
-		parsed, err := strconv.ParseUint(idStr, 10, 32)
-		if err != nil {
-			http.Error(w, "invalid strategy_id", http.StatusBadRequest)
+	if idStr := q.Get("strategy_id"); idStr != "" {
+		if idStr == "none" {
+			f.NoStrategy = true
+		} else {
+			id, ok := parseUintParam(idStr)
+			if !ok {
+				http.Error(w, "invalid strategy_id", http.StatusBadRequest)
+				return
+			}
+			f.StrategyID = &id
+		}
+	}
+
+	if trigStr := q.Get("trigger"); trigStr != "" {
+		for _, t := range strings.Split(trigStr, ",") {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+			if !validRunTriggers[t] {
+				writeJSONError(w, http.StatusBadRequest, "invalid_trigger",
+					"unknown trigger "+strconv.Quote(t)+" (valid: mcp_tool, chat_ui, monitor, cron, manual, event, market, chain)")
+				return
+			}
+			f.Triggers = append(f.Triggers, t)
+		}
+	}
+
+	if idStr := q.Get("agent_id"); idStr != "" {
+		id, ok := parseUintParam(idStr)
+		if !ok {
+			http.Error(w, "invalid agent_id", http.StatusBadRequest)
 			return
 		}
-		id := uint(parsed)
-		strategyID = &id
+		f.AgentID = &id
 	}
 
-	runs, err := h.repository.ListRuns(r.Context(), limit, strategyID)
+	if idStr := q.Get("before_id"); idStr != "" {
+		id, ok := parseUintParam(idStr)
+		if !ok {
+			http.Error(w, "invalid before_id", http.StatusBadRequest)
+			return
+		}
+		f.BeforeID = &id
+	}
+
+	runs, err := h.repository.ListRunsFiltered(r.Context(), f)
 	if err != nil {
 		customerror.WriteHTTPError(w, err)
 		return
@@ -369,6 +425,14 @@ func (h *AgentHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ToRunListResponseWithNames(runs, h.names(r.Context())))
+}
+
+func parseUintParam(s string) (uint, bool) {
+	parsed, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, false
+	}
+	return uint(parsed), true
 }
 
 func (h *AgentHandler) GetRun(w http.ResponseWriter, r *http.Request) {

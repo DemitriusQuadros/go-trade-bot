@@ -102,9 +102,14 @@ export function EquityCurveChart({
       }
     };
     window.addEventListener('resize', handleResize);
+    // Also follow the container itself - e.g. inside the resizable agent
+    // dock, whose width changes without a window resize.
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+    observer?.observe(chartContainerRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      observer?.disconnect();
       chart.remove();
     };
   }, [points, startingBalance, height, isDark]);

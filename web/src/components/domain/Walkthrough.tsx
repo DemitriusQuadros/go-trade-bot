@@ -24,6 +24,12 @@ export const DEFAULT_WALKTHROUGH_STEPS: WalkthroughStep[] = [
     body: 'This wizard walks you through scope, entry rules, sizing, and exits — no JSON editing needed.',
   },
   {
+    targetSelector: '[data-walkthrough="mode-toggle"]',
+    title: 'Agent and Code modes',
+    body:
+      'Agent mode is a full-screen conversation with an AI agent; Code mode is the app with the same chat in a side dock (Ctrl+.). Switch any time with Ctrl+Shift+. - the conversation carries over.',
+  },
+  {
     targetSelector: '[data-walkthrough="nav-backtest"]',
     title: 'Backtest',
     body: 'Validate a strategy against historical data before risking real capital.',

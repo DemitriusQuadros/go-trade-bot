@@ -55,9 +55,9 @@ function Collapsible({ label, content }: { label: string; content: string }) {
 // explicit "reused here rather than reimplemented" requirement.
 interface AgentToolCallCardProps {
   call: AgentToolCall;
-  // Only wired by AgentCopilotWidget.tsx, when the floating widget is open
-  // AND the current route is inside the strategy workbench (EditorBridgeContext
-  // is present there) - AgentHistory.tsx's read-only audit view never passes
+  // Only wired by the Code-mode agent dock (AgentDock via agentchat's
+  // ToolActivity) while the current route is inside the strategy workbench
+  // (EditorBridgeContext is present there) - the read-only run history never passes
   // this, so its cards never show the affordance. Receives the model-proposed
   // script_source (from call.args, pre-clamp) - the caller owns showing a
   // diff/confirmation before actually touching the editor.

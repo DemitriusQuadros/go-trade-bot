@@ -42,11 +42,19 @@ const CONTENT_VIEWS: readonly ContentView[] = ['script', 'split', 'chart'];
 // Split-view divider drag bounds, in px - keeps either side from being
 // dragged down to something unusably thin regardless of window size.
 const SPLIT_MIN_PX = 260;
-const SPLIT_CHART_MIN_PX = 280;
+const SPLIT_CHART_MIN_PX = 360;
+// The drag handle's w-1.5 + mx-1 (6px + 2 x 4px).
+const SPLIT_DIVIDER_PX = 14;
 const SPLIT_DEFAULT_PX = 460;
 
 export const CYCLE_OPTIONS = [1, 5, 10, 15, 30, 60] as const;
 export type CycleMinutes = (typeof CYCLE_OPTIONS)[number];
+
+// Kline interval for a cycle, mirroring entities.Strategy.GetBrokerInterval:
+// Binance has no "60m" interval, so a 60-minute cycle is "1h".
+export function cycleTimeframe(minutes: number): string {
+  return minutes === 60 ? '1h' : `${minutes}m`;
+}
 
 export interface ScriptEditorState {
   strategyId: number | null;
@@ -280,8 +288,36 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   // localStorage.
   const [splitWidth, , commitSplitWidth] = usePersistedNumber('workbench.splitWidth', SPLIT_DEFAULT_PX);
   const [liveSplitWidth, setLiveSplitWidth] = useState<number | null>(null);
-  const splitRowRef = useRef<HTMLDivElement>(null);
-  const effectiveSplitWidth = liveSplitWidth ?? splitWidth;
+  const splitRowRef = useRef<HTMLDivElement | null>(null);
+  // The persisted width is absolute px, saved at whatever window/dock width
+  // was current then - opening the agent dock (or a smaller window) would
+  // otherwise leave the chart a sliver. Clamp at render time to the row's
+  // live width so the chart always keeps SPLIT_CHART_MIN_PX; the persisted
+  // preference itself is untouched and comes back when space does.
+  // A callback ref, not a mount effect: the row doesn't exist while the
+  // strategy is still loading (early LoadingScreen return below).
+  const [splitRowWidth, setSplitRowWidth] = useState<number | null>(null);
+  const splitRowObserverRef = useRef<ResizeObserver | null>(null);
+  const setSplitRowEl = useCallback((el: HTMLDivElement | null) => {
+    splitRowRef.current = el;
+    splitRowObserverRef.current?.disconnect();
+    splitRowObserverRef.current = null;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setSplitRowWidth(entries[0].contentRect.width));
+    ro.observe(el);
+    splitRowObserverRef.current = ro;
+  }, []);
+  const maxSplitWidth =
+    splitRowWidth != null ? Math.max(SPLIT_MIN_PX, splitRowWidth - SPLIT_CHART_MIN_PX - SPLIT_DIVIDER_PX) : Infinity;
+  const effectiveSplitWidth = Math.min(liveSplitWidth ?? splitWidth, maxSplitWidth);
+  // Too narrow for both minimums (small window + agent dock): split would
+  // clip the editor toolbar and crush the chart, so show the editor alone
+  // until there's room again. The saved preference stays 'split'.
+  const splitSqueezed =
+    contentView === 'split' &&
+    splitRowWidth != null &&
+    splitRowWidth < SPLIT_MIN_PX + SPLIT_CHART_MIN_PX + SPLIT_DIVIDER_PX;
+  const layoutView: ContentView = splitSqueezed ? 'script' : contentView;
 
   const handleDividerDown = useCallback(
     (e: React.MouseEvent) => {
@@ -289,7 +325,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       const startX = e.clientX;
       const startWidth = effectiveSplitWidth;
       const containerWidth = splitRowRef.current?.clientWidth ?? Infinity;
-      const maxWidth = Math.max(SPLIT_MIN_PX, containerWidth - SPLIT_CHART_MIN_PX);
+      const maxWidth = Math.max(SPLIT_MIN_PX, containerWidth - SPLIT_CHART_MIN_PX - SPLIT_DIVIDER_PX);
       const prevCursor = document.body.style.cursor;
       const prevUserSelect = document.body.style.userSelect;
       document.body.style.cursor = 'col-resize';
@@ -383,7 +419,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
     return backtestRun?.execution_trace || [];
   }, [activeTraceSource, editorTrace, replTrace, backtestRun]);
 
-  // Bridge for the floating AI copilot widget (mounted outside this nested
+  // Bridge for the agent chat dock (AgentDock, mounted outside this nested
   // route tree, in App.tsx) - see context/EditorBridgeContext.ts. Sourced
   // directly from `draft`, which this shell already owns; applyScript just
   // pushes into the same setDraft the Editor pane's own Save button uses,
@@ -550,7 +586,13 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       )}
 
       <div className="flex-1 min-h-0 flex flex-col gap-2 mt-4">
-        <div ref={splitRowRef} className="flex-1 min-h-0 flex">
+        {splitSqueezed && (
+          <p role="note" className="shrink-0 text-[11px] text-muted-foreground font-sans">
+            Not enough width for the split view - the chart is hidden. Close the agent panel (Ctrl+.) or switch to
+            the chart view to see it.
+          </p>
+        )}
+        <div ref={setSplitRowEl} className="flex-1 min-h-0 flex">
           {/* Side panel: editor/REPL/backtest content. Always mounted (CSS
               `hidden` in chart-only mode, not removed from the tree) so
               switching view modes never resets the Lua editor's undo
@@ -560,13 +602,13 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               side can be dragged unusably thin. */}
           <div
             className={
-              contentView === 'chart'
+              layoutView === 'chart'
                 ? 'hidden'
-                : contentView === 'script'
+                : layoutView === 'script'
                 ? 'flex-1 min-w-0 overflow-y-auto pr-1'
                 : 'shrink-0 overflow-y-auto pr-1'
             }
-            style={contentView === 'split' ? { width: effectiveSplitWidth } : undefined}
+            style={layoutView === 'split' ? { width: effectiveSplitWidth } : undefined}
           >
             <div className="workbench-outlet h-full">
               <Outlet context={ctx} />
@@ -579,7 +621,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               SharedPriceChart's own ResizeObserver (fill mode) picks up the
               chart's new width live as the divider moves, no extra wiring
               needed on that side. */}
-          {contentView === 'split' && (
+          {layoutView === 'split' && (
             <div
               onMouseDown={handleDividerDown}
               title="Drag to resize"
@@ -592,7 +634,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               resetting it on every view-mode toggle). Fills whatever space
               the side/bottom panels don't claim via SharedPriceChart's fill
               mode (ResizeObserver-driven). */}
-          <div className={contentView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
+          <div className={layoutView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
             <div className="px-1 text-[11px] text-muted-foreground uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
               <span>Shared Price Chart ({activeTraceSource})</span>
               {loadingMoreHistory && (

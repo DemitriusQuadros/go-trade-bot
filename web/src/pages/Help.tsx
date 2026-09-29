@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronRight,
   BookOpen,
+  Bot,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { WALKTHROUGH_STORAGE_KEY } from '@/components/domain/Walkthrough';
@@ -135,14 +136,41 @@ export const HELP_SECTIONS: HelpSection[] = [
     slug: 'activity',
     title: 'Activity',
     icon: <DollarSign className="w-4 h-4 text-foreground" />,
-    summary: 'Open positions, order fills, and the AI copilot\'s run history, in one tabbed page.',
+    summary: 'Open positions, order fills, and the AI agents\' run history, in one tabbed page.',
     content: (
       <div className="space-y-2 text-xs text-foreground leading-relaxed">
         <p>
           Three tabs on one page: <b>Positions</b> (open and closed signals with live marked-to-market P&amp;L),
           <b> Order Fills</b> (the confirmed broker fills behind each position, with fee attribution), and
-          <b> Agent Log</b> (every AI copilot invocation - what was asked, which tools ran, and what was
+          <b> Agent Log</b> (every agent run - what was asked, which tools ran, and what was
           actually persisted).
+        </p>
+      </div>
+    ),
+  },
+  {
+    slug: 'agent-modes',
+    title: 'Agent & Code modes',
+    icon: <Bot className="w-4 h-4 text-foreground" />,
+    summary: 'Talk to an AI agent full-screen, or keep it docked next to the app - one conversation, two views.',
+    content: (
+      <div className="space-y-2 text-xs text-foreground leading-relaxed">
+        <p>
+          The <b>Agent | Code</b> toggle in the top bar switches modes (<span className="font-mono">Ctrl+Shift+.</span>).
+          <b> Agent mode</b> is a full-screen conversation: pick a persona and a strategy (or General) on the left, and
+          the strategy's shared notes and pending proposals show on the right. Tool results render as cards -
+          backtests with equity curves, script diffs, deploy-gate results, reports and proposals - each with a link
+          into Code mode.
+        </p>
+        <p>
+          <b>Code mode</b> is the rest of the app, with the same chat in a resizable dock on the right
+          (<span className="font-mono">Ctrl+.</span> opens or closes it). Inside a strategy's Workbench the dock
+          talks about that strategy, and a script the agent wrote can be applied to the editor after reviewing the
+          diff. A strategy's conversation is reloaded from the server, so it survives a page refresh.
+        </p>
+        <p>
+          Agents only change backtest/dryrun testing strategies; live changes always go through a proposal you
+          approve.
         </p>
       </div>
     ),

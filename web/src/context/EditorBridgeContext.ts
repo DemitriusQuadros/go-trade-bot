@@ -1,18 +1,19 @@
 import { createContext, useContext, useEffect, useMemo, useState, createElement, ReactNode } from 'react';
 
-// Bridges the floating AI copilot widget (mounted once at the app-shell
-// level in App.tsx, as a SIBLING of <Routes> - see AgentCopilotWidget.tsx)
-// across into the strategy workbench's nested route tree, which owns the
-// actual CodeMirror instance (EditorPane.tsx via WorkbenchShell.tsx).
+// Bridges the agent chat (ChatSessionContext + the Code-mode AgentDock,
+// both mounted at the app-shell level in App.tsx/AppLayout, OUTSIDE the
+// routed subtree) across into the strategy workbench's nested route tree,
+// which owns the actual CodeMirror instance (EditorPane.tsx via
+// WorkbenchShell.tsx).
 //
-// Because the widget lives outside the routed subtree that owns the editor,
+// Because the dock lives outside the routed subtree that owns the editor,
 // a plain Context.Provider rendered BY WorkbenchShell would only be visible
-// to WorkbenchShell's own descendants, never to a sibling like the widget -
+// to WorkbenchShell's own descendants, never to a sibling like the dock -
 // context only flows down the render tree, not sideways. So the Provider
-// itself lives at the App root (EditorBridgeProvider, wrapping both <Routes>
-// and the widget), holding the bridge as state; WorkbenchShell REGISTERS
+// itself lives at the App root (EditorBridgeProvider, wrapping <Routes>
+// and the chat), holding the bridge as state; WorkbenchShell REGISTERS
 // into that shared state via useRegisterEditorBridge on mount/update and
-// unregisters on unmount (leaving the workbench route), and the widget just
+// unregisters on unmount (leaving the workbench route), and the chat just
 // reads the current value via useEditorBridge - undefined whenever no
 // workbench route is currently mounted.
 export interface EditorBridge {
@@ -40,7 +41,7 @@ export function EditorBridgeProvider({ children }: { children: ReactNode }) {
   return createElement(EditorBridgeContext.Provider, { value }, children);
 }
 
-/** Consumed by AgentCopilotWidget: the currently-registered bridge, or
+/** Consumed by the agent chat (ChatSessionContext, AgentDock): the currently-registered bridge, or
  * undefined when no strategy workbench route is mounted. */
 export function useEditorBridge(): EditorBridge | undefined {
   const ctx = useContext(EditorBridgeContext);
