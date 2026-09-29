@@ -33,6 +33,10 @@ type BacktestMetrics struct {
 }
 
 // MetricsProvider defines the interface for calculating trading performance metrics.
+//
+// SharpeRatio is computed from per-trade returns and annualized by the
+// observed number of trades per year (trade span floored at 30 days).
+// periodsPerYear is only a fallback for trade logs without timestamps.
 type MetricsProvider interface {
 	Compute(trades []TradeLogEntry, startingBalance float64, periodsPerYear float64) BacktestMetrics
 }

@@ -162,11 +162,28 @@ func calculateSharpeRatio(equityCurve []EquityPoint, periodsPerYear float64) flo
 		return 0.0
 	}
 
-	if periodsPerYear <= 0 {
-		periodsPerYear = 525600.0 // default 1m periods/year
+	// The returns above are PER TRADE (one equity point per closed trade),
+	// so they must be annualized by how many trades happen per year - not by
+	// the candle timeframe's periods per year. Using the candle periods (e.g.
+	// sqrt(8760) ~= 93.6 for 1h) inflated Sharpe by orders of magnitude: 3
+	// consistent trades over 6 months scored ~348 in the deploy gate. The
+	// span is floored at 30 days so a handful of trades clustered within
+	// hours isn't extrapolated into thousands of trades a year.
+	annualization := periodsPerYear
+	first, last := equityCurve[0].Time, equityCurve[len(equityCurve)-1].Time
+	if !first.IsZero() && !last.IsZero() && last.After(first) {
+		const minSpan = 30 * 24 * time.Hour
+		span := last.Sub(first)
+		if span < minSpan {
+			span = minSpan
+		}
+		years := span.Hours() / (365.25 * 24)
+		annualization = float64(len(returns)) / years
+	} else if annualization <= 0 {
+		annualization = 525600.0 // no timestamps: legacy default (1m periods/year)
 	}
 
-	annualizedSharpe := (mean / stddev) * math.Sqrt(periodsPerYear)
+	annualizedSharpe := (mean / stddev) * math.Sqrt(annualization)
 	if math.IsNaN(annualizedSharpe) {
 		return 0.0
 	}
