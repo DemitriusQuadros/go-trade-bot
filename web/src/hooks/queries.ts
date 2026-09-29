@@ -563,12 +563,21 @@ export function useTestWebhookTarget() {
 
 const MEMORY_PAGE = 20;
 
-// Newest-first shared memory for one strategy, paginated with before_id.
+// The notes panel shows deliberate notes only. chat_user/chat_agent rows are
+// legacy (chat was written into memory before the Phase D follow-up); the
+// conversation itself lives in the chat transcript.
+export const NOTE_MEMORY_KINDS = ['journal', 'finding', 'report_ref'];
+
+// Newest-first shared memory notes for one strategy, paginated with before_id.
 export function useStrategyMemory(strategyId: number) {
   return useInfiniteQuery({
     queryKey: QUERY_KEYS.strategyMemory(strategyId),
     queryFn: ({ pageParam, signal }) =>
-      api.listStrategyMemory(strategyId, { limit: MEMORY_PAGE, before_id: pageParam }, { signal }),
+      api.listStrategyMemory(
+        strategyId,
+        { kinds: NOTE_MEMORY_KINDS, limit: MEMORY_PAGE, before_id: pageParam },
+        { signal },
+      ),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) =>
       lastPage && lastPage.length >= MEMORY_PAGE ? lastPage[lastPage.length - 1].id : undefined,

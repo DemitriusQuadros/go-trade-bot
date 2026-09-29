@@ -212,7 +212,11 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
     go1.24 parser can't load this go1.25 module).
   - `app/usecase/agent/`: `AgentUseCase.Run(RunRequest)` is the persona-aware loop; `RunToolLoop` is a thin
     wrapper using the default agent. System prompt = house rules + persona + operating context + shared
-    memory (last 30 entries per context strategy, ~24k char cap) + authoring doc. Tools are tagged with a
+    memory (last 30 `journal`/`finding`/`report_ref` entries per context strategy, ~24k char cap) +
+    authoring doc. Chat turns are NOT written to memory (they live in the chat transcript, i.e. the
+    `chat_ui` runs); memory is deliberate notes only - operator notes (incl. the chat UI's "Save to
+    notes", `POST /strategies/{id}/memory` -> `journal`), `write_journal` findings and report refs. Legacy
+    `chat_user`/`chat_agent` rows stay in the DB, visible to `read_memory` but not the prompt or the notes panel. Tools are tagged with a
     permission and filtered per persona, and re-checked at dispatch. `RunGuard` (`guard.go`) re-checks the
     kill switch / agent pause / daily budget before EVERY model call (fails closed). New tools
     (`tools_platform.go`): `read_memory`, `write_journal`, `list_reports`, `write_report` (always granted)

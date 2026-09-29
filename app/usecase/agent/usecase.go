@@ -651,7 +651,6 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 			// then silently discarded here, so the copilot UI had nothing
 			// to show but tool-call cards. See entities.AgentRun.ResponseText.
 			run.ResponseText = result.Text
-			u.onRunSucceeded(ctx, agent, req, run)
 			return finish(entities.AgentRunOK, "")
 		}
 
@@ -728,7 +727,6 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 	}
 	run.ResponseText = result.Text
 	run.HitIterationCap = true
-	u.onRunSucceeded(ctx, agent, req, run)
 	return finish(entities.AgentRunOK, "")
 }
 
@@ -745,47 +743,18 @@ func toolGranted(agent entities.Agent, t Tool) bool {
 }
 
 // onRunStarted runs once, after the first guard check passes: counts the
-// run in today's AgentUsage and writes the chat_user memory entry.
+// run in today's AgentUsage. Chat turns are NOT written to shared strategy
+// memory (Phase D follow-up): the chat has its own persisted transcript, and
+// memory is for deliberate notes - operator notes (incl. "Save to notes" from
+// the chat UI), write_journal findings and report refs - so chat can't crowd
+// those out of the memory window every agent's prompt gets.
 func (u AgentUseCase) onRunStarted(ctx context.Context, agent entities.Agent, req RunRequest, run entities.AgentRun) {
-	if u.Platform == nil {
+	if u.Platform == nil || agent.ID == 0 {
 		return
 	}
-	if agent.ID != 0 {
-		if err := u.Platform.IncRuns(ctx, agent.ID, time.Now()); err != nil {
-			log.Printf("agent: failed to count run for agent %d: %v", agent.ID, err)
-		}
+	if err := u.Platform.IncRuns(ctx, agent.ID, time.Now()); err != nil {
+		log.Printf("agent: failed to count run for agent %d: %v", agent.ID, err)
 	}
-	if req.Trigger == "chat_ui" && req.StrategyID != nil {
-		content := req.DisplayInput
-		if content == "" {
-			content = req.UserInput
-		}
-		u.appendMemory(ctx, entities.StrategyMemoryEntry{
-			StrategyID: *req.StrategyID,
-			AgentRunID: runIDPtr(run.ID),
-			Kind:       entities.MemoryChatUser,
-			Content:    content,
-		})
-	}
-}
-
-// onRunSucceeded writes the chat_agent memory entry for a successful chat
-// run with a context strategy.
-func (u AgentUseCase) onRunSucceeded(ctx context.Context, agent entities.Agent, req RunRequest, run entities.AgentRun) {
-	if u.Platform == nil || req.Trigger != "chat_ui" || req.StrategyID == nil || run.ResponseText == "" {
-		return
-	}
-	entry := entities.StrategyMemoryEntry{
-		StrategyID: *req.StrategyID,
-		AgentRunID: runIDPtr(run.ID),
-		Kind:       entities.MemoryChatAgent,
-		Content:    run.ResponseText,
-	}
-	if agent.ID != 0 {
-		id := agent.ID
-		entry.AuthorAgentID = &id
-	}
-	u.appendMemory(ctx, entry)
 }
 
 func (u AgentUseCase) appendMemory(ctx context.Context, e entities.StrategyMemoryEntry) {

@@ -8,6 +8,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { TurnCards } from './TurnCards';
 import { ToolActivity } from './ToolActivity';
 import { ApplyTarget, ChatDensity } from './types';
+import { SaveToNotes } from './SaveToNotes';
+import { useChatSession } from '@/context/ChatSessionContext';
 
 // One transcript turn (Phase D-02 §6), in this order: the operator's
 // message, the rich cards, the model's markdown answer, then the raw
@@ -17,15 +19,24 @@ export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDe
   const text = compact ? 'text-xs' : 'text-sm';
   const run = turn.run;
   const pending = !run && !turn.failed && !turn.blocked;
+  // Only a strategy conversation has notes to save into.
+  const noteStrategyId = useChatSession().strategyId;
 
   return (
     <div className="space-y-2 min-w-0" data-testid="chat-turn">
-      <div className="flex justify-end">
+      <div className="group flex flex-col items-end gap-1">
         <div
           className={`max-w-[85%] rounded-lg bg-secondary/60 border border-border text-foreground px-3 py-2 whitespace-pre-wrap break-words ${text}`}
         >
           {turn.input}
         </div>
+        {noteStrategyId != null && (
+          <SaveToNotes
+            strategyId={noteStrategyId}
+            content={turn.input}
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          />
+        )}
       </div>
 
       {pending && (
@@ -109,6 +120,9 @@ export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDe
             >
               <MarkdownMessage content={run.response_text} />
             </div>
+          )}
+          {run.status === 'ok' && run.response_text && noteStrategyId != null && (
+            <SaveToNotes strategyId={noteStrategyId} content={run.response_text} />
           )}
 
           {run.status === 'ok' && !run.response_text && (run.tool_calls ?? []).length === 0 && (

@@ -80,20 +80,20 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
   };
 
   if (!open) {
+    // Closed: the familiar floating gopher launcher (bottom-right, same look
+    // as the pre-Phase-D copilot bubble) instead of a vertical edge tab -
+    // takes no layout width, and opens the dock rather than a popover.
     return (
-      <div className="shrink-0 w-9 sticky top-14 h-[calc(100vh-3.5rem)] self-start border-l border-border bg-card flex flex-col items-center pt-3">
-        <button
-          type="button"
-          onClick={() => onOpenChange(true)}
-          title="Open the agent chat (Ctrl+.)"
-          aria-label="Open the agent chat"
-          data-testid="agent-dock-open"
-          className="flex flex-col items-center gap-2 px-1 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60"
-        >
-          <img src="/gopher-face.png" alt="" className="w-6 h-6 rounded-full object-cover" />
-          <span className="text-[11px] font-semibold tracking-wide [writing-mode:vertical-rl] rotate-180">Agent</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        title="Open the agent chat (Ctrl+.)"
+        aria-label="Open the agent chat"
+        data-testid="agent-dock-open"
+        className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-primary shadow-lg shadow-black/50 border border-primary/50 flex items-center justify-center overflow-hidden transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        <img src="/gopher-face.png" alt="" className="w-full h-full object-cover" />
+      </button>
     );
   }
 

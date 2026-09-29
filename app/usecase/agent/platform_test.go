@@ -177,10 +177,10 @@ func TestRun_UsageAccounting(t *testing.T) {
 	assert.Equal(t, 1, u.Runs)
 }
 
-// A-01 AC#10: a chat run with StrategyID 3 writes chat_user + chat_agent
-// memory, and the next run for strategy 3 (a different agent) sees both in
-// its system prompt.
-func TestRun_ChatMemoryWriteBackVisibleToNextRun(t *testing.T) {
+// Phase D follow-up: chat turns are no longer written to shared strategy
+// memory (the chat has its own transcript). Deliberate notes still reach the
+// next run's system prompt; legacy chat rows no longer do.
+func TestRun_ChatDoesNotWriteMemoryAndPromptShowsOnlyNotes(t *testing.T) {
 	h := newPlatformHarness(t)
 	sid := uint(3)
 	h.model.On("Complete", mock.Anything, mock.Anything).Return(modelprovider.CompletionResult{
@@ -192,15 +192,12 @@ func TestRun_ChatMemoryWriteBackVisibleToNextRun(t *testing.T) {
 		DisplayInput: "what about the RSI period?", StrategyID: &sid,
 	})
 	require.NoError(t, err)
+	assert.Empty(t, h.platform.memoryFor(3, entities.MemoryChatUser))
+	assert.Empty(t, h.platform.memoryFor(3, entities.MemoryChatAgent))
 
-	userEntries := h.platform.memoryFor(3, entities.MemoryChatUser)
-	agentEntries := h.platform.memoryFor(3, entities.MemoryChatAgent)
-	require.Len(t, userEntries, 1)
-	require.Len(t, agentEntries, 1)
-	assert.Equal(t, "what about the RSI period?", userEntries[0].Content)
-	assert.Nil(t, userEntries[0].AuthorAgentID, "chat_user is authored by the operator")
-	require.NotNil(t, agentEntries[0].AuthorAgentID)
-	assert.Equal(t, h.def.ID, *agentEntries[0].AuthorAgentID)
+	// A legacy chat row plus an operator note ("Save to notes" writes a journal entry).
+	_, _ = h.platform.AppendMemory(context.Background(), entities.StrategyMemoryEntry{StrategyID: sid, Kind: entities.MemoryChatUser, Content: "legacy chat line"})
+	_, _ = h.platform.AppendMemory(context.Background(), entities.StrategyMemoryEntry{StrategyID: sid, Kind: entities.MemoryJournal, Content: "operator: keep RSI at 14"})
 
 	other := h.platform.addAgent(entities.Agent{Name: "Reviewer", Permissions: []string{"read"}})
 	var system string
@@ -211,10 +208,9 @@ func TestRun_ChatMemoryWriteBackVisibleToNextRun(t *testing.T) {
 	_, err = h.uc.Run(context.Background(), agentusecase.RunRequest{Agent: other, Trigger: "chat_ui", UserInput: "summary?", StrategyID: &sid})
 	require.NoError(t, err)
 
-	assert.Contains(t, system, "what about the RSI period?")
-	assert.Contains(t, system, "RSI period 14 looks too short.")
-	assert.Contains(t, system, "operator chat_user")
-	assert.Contains(t, system, "Copilot chat_agent")
+	assert.Contains(t, system, "operator: keep RSI at 14")
+	assert.NotContains(t, system, "legacy chat line")
+	assert.NotContains(t, system, "RSI period 14 looks too short.")
 	assert.Contains(t, system, `You are the agent "Reviewer".`)
 	assert.Less(t, strings.Index(system, "house rules"), strings.Index(system, `You are the agent`))
 }

@@ -11,6 +11,12 @@ import (
 	"go-trade-bot/app/repository/agentplatform"
 )
 
+// promptMemoryKinds are the memory kinds shown in the system prompt:
+// deliberate notes only. Legacy chat_user/chat_agent rows (written by chat
+// before the Phase D follow-up) stay in the DB and in read_memory, but no
+// longer take slots from findings in the 30-entry window.
+var promptMemoryKinds = []entities.MemoryKind{entities.MemoryJournal, entities.MemoryFinding, entities.MemoryReportRef}
+
 const (
 	memoryEntriesPerStrategy = 30
 	memoryEntryMaxChars      = 800
@@ -213,7 +219,7 @@ func (u AgentUseCase) memorySection(ctx context.Context, strategyIDs []uint, str
 	perStrategy := map[uint][]memoryLine{}
 	reports := map[uint][]string{}
 	for _, sid := range strategyIDs {
-		entries, err := u.Platform.ListMemory(ctx, sid, nil, memoryEntriesPerStrategy, nil)
+		entries, err := u.Platform.ListMemory(ctx, sid, promptMemoryKinds, memoryEntriesPerStrategy, nil)
 		if err == nil {
 			for i := len(entries) - 1; i >= 0; i-- { // newest-first -> oldest-first
 				e := entries[i]
