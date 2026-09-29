@@ -277,7 +277,7 @@ var saveStrategySchema = json.RawMessage(`{
 		"description": {"type": "string"},
 		"script_source": {"type": "string", "description": "Lua source implementing the Strategy hook contract"},
 		"symbols": {"type": "array", "items": {"type": "string"}},
-		"cycle_minutes": {"type": "integer", "description": "one of 1, 5, 10, 15, 30, 60"},
+		"cycle_minutes": {"type": "integer", "description": "one of 1, 5, 15, 30, 60"},
 		"mode": {"type": "string", "description": "advisory only - always clamped to backtest or dryrun server-side, see tool description"}
 	},
 	"required": ["name", "description", "script_source", "symbols", "cycle_minutes"]

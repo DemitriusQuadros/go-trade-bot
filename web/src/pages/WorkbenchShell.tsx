@@ -47,7 +47,8 @@ const SPLIT_CHART_MIN_PX = 360;
 const SPLIT_DIVIDER_PX = 14;
 const SPLIT_DEFAULT_PX = 460;
 
-export const CYCLE_OPTIONS = [1, 5, 10, 15, 30, 60] as const;
+// No 10: Binance has no 10m kline interval (see entities.IsValidCycle).
+export const CYCLE_OPTIONS = [1, 5, 15, 30, 60] as const;
 export type CycleMinutes = (typeof CYCLE_OPTIONS)[number];
 
 // Kline interval for a cycle, mirroring entities.Strategy.GetBrokerInterval:

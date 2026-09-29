@@ -81,7 +81,6 @@ type Cycle int
 const (
 	OneMinute      Cycle = 1
 	FiveMinutes    Cycle = 5
-	TenMinutes     Cycle = 10
 	FifteenMinutes Cycle = 15
 	ThirtyMinutes  Cycle = 30
 	OneHour        Cycle = 60
@@ -98,7 +97,7 @@ func IsValidStatus(status string) bool {
 
 func IsValidCycle(cycle int) bool {
 	switch Cycle(cycle) {
-	case OneMinute, FiveMinutes, TenMinutes, FifteenMinutes, ThirtyMinutes, OneHour:
+	case OneMinute, FiveMinutes, FifteenMinutes, ThirtyMinutes, OneHour:
 		return true
 	default:
 		return false
@@ -111,8 +110,6 @@ func (s Strategy) GetBrokerInterval() string {
 		return "1m"
 	case FiveMinutes:
 		return "5m"
-	case TenMinutes:
-		return "10m"
 	case FifteenMinutes:
 		return "15m"
 	case ThirtyMinutes:

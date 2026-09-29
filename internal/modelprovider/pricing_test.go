@@ -96,3 +96,16 @@ func TestUnconfiguredProvider_ZeroUsage(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, Usage{}, result.Usage)
 }
+
+func TestConfigProviderFactory_ResolveFallsBackToAdapterDefault(t *testing.T) {
+	f := NewConfigProviderFactory(configuration.Agent{Provider: "anthropic"})
+	if prov, model := f.Resolve("", ""); prov != "anthropic" || model != defaultAnthropicModel {
+		t.Fatalf("Resolve(\"\", \"\") = %q, %q; want anthropic, %q", prov, model, defaultAnthropicModel)
+	}
+	if _, model := f.Resolve("gemini", ""); model != defaultGeminiModel {
+		t.Fatalf("Resolve(gemini, \"\") model = %q; want %q", model, defaultGeminiModel)
+	}
+	if _, model := f.Resolve("anthropic", "claude-opus-5-5"); model != "claude-opus-5-5" {
+		t.Fatalf("explicit model overridden: %q", model)
+	}
+}

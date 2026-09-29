@@ -185,6 +185,24 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
           Agents only change backtest/dryrun testing strategies; live changes need your approval.
         </p>
 
+        {/* The new-strategy workbench stays on its (possibly half-typed)
+            draft when the agent creates the strategy mid-chat - offer the
+            jump instead of navigating away on its own. */}
+        {bridge && bridge.strategyId == null && s.strategyId != null && (
+          <div
+            role="status"
+            className="mx-3 mt-2 shrink-0 flex items-center gap-2 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-[11px] text-foreground"
+          >
+            <span className="min-w-0">The agent created strategy #{s.strategyId} from this chat.</span>
+            <Link
+              to={`/strategies/${s.strategyId}/edit`}
+              className="ml-auto shrink-0 font-semibold text-primary hover:underline"
+            >
+              Open #{s.strategyId} in the editor
+            </Link>
+          </div>
+        )}
+
         <ChatTranscript
           density="compact"
           apply={applyTarget}

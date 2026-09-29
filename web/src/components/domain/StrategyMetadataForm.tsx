@@ -54,7 +54,7 @@ export function StrategyMetadataForm({
             }
             className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           >
-            {[1, 5, 10, 15, 30, 60].map((c) => (
+            {[1, 5, 15, 30, 60].map((c) => (
               <option key={c} value={c}>
                 Every {c} minute{c > 1 ? 's' : ''}
               </option>

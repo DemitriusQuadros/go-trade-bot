@@ -174,8 +174,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const goAgent = useCallback(() => {
     if (agentMode) return;
     // Inside the Workbench for strategy N -> that strategy's conversation.
-    navigate(agentModeHref(bridge?.strategyId ?? chat.strategyId));
-  }, [agentMode, bridge, chat.strategyId, navigate]);
+    navigate(agentModeHref(bridge?.strategyId ?? chat.strategyId, chat.selectedAgent?.id));
+  }, [agentMode, bridge, chat.strategyId, chat.selectedAgent?.id, navigate]);
   const goCode = useCallback(() => {
     if (!agentMode) return;
     navigate(readLastCodeLocation());

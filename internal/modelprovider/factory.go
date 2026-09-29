@@ -46,6 +46,11 @@ func (f *ConfigProviderFactory) Resolve(provider, model string) (string, string)
 			model = f.cfg.GeminiModel
 		}
 	}
+	if model == "" {
+		// The adapters fall back to their built-in default model; return it
+		// here too so AgentRun.Model records what actually answered.
+		model = DefaultModelFor(provider)
+	}
 	return provider, model
 }
 

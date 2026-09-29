@@ -39,7 +39,7 @@ func TestStrategyUseCase_Save_ScriptEmptySourceRejected(t *testing.T) {
 		StrategyName:     "script",
 		ScriptSource:     "   ",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 	}
 
@@ -61,7 +61,7 @@ func TestStrategyUseCase_Save_ScriptWithSourceAccepted(t *testing.T) {
 		StrategyName:     "script",
 		ScriptSource:     "function should_long(ctx) return false end",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestStrategyUseCase_GetAll(t *testing.T) {
 			MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 			StrategyName:     "grid",
 			StrategyConfiguration: entities.StrategyConfiguration{
-				Cycle: 10,
+				Cycle: 15,
 			},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -130,7 +130,7 @@ func TestStrategyUseCase_Enqueue(t *testing.T) {
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -169,7 +169,7 @@ func TestStrategyUseCase_Save(t *testing.T) {
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -230,7 +230,7 @@ func TestStrategyUseCase_GetByID(t *testing.T) {
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -270,7 +270,7 @@ func TestStrategyUseCase_Update(t *testing.T) {
 		MonitoredSymbols: []string{"BTCUSDT", "ETHUSDT"},
 		StrategyName:     "grid",
 		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle: 10,
+			Cycle: 15,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),

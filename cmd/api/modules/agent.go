@@ -108,6 +108,9 @@ var AgentModule = fx.Module("agent",
 			} else if cfg.Agent.Provider == "gemini" {
 				uc.ModelName = cfg.Agent.GeminiModel
 			}
+			if uc.ModelName == "" {
+				uc.ModelName = modelprovider.DefaultModelFor(uc.Provider)
+			}
 			// Agents platform: persona-aware chat (memory, usage/budget,
 			// kill switch, reports, notify, strategy writer lock).
 			uc.Platform = platform

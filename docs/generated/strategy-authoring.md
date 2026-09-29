@@ -153,7 +153,6 @@ bindIndicators exposes internal/indicators.IndicatorProvider as the Lua `ind` gl
 
 - `1` (OneMinute)
 - `5` (FiveMinutes)
-- `10` (TenMinutes)
 - `15` (FifteenMinutes)
 - `30` (ThirtyMinutes)
 - `60` (OneHour)

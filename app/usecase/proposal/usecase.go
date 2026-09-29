@@ -248,7 +248,7 @@ func (u *UseCase) GateConfig(ctx context.Context) (entities.DeployGateConfig, er
 
 // ValidTimeframes are the gate timeframes the API accepts ("" = the
 // strategy's own cycle interval).
-var ValidTimeframes = []string{"", "1m", "5m", "10m", "15m", "30m", "1h", "4h", "1d"}
+var ValidTimeframes = []string{"", "1m", "5m", "15m", "30m", "1h", "4h", "1d"}
 
 // UpdateGateConfig validates and saves the thresholds.
 func (u *UseCase) UpdateGateConfig(ctx context.Context, c entities.DeployGateConfig) (entities.DeployGateConfig, error) {

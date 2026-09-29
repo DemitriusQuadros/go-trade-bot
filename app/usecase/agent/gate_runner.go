@@ -105,8 +105,6 @@ func TimeframeDuration(tf string) (time.Duration, bool) {
 		return time.Minute, true
 	case "5m":
 		return 5 * time.Minute, true
-	case "10m":
-		return 10 * time.Minute, true
 	case "15m":
 		return 15 * time.Minute, true
 	case "30m":
