@@ -123,6 +123,25 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 		return buildErr
 	}
 
+	// Take-profit is enforced here, not by a resting exchange order: once
+	// the latest price reaches the level the strategy set at entry, the
+	// position is closed at market and the hooks are skipped this cycle.
+	// Checked against the latest close (ctx.Price), so a wick that touches
+	// the level intra-candle doesn't count - the exit is a market order at
+	// the price actually observed.
+	if strategyCtx.Position != nil {
+		if tp := e.takeProfitPrice(symbol, dbStrategy.ID); tp > 0 && strategyCtx.Price >= tp {
+			return e.SignalUseCase.GenerateSellSignal(usecase.ExitSignal{
+				Symbol:       symbol,
+				StrategyID:   dbStrategy.ID,
+				StrategyName: dbStrategy.Name,
+				Mode:         mode.String(),
+				ExitPrice:    float32(strategyCtx.Price),
+				ExitReason:   ExitReasonTakeProfit,
+			})
+		}
+	}
+
 	strategy.Before(strategyCtx)
 
 	if strategyCtx.Position == nil {
@@ -238,10 +257,35 @@ func (e *Engine) buildPosition(symbol string, strategyID uint) (*strategies.Posi
 		Symbol:          symbol,
 		EntryPrice:      float64(order.EntryPrice),
 		Quantity:        float64(order.Quantity),
-		StopLossPrice:   nil, // Phase 1 doesn't track the resting stop's price, only its order ID - no hook inspects this field yet.
+		StopLossPrice:   stopLossPricePtr(order.StopLossPrice),
 		StopLossOrderID: order.StopLossOrderID,
 		OpenedAt:        order.CreatedAt,
 	}, nil
+}
+
+// ExitReasonTakeProfit is the ExitSignal.ExitReason for an engine-enforced
+// take-profit close.
+const ExitReasonTakeProfit = "take_profit"
+
+// ExitReasonStrategy is the ExitSignal.ExitReason for a close the strategy
+// itself requested (a sell from UpdatePosition).
+const ExitReasonStrategy = "strategy_exit"
+
+// takeProfitPrice returns the open position's take-profit level, 0 if none.
+func (e *Engine) takeProfitPrice(symbol string, strategyID uint) float64 {
+	openSignal, err := e.SignalUseCase.GetOpenSignal(symbol, strategyID)
+	if err != nil || openSignal.ID == 0 || len(openSignal.Orders) == 0 {
+		return 0
+	}
+	return float64(openSignal.Orders[0].TakeProfitPrice)
+}
+
+func stopLossPricePtr(p float32) *float64 {
+	if p <= 0 {
+		return nil
+	}
+	v := float64(p)
+	return &v
 }
 
 // fetch24hVolume replicates the original internal/broker.Broker.Get24hVolume
@@ -287,6 +331,10 @@ func (e *Engine) processGoLong(dbStrategy entities.Strategy, symbol string, mode
 		price := signal.StopLoss.Price
 		entry.StopLossPrice = &price
 	}
+	if signal.TakeProfit != nil {
+		price := signal.TakeProfit.Price
+		entry.TakeProfitPrice = &price
+	}
 
 	if err := e.SignalUseCase.GenerateBuySignal(entry); err != nil {
 		log.Printf("[engine] %s/%s: buy failed: %v", dbStrategy.Name, symbol, err)
@@ -306,6 +354,7 @@ func (e *Engine) processUpdatePosition(dbStrategy entities.Strategy, symbol stri
 		StrategyName: dbStrategy.Name,
 		Mode:         mode.String(),
 		ExitPrice:    float32(signal.Sell.Price),
+		ExitReason:   ExitReasonStrategy,
 	}
 
 	if err := e.SignalUseCase.GenerateSellSignal(exit); err != nil {

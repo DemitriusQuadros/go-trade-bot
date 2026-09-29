@@ -121,6 +121,8 @@ func GenerateStrategyAuthoringDoc(repoRoot string) (string, error) {
 		b.WriteString("\n")
 	}
 
+	b.WriteString(luaScriptAPISection)
+
 	if executionModeDoc != "" {
 		b.WriteString("\n### Execution mode\n\n")
 		b.WriteString(executionModeDoc + "\n")
@@ -418,3 +420,33 @@ func extractStringConstEnum(file *ast.File, typeName string) ([]constEnumString,
 	}
 	return result, nil
 }
+
+// luaScriptAPISection documents the names a Lua script actually sees. The
+// Go field names above (Context.Position, Signal.StopLoss, ...) are not what
+// a script uses - agents writing scripts from only the Go names guessed
+// fields that don't exist (e.g. ctx.position.side, before the bridge exposed
+// it). Keep in sync with app/strategies/script/bridge.go and strategy.go.
+const luaScriptAPISection = `
+### Lua script API (what a script actually sees)
+
+Hooks are global Lua functions; any may be omitted (a safe default is used):
+` + "`before(ctx)`, `should_long(ctx)` -> bool, `go_long(ctx)` -> signal table, `should_short(ctx)` -> bool, " +
+	"`go_short(ctx)` -> signal table (short execution is not supported: spot only), `update_position(ctx)` -> signal table or nil (nil = hold), " +
+	"`after(ctx)`, `terminate(ctx)`." + `
+
+The ` + "`ctx`" + ` table:
+
+- ` + "`ctx.symbol`, `ctx.timeframe`, `ctx.mode`" + ` (strings), ` + "`ctx.price`" + ` (latest close)
+- ` + "`ctx.candles`" + ` - array (oldest first) of ` + "`{o, h, l, c, v, t}`" + ` (t = open time, unix seconds)
+- ` + "`ctx.account.available`" + ` - available quote balance
+- ` + "`ctx.config`" + ` - the strategy's JSON config (e.g. ` + "`stop_loss_pct`, `position_sizing`" + `, custom keys)
+- ` + "`ctx.position`" + ` - nil when flat, otherwise ` + "`{symbol, side, entry_price, quantity, stop_loss_price, opened_at}`" + `. ` +
+	"`side` is always `\"long\"` (spot only); `stop_loss_price` is nil when no stop rests; `opened_at` is unix seconds." + `
+
+A signal table has up to four optional sub-tables, each ` + "`{qty = n, price = n}`" + `:
+
+- ` + "`buy`" + ` - required from ` + "`go_long`" + ` (open a long at market).
+- ` + "`sell`" + ` - from ` + "`update_position`" + ` to close the position at market.
+- ` + "`stop_loss = { price = n }`" + ` - from ` + "`go_long`" + `: placed as a real exchange-side STOP_MARKET (simulated in dryrun/backtest) and takes precedence over ` + "`stop_loss_pct`" + `. It must be below the fill price, otherwise ` + "`stop_loss_pct`" + ` is used and the operator is notified.
+- ` + "`take_profit = { price = n }`" + ` - from ` + "`go_long`" + `: stored with the position; at the start of every cycle, once ` + "`ctx.price`" + ` reaches it the engine closes the position at market (exit reason ` + "`take_profit`" + `) and skips the hooks for that cycle. Ignored unless above the fill price.
+`

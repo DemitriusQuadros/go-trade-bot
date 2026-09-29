@@ -205,3 +205,24 @@ func TestCallHook_LuaError_IncrementsMetricNotPanicCounter(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }
+
+// Regression: ctx.position had no `side`, so the common exit check
+// `ctx.position.side == "long"` was always false and such scripts never
+// closed a position (strategy #6 made 1 trade in 2.7 years of 1h data).
+func TestCallHook_PositionExposesSideAndStop(t *testing.T) {
+	r := NewRunner(time.Second, nil)
+	stop := 95.0
+	cctx := baseContext()
+	cctx.Position = &strategies.Position{Symbol: "ETHUSDT", EntryPrice: 100, Quantity: 1, StopLossPrice: &stop}
+	src := `function update_position(c)
+  if c.position.side == "long" and c.position.stop_loss_price == 95 then
+    return { sell = { qty = c.position.quantity, price = c.price } }
+  end
+  return nil
+end`
+	res, _, err := r.CallHook("s", "update_position", cctx, nil, src, HookOptSignal, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res.Signal)
+	require.NotNil(t, res.Signal.Sell)
+	assert.Equal(t, 1.0, res.Signal.Sell.Qty)
+}

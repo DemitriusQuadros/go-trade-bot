@@ -443,6 +443,16 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
      notification); backtests only run through the backtest API.
    - `GenerateSellSignal` refuses to close a `SIM-` position on a real client (e.g. `POST
      /api/signal/close/{id}` from `cmd/api`) or a real position on the simulator.
+   - **Strategy-supplied exits** (all modes): a script's `stop_loss = {price}` from `go_long` is the
+     STOP_MARKET price and wins over `stop_loss_pct`; if it isn't below the fill price it falls back to
+     `stop_loss_pct` and notifies (`SignalUseCase.submitStopLoss`). `take_profit = {price}` is persisted as
+     `Order.TakeProfitPrice` (only if above the fill) and enforced by the **engine**, not the exchange: at
+     the start of each cycle, once `ctx.price` (latest close) reaches it, the position is closed at market
+     (exit reason `take_profit`) and the hooks are skipped. A sell from `update_position` has exit reason
+     `strategy_exit`. The real reason is stored in `Order.ExitReason`; backtest trade logs use it (older
+     rows fall back to guessing from the profit sign). `ctx.position.side` is always `"long"` (spot only).
+     Before this fix a script's stop price and take-profit were ignored and `ctx.position.side` was nil,
+     so scripts exiting on `side == "long"` never closed (strategy #6: 1 trade in 2.7 years, now 196).
 4. Strategies with `status = "disabled"` are skipped and NOT re-enqueued (their `Terminate` hook fires once).
 
 ### Frontend (`web/`)

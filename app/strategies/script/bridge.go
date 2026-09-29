@@ -35,6 +35,11 @@ func buildCtxTable(L *lua.LState, cctx strategies.Context) *lua.LTable {
 	if cctx.Position != nil {
 		p := L.NewTable()
 		L.SetField(p, "symbol", lua.LString(cctx.Position.Symbol))
+		// The exchange client is spot-only (no short execution path), so an
+		// open position is always long. Exposed because scripts naturally
+		// check `ctx.position.side == "long"`; without it that comparison
+		// was always false and such scripts never exited a position.
+		L.SetField(p, "side", lua.LString("long"))
 		L.SetField(p, "entry_price", lua.LNumber(cctx.Position.EntryPrice))
 		L.SetField(p, "quantity", lua.LNumber(cctx.Position.Quantity))
 		if cctx.Position.StopLossPrice != nil {

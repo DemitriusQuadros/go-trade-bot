@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestEngine() (*engine.Engine, *mocks.SignalUseCase, *mocks.AccountReader, *signalmocks.ExchangeClient, *signalmocks.NotificationSender) {
@@ -349,4 +350,65 @@ func TestEngine_Run_CandleFetchFailure(t *testing.T) {
 	err := e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun)
 	assert.Error(t, err)
 	strategy.AssertNotCalled(t, "Before", mock.Anything)
+}
+
+// Take-profit set at entry (the script's `take_profit = {price}`) is enforced
+// by the engine at the start of each cycle: once the latest close reaches it
+// the position is closed at market and the hooks are skipped. It used to be
+// silently dropped.
+func TestEngine_Run_TakeProfit(t *testing.T) {
+	openWithTP := func(tp float32) entities.Signal {
+		return entities.Signal{ID: 7, Status: entities.Open, Orders: []entities.Order{{EntryPrice: 100, Quantity: 1, TakeProfitPrice: tp}}}
+	}
+
+	t.Run("reached: closes at market with take_profit reason, hooks skipped", func(t *testing.T) {
+		e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+		stubCandleFetches(exchangeClient, "BTCUSDT") // latest close 129
+		accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+		signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(openWithTP(120), nil)
+		signalUC.On("GenerateSellSignal", mock.MatchedBy(func(x usecase.ExitSignal) bool {
+			return x.ExitReason == engine.ExitReasonTakeProfit && x.ExitPrice == 129
+		})).Return(nil).Once()
+
+		strategy := new(mocks.Strategy)
+		require.NoError(t, e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun))
+		signalUC.AssertExpectations(t)
+		strategy.AssertNotCalled(t, "Before", mock.Anything)
+		strategy.AssertNotCalled(t, "UpdatePosition", mock.Anything)
+	})
+
+	t.Run("not reached: normal hook sequence", func(t *testing.T) {
+		e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+		stubCandleFetches(exchangeClient, "BTCUSDT")
+		accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+		signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(openWithTP(200), nil)
+
+		strategy := new(mocks.Strategy)
+		strategy.On("Before", mock.Anything).Return()
+		strategy.On("UpdatePosition", mock.Anything).Return(nil)
+		strategy.On("After", mock.Anything).Return()
+		require.NoError(t, e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun))
+		strategy.AssertCalled(t, "UpdatePosition", mock.Anything)
+		signalUC.AssertNotCalled(t, "GenerateSellSignal", mock.Anything)
+	})
+}
+
+// A sell requested by the strategy's UpdatePosition is recorded with its own
+// exit reason (it used to fall through to "manual", and backtest trade logs
+// then guessed take_profit/stop_loss from the profit sign).
+func TestEngine_Run_StrategySellHasStrategyExitReason(t *testing.T) {
+	e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+	stubCandleFetches(exchangeClient, "BTCUSDT")
+	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{ID: 7, Status: entities.Open, Orders: []entities.Order{{EntryPrice: 100, Quantity: 1}}}, nil)
+	signalUC.On("GenerateSellSignal", mock.MatchedBy(func(x usecase.ExitSignal) bool {
+		return x.ExitReason == engine.ExitReasonStrategy
+	})).Return(nil).Once()
+
+	strategy := new(mocks.Strategy)
+	strategy.On("Before", mock.Anything).Return()
+	strategy.On("UpdatePosition", mock.Anything).Return(&strategies.Signal{Sell: &strategies.Order{Qty: 1, Price: 129}})
+	strategy.On("After", mock.Anything).Return()
+	require.NoError(t, e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun))
+	signalUC.AssertExpectations(t)
 }

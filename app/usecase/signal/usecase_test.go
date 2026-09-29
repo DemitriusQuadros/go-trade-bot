@@ -514,3 +514,67 @@ func TestSignalUseCase_GenerateBuySignal_WithSizingAndStopLossPrice(t *testing.T
 func wrappedOrderNotFoundErr() error {
 	return fmt.Errorf("%w: Unknown order sent.", exchange.ErrOrderNotFound)
 }
+
+// Strategy-supplied stop and take-profit prices (the script's
+// `stop_loss = {price}` / `take_profit = {price}`). The stop price used to be
+// ignored entirely, so a script without stop_loss_pct got no stop at all.
+func TestSignalUseCase_GenerateBuySignal_StrategyStopAndTakeProfit(t *testing.T) {
+	type tc struct {
+		name       string
+		pct        float64
+		stopPrice  *float64
+		tpPrice    *float64
+		wantStop   float64 // 0 = no STOP_MARKET placed
+		wantTP     float32
+		wantNotify bool // fallback-to-pct error event
+	}
+	f := func(v float64) *float64 { return &v }
+	cases := []tc{
+		{name: "strategy stop without stop_loss_pct is placed", stopPrice: f(48000), wantStop: 48000},
+		{name: "strategy stop wins over stop_loss_pct", pct: 2, stopPrice: f(48500), wantStop: 48500},
+		{name: "stop at or above fill falls back to pct and notifies", pct: 2, stopPrice: f(50000), wantStop: 49000, wantNotify: true},
+		{name: "invalid stop without pct places no stop", stopPrice: f(51000), wantStop: 0, wantNotify: true},
+		{name: "take-profit above fill is persisted", tpPrice: f(53000), wantTP: 53000},
+		{name: "take-profit at or below fill is ignored", tpPrice: f(49000), wantTP: 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			signalUC, mockRepo, mockAccountUseCase, mockExchange, mockNotifier := newSignalUseCase()
+			entry := usecase.EntrySignal{
+				Symbol: "BTCUSDT", StrategyID: 1, EntryPrice: 50000, MarginType: entities.Isolated,
+				StopLossPct: c.pct, StopLossPrice: c.stopPrice, TakeProfitPrice: c.tpPrice,
+				PositionSizing: &usecase.PositionSizingConfig{Type: usecase.SizingFixedAmount, Value: 200},
+			}
+			mockAccountUseCase.On("CanOpenOrder").Return(true, nil).Once()
+			mockAccountUseCase.On("GetDisponibleAmout").Return(float32(1000), nil).Once()
+			mockRepo.On("GetOpenSignals", entry.Symbol, entry.StrategyID).Return(entities.Signal{}, nil).Once()
+			mockExchange.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+				return r.Side == exchange.SideBuy && r.Type != exchange.OrderTypeStopMarket
+			})).Return(exchange.OrderResult{BrokerOrderID: "1001", Status: exchange.OrderStatusFilled, ExecutedQty: 0.004, AvgFillPrice: 50000}, nil).Once()
+			if c.wantStop > 0 {
+				mockExchange.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+					return r.Type == exchange.OrderTypeStopMarket && r.StopPrice == c.wantStop
+				})).Return(exchange.OrderResult{BrokerOrderID: "1002", Status: exchange.OrderStatusNew}, nil).Once()
+			}
+			mockRepo.On("Create", mock.MatchedBy(func(s entities.Signal) bool {
+				o := s.Orders[0]
+				return o.StopLossPrice == float32(c.wantStop) && o.TakeProfitPrice == c.wantTP
+			})).Return(nil).Once()
+			mockAccountUseCase.On("DeductOrder", mock.Anything).Return(nil).Once()
+			if c.wantNotify {
+				mockNotifier.On("Send", mock.Anything, eventOfType(notifier.EventStrategyError)).Return(nil).Once()
+			}
+			mockNotifier.On("Send", mock.Anything, eventOfType(notifier.EventPositionOpened)).Return(nil).Once()
+
+			assert.NoError(t, signalUC.GenerateBuySignal(entry))
+			mockRepo.AssertExpectations(t)
+			mockExchange.AssertExpectations(t)
+			mockNotifier.AssertExpectations(t)
+			if c.wantStop == 0 {
+				mockExchange.AssertNotCalled(t, "PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+					return r.Type == exchange.OrderTypeStopMarket
+				}))
+			}
+		})
+	}
+}

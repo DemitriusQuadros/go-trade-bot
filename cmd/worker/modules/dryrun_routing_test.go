@@ -293,7 +293,7 @@ func TestWorkerDryRunCycle_SimulatedEntryAndPersistedStop(t *testing.T) {
 	assert.True(t, exchange.IsSimulatedOrderID(order.BrokerOrderID), order.BrokerOrderID)
 	assert.True(t, exchange.IsSimulatedOrderID(order.StopLossOrderID), order.StopLossOrderID)
 	assert.InDelta(t, 100.1, order.EntryPrice, 1e-3)         // ticker 100 + 0.1% slippage
-	assert.InDelta(t, 100.1*0.98, order.StopLossPrice, 1e-3) // stop_loss_pct 2 off the fill
+	assert.InDelta(t, 98.0, order.StopLossPrice, 1e-3) // the strategy's own stop price (100*0.98) wins over stop_loss_pct
 	assert.InDelta(t, 5.0, order.Quantity, 1e-3)             // 1000/2 orders / 100
 	assert.InDelta(t, float64(order.InvestedAmount)*0.001, order.EntryFee, 1e-3)
 	assert.Empty(t, s.real.placed)

@@ -8,6 +8,7 @@ import (
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/notifier"
+	"log"
 	"time"
 )
 
@@ -41,6 +42,10 @@ type EntrySignal struct {
 	// computation). No Phase 1 ported strategy sets this - the hook
 	// contract is honored for forward-compatibility with future strategies.
 	StopLossPrice *float64
+	// TakeProfitPrice, if non-nil, is the strategy's take-profit level. It is
+	// persisted on the order (only when above the fill price) and enforced
+	// by the engine each cycle, not by a resting exchange order.
+	TakeProfitPrice *float64
 	// PositionSizing, if non-nil, specifies pluggable position sizing (fixed amount or % of capital).
 	PositionSizing *PositionSizingConfig
 }
@@ -189,6 +194,14 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 	if stopLossPrice != nil {
 		slPrice = float32(*stopLossPrice)
 	}
+	var tpPrice float32
+	if e.TakeProfitPrice != nil {
+		if tp := *e.TakeProfitPrice; tp > fillPrice {
+			tpPrice = float32(tp)
+		} else {
+			log.Printf("[signal] %s/%s: take-profit %.8f is not above fill price %.8f - ignored", e.StrategyName, e.Symbol, tp, fillPrice)
+		}
+	}
 
 	signal := entities.Signal{
 		Symbol:     e.Symbol,
@@ -202,6 +215,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 				BrokerOrderID:   result.BrokerOrderID,
 				StopLossOrderID: stopLossOrderID,
 				StopLossPrice:   slPrice,
+				TakeProfitPrice: tpPrice,
 				EntryPrice:      float32(fillPrice),
 				ExitPrice:       0,
 				Quantity:        float32(filledQty),
@@ -254,11 +268,31 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 // the position as unprotected if both attempts fail. It never fails the
 // buy itself - the entry position is not rolled back.
 func (s SignalUseCase) submitStopLoss(ctx context.Context, e EntrySignal, ordinal int64, filledQty, fillPrice float64) (string, *float64) {
-	if e.StopLossPct <= 0 {
+	// A strategy-supplied stop price wins over stop_loss_pct (Spec 05's
+	// GoLong hook contract). It used to be ignored entirely - a script's
+	// `stop_loss = { price = ... }` placed no stop at all unless the
+	// strategy ALSO had stop_loss_pct configured. A long's stop must sit
+	// below the actual fill; a price at or above it (e.g. computed from a
+	// pre-slippage price) would trigger immediately, so it falls back to
+	// stop_loss_pct instead, and the operator is told.
+	stopPrice := 0.0
+	if e.StopLossPrice != nil {
+		if p := *e.StopLossPrice; p > 0 && p < fillPrice {
+			stopPrice = p
+		} else {
+			log.Printf("[signal] %s/%s: strategy stop price %.8f is not below fill price %.8f - using stop_loss_pct (%.4f%%) instead", e.StrategyName, e.Symbol, p, fillPrice, e.StopLossPct)
+			s.notify(ctx, s.errorEvent(e, fmt.Sprintf(
+				"strategy stop-loss price %.8f is not below the fill price %.8f for %s; falling back to stop_loss_pct", p, fillPrice, e.Symbol,
+			)))
+		}
+	}
+	if stopPrice == 0 && e.StopLossPct > 0 {
+		stopPrice = fillPrice * (1 - e.StopLossPct/100)
+	}
+	if stopPrice == 0 {
 		return "", nil
 	}
 
-	stopPrice := fillPrice * (1 - e.StopLossPct/100)
 	stopClientOrderID := fmt.Sprintf("gtb-%d-stop-%d", e.StrategyID, ordinal)
 
 	req := exchange.PlaceOrderRequest{
@@ -383,6 +417,7 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
 	openSignal.Orders[0].UpdatedAt = exitFilledAt
 	openSignal.Orders[0].IsClosing = true
+	openSignal.Orders[0].ExitReason = exitReason
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
 	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
 	openSignal.Orders[0].Profit = profit
@@ -443,6 +478,13 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 	openSignal.Orders[0].ExitFee = s.calculateExitFee(openSignal.Orders[0], exitPrice)
 	openSignal.Orders[0].UpdatedAt = exitFilledAt
 	openSignal.Orders[0].IsClosing = true
+	message := fmt.Sprintf("Position closed for %s via exchange stop-loss (reconciled on race)", e.Symbol)
+	exitReason := "stop_loss"
+	if e.ExitReason == ExitReasonSimulatedStopLoss {
+		message = fmt.Sprintf("Position closed for %s via simulated stop-loss (dryrun)", e.Symbol)
+		exitReason = ExitReasonSimulatedStopLoss
+	}
+	openSignal.Orders[0].ExitReason = exitReason
 	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
 	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
 	openSignal.Orders[0].Profit = profit
@@ -454,12 +496,6 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 		return err
 	}
 
-	message := fmt.Sprintf("Position closed for %s via exchange stop-loss (reconciled on race)", e.Symbol)
-	exitReason := "stop_loss"
-	if e.ExitReason == ExitReasonSimulatedStopLoss {
-		message = fmt.Sprintf("Position closed for %s via simulated stop-loss (dryrun)", e.Symbol)
-		exitReason = ExitReasonSimulatedStopLoss
-	}
 	s.notify(ctx, notifier.Event{
 		Type:       notifier.EventPositionClosed,
 		Timestamp:  time.Now(),

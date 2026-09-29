@@ -108,11 +108,18 @@ func (d *ReplayDriver) collectTradeLog(lastCandle exchange.Candle) ([]metrics_pr
 			if exitTime.IsZero() {
 				exitTime = s.UpdatedAt
 			}
-			exitReason := "manual"
-			if order.Profit > 0 {
-				exitReason = "take_profit"
-			} else if order.Profit < 0 {
-				exitReason = "stop_loss"
+			// The real reason is persisted on the order. Rows closed before
+			// that column existed fall back to the old guess from the profit
+			// sign, which labelled every profitable exit "take_profit" and
+			// every loss "stop_loss" regardless of what actually closed it.
+			exitReason := order.ExitReason
+			if exitReason == "" {
+				exitReason = "manual"
+				if order.Profit > 0 {
+					exitReason = "take_profit"
+				} else if order.Profit < 0 {
+					exitReason = "stop_loss"
+				}
 			}
 
 			tradeLog = append(tradeLog, metrics_provider.TradeLogEntry{
