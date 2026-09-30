@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+.vscode
+web/node_modules
+web/dist
+cmd/api/webui/dist
+reports
+*.log
+.tmpbin
