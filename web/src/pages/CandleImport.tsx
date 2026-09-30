@@ -22,6 +22,8 @@ import {
   usePatchImportSchedule,
   useDeleteImportSchedule,
 } from '@/hooks/queries';
+import { useAuth } from '@/context/AuthContext';
+import { PERMISSION_STRINGS } from '@/lib/permissions';
 import { CandleImportRequest, CandleImportSource, ImportSchedule } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -78,6 +80,10 @@ export function CandleImport() {
   const [source, setSource] = useState<CandleImportSource>('rest');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  // auth-02 §4: one-off imports need `backtest`; schedules are admin only.
+  const { can } = useAuth();
+  const canImport = can('backtest');
+  const canSchedule = can('admin');
 
   // Mutations
   const startImportMutation = useStartCandleImport();
@@ -124,6 +130,7 @@ export function CandleImport() {
 
   const handleStartImport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canImport) return;
     setImportError(null);
 
     if (symbols.length === 0) {
@@ -363,6 +370,11 @@ export function CandleImport() {
           )}
 
           <div className="flex justify-end pt-2">
+            {!canImport ? (
+              <p className="text-xs text-muted-foreground" data-testid="candle-import-no-permission">
+                Your account can't start candle imports.
+              </p>
+            ) : (
             <button
               type="submit"
               disabled={startImportMutation.isPending}
@@ -375,6 +387,7 @@ export function CandleImport() {
               )}
               <span>Start Import</span>
             </button>
+            )}
           </div>
         </form>
       </Card>
@@ -481,6 +494,7 @@ export function CandleImport() {
               Automated cron jobs syncing historical candles periodically in the background worker
             </p>
           </div>
+          {canSchedule && (
           <button
             type="button"
             onClick={() => setShowScheduleForm(!showScheduleForm)}
@@ -489,6 +503,7 @@ export function CandleImport() {
             <Plus className="w-3.5 h-3.5" />
             <span>New Schedule</span>
           </button>
+          )}
         </div>
 
         <div className="p-6 pt-0 space-y-4">
@@ -506,7 +521,7 @@ export function CandleImport() {
           )}
 
           {/* New Schedule Inline Form */}
-          {showScheduleForm && (
+          {showScheduleForm && canSchedule && (
             <form onSubmit={handleCreateSchedule} className="p-4 rounded-xl bg-background/70 border border-border space-y-4">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
                 Create Recurring Sync Schedule
@@ -642,11 +657,16 @@ export function CandleImport() {
                           {describeCronSpec(sched.cron_spec)}
                         </td>
                         <td>
-                          <label className="relative inline-flex items-center cursor-pointer">
+                          <label
+                            className={`relative inline-flex items-center ${canSchedule ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                            title={canSchedule ? undefined : PERMISSION_STRINGS.adminOnly}
+                          >
                             <input
                               type="checkbox"
                               checked={sched.enabled}
                               onChange={() => handleToggleSchedule(sched)}
+                              disabled={!canSchedule}
+                              aria-label={`Schedule ${sched.symbol} ${sched.timeframe} enabled`}
                               className="sr-only peer"
                             />
                             <div className="w-9 h-5 bg-secondary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -658,6 +678,7 @@ export function CandleImport() {
                             : 'Never'}
                         </td>
                         <td>
+                          {canSchedule && (
                           <button
                             type="button"
                             onClick={() => setDeleteTarget(sched)}
@@ -666,6 +687,7 @@ export function CandleImport() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                          )}
                         </td>
                       </tr>
                       {recentlyChangedIds.has(sched.id) && (

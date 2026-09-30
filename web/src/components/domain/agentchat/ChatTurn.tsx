@@ -50,11 +50,22 @@ export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDe
         <div role="status" className={`flex items-start gap-2 rounded border border-warning/40 bg-warning/15 text-foreground px-3 py-2 ${text}`}>
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
           <div>
-            <div className="font-semibold">{turn.agentName ?? 'This agent'} can't answer right now</div>
+            <div className="font-semibold">
+              {/* Over budget is the user's limit, not the agent's state. */}
+              {turn.blockedCode === 'user_budget_exceeded'
+                ? 'Your daily agent budget is used up'
+                : `${turn.agentName ?? 'This agent'} can't answer right now`}
+            </div>
             <div className="text-muted-foreground mt-0.5">{turn.blocked}</div>
-            <Link to="/agents" className="inline-block mt-1 text-primary hover:underline">
-              Open Agents
-            </Link>
+            {turn.blockedCode === 'user_budget_exceeded' ? (
+              <Link to="/profile" className="inline-block mt-1 text-primary hover:underline">
+                Open your profile
+              </Link>
+            ) : (
+              <Link to="/agents" className="inline-block mt-1 text-primary hover:underline">
+                Open Agents
+              </Link>
+            )}
           </div>
         </div>
       )}

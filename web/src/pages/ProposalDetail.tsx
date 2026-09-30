@@ -16,6 +16,7 @@ import {
 import { ApiError, api, apiErrorMessage } from '@/api/client';
 import { ForwardTestSide, ProposalDetail as ProposalDetailDTO, Strategy } from '@/api/types';
 import { useApproveProposal, useProposal, useRejectProposal, useStrategy } from '@/hooks/queries';
+import { useAuth } from '@/context/AuthContext';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -80,6 +81,7 @@ function ProposalView({ proposal: p, fetchedAt }: { proposal: ProposalDetailDTO;
   const { data: target, isLoading: targetLoading } = useStrategy(p.target_strategy_id);
   const { data: challenger } = useStrategy(p.challenger_strategy_id ?? 0);
   const evidence = useMemo(() => parseProposalEvidence(p.evidence), [p.evidence]);
+  const canDecide = useAuth().can('approve_proposals');
 
   const isLive = target?.mode === 'live';
   const isPending = p.status === 'pending';
@@ -125,6 +127,11 @@ function ProposalView({ proposal: p, fetchedAt }: { proposal: ProposalDetailDTO;
               <Timestamp iso={p.decided_at} />
             </Meta>
           )}
+          {p.decided_by && (
+            <Meta label="Decided by">
+              <span className="text-foreground" data-testid="proposal-decided-by">{p.decided_by}</span>
+            </Meta>
+          )}
           {p.applied_at && (
             <Meta label="Applied">
               <Timestamp iso={p.applied_at} />
@@ -150,8 +157,14 @@ function ProposalView({ proposal: p, fetchedAt }: { proposal: ProposalDetailDTO;
 
       <StatusPanel proposal={p} fetchedAt={fetchedAt} />
 
-      {isPending && (
+      {/* Approve/Reject need approve_proposals (auth-02 §4). */}
+      {isPending && canDecide && (
         <DecisionCard proposal={p} target={target} targetLoading={targetLoading} isLive={isLive} stale={stale} />
+      )}
+      {isPending && !canDecide && (
+        <div role="note" className="p-3 rounded-lg border border-border bg-secondary/40 text-xs text-muted-foreground">
+          Your account can't approve or reject proposals.
+        </div>
       )}
 
       {/* Evidence */}

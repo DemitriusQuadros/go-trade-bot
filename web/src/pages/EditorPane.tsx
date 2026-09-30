@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { EditorView } from '@codemirror/view';
 import { buildLuaDiagnostic } from '@/lib/luaLinting';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 import { useCreateStrategy, useUpdateStrategy } from '@/hooks/queries';
 import { StrategyStatus, StrategyCreateRequest, StrategyUpdateRequest } from '@/api/types';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
@@ -32,7 +33,16 @@ const MAX_WINDOW_CANDLES = 2000;
 export function EditorPane() {
   const navigate = useNavigate();
   const ctx = useOutletContext<WorkbenchContext>();
-  const { draft, setDraft, setEditorTrace, setActiveTraceSource, appendConsoleEntry } = ctx;
+  const { draft, setDraft, setEditorTrace, setActiveTraceSource, appendConsoleEntry, readOnly } = ctx;
+  // auth-02 §4: the live preview (fast-rerun) needs `backtest`; non-admins
+  // only create/save backtest drafts.
+  const { can } = useAuth();
+  const isAdmin = can('admin');
+  const canPreview = can('backtest');
+  const canPreviewRef = useRef(canPreview);
+  canPreviewRef.current = canPreview;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   const isEdit = draft.strategyId !== null;
   const createMutation = useCreateStrategy();
@@ -62,6 +72,7 @@ export function EditorPane() {
   }, []);
 
   const runPreviewNow = () => {
+    if (!canPreviewRef.current) return;
     abortRef.current?.abort(); // cancel any still-in-flight request from a prior keystroke
     const controller = new AbortController();
     abortRef.current = controller;
@@ -112,8 +123,8 @@ export function EditorPane() {
       .catch((err) => {
         ctx.setLoadingMoreHistory(false);
         if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
-        setPreviewError(err.message || 'Preview request failed');
-        appendConsoleEntry({ source: 'editor', kind: 'error', message: err.message || 'Preview request failed' });
+        setPreviewError(apiErrorMessage(err, 'Preview request failed'));
+        appendConsoleEntry({ source: 'editor', kind: 'error', message: apiErrorMessage(err, 'Preview request failed') });
       });
   };
 
@@ -215,6 +226,7 @@ export function EditorPane() {
 
   const saveStrategy = async (statusOverride?: StrategyStatus): Promise<number | null> => {
     setActionMessage(null);
+    if (readOnlyRef.current) return null;
     if (!draft.name.trim()) {
       setActionMessage({ type: 'error', text: 'Strategy name is required' });
       return null;
@@ -249,7 +261,8 @@ export function EditorPane() {
           description: draft.description.trim(),
           strategy_name: 'script',
           status: finalStatus,
-          mode: 'dryrun',
+          // Non-admins may only create backtest drafts (auth-01 §3).
+          mode: isAdmin ? 'dryrun' : 'backtest',
           monitored_symbols: draft.symbols,
           cycle: draft.cycleMinutes,
           configuration: config,
@@ -262,12 +275,20 @@ export function EditorPane() {
         return created.id;
       }
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: err.message || 'Failed to save strategy' });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to save strategy') });
       return null;
     }
   };
 
   const handleRunFullBacktest = async () => {
+    // Read-only: nothing to save - just open the Backtest tab.
+    if (readOnly) {
+      if (draft.strategyId) {
+        const sym = draft.previewSymbol || draft.symbols[0] || 'BTCUSDT';
+        navigate(`/strategies/${draft.strategyId}/edit/backtest?symbol=${encodeURIComponent(sym)}`);
+      }
+      return;
+    }
     const savedId = await saveStrategy('disabled');
     if (savedId) {
       const sym = draft.previewSymbol || draft.symbols[0] || 'BTCUSDT';
@@ -325,6 +346,7 @@ export function EditorPane() {
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          {canPreview && (!readOnly || isEdit) && (
           <button
             onClick={handleRunFullBacktest}
             disabled={createMutation.isPending || updateMutation.isPending}
@@ -332,9 +354,10 @@ export function EditorPane() {
             title="Save as draft and launch full historical backtest"
           >
             <Rocket className="w-3.5 h-3.5 text-accent-foreground" />
-            <span>Run Full Backtest</span>
+            <span>{readOnly ? 'Open Backtest' : 'Run Full Backtest'}</span>
           </button>
-          {isEdit ? (
+          )}
+          {readOnly ? null : isEdit ? (
             <button
               onClick={() => saveStrategy()}
               disabled={updateMutation.isPending}
@@ -347,7 +370,7 @@ export function EditorPane() {
           ) : (
             <>
               <button
-                onClick={() => saveStrategy('disabled')}
+                onClick={() => saveStrategy(isAdmin ? 'disabled' : undefined)}
                 disabled={createMutation.isPending}
                 title="Ctrl+S / ⌘S"
                 className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
@@ -355,6 +378,8 @@ export function EditorPane() {
                 <Save className="w-3.5 h-3.5" />
                 <span>Save as Draft</span>
               </button>
+              {/* Productive status is admin only (auth-01 §3). */}
+              {isAdmin && (
               <button
                 onClick={() => saveStrategy('productive')}
                 disabled={createMutation.isPending}
@@ -363,6 +388,7 @@ export function EditorPane() {
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Save & Enable</span>
               </button>
+              )}
             </>
           )}
         </div>
@@ -417,6 +443,8 @@ export function EditorPane() {
           setSymbolInput={setSymbolInput}
           onAddSymbol={handleAddSymbol}
           onRemoveSymbol={handleRemoveSymbol}
+          readOnly={readOnly}
+          draftOnlyModeStatus={!isAdmin}
         />
       </CollapsibleSection>
 
@@ -429,6 +457,7 @@ export function EditorPane() {
         className="flex-1 min-h-0"
         action={
           <>
+            {canPreview && (
             <button
               onClick={handleReRunNow}
               className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -437,6 +466,8 @@ export function EditorPane() {
               <RefreshCw className="w-3 h-3" />
               <span>Re-run now</span>
             </button>
+            )}
+            {!readOnly && (
             <button
               onClick={() => setDraft((prev) => ({ ...prev, source: DEFAULT_LUA_TEMPLATE }))}
               className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -445,6 +476,7 @@ export function EditorPane() {
               <RotateCcw className="w-3 h-3" />
               <span>Reset</span>
             </button>
+            )}
           </>
         }
       >
@@ -456,6 +488,7 @@ export function EditorPane() {
             editorViewRef.current = view;
           }}
           fill
+          readOnly={readOnly}
         />
       </CollapsibleSection>
     </div>

@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Agent } from '@/api/types';
-import { ApiError, apiErrorMessage } from '@/api/client';
+import { ApiError, apiErrorCode, apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 import { useAgents, useChatTranscript, useSendAgentMessage } from '@/hooks/queries';
 import { useEditorBridge } from '@/context/EditorBridgeContext';
 import { ChatContextKey, Turn, runToTurn, strategyContextKey, strategyIdOfKey } from '@/lib/chatTurn';
@@ -150,6 +151,9 @@ export function ChatSessionProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const sendMessage = useSendAgentMessage();
+  // Today's per-user spend lives on /auth/me (auth-02 §4) - re-read after
+  // every turn so the budget line under the composer stays current.
+  const { refresh: refreshMe } = useAuth();
   const sending = sendMessage.isPending;
   const [draft, setDraft] = useState('');
 
@@ -187,14 +191,23 @@ export function ChatSessionProvider({ children }: { children: React.ReactNode })
           }
         })
         .catch((err: unknown) => {
+          // 409: a paused/halted agent, or (auth-01 §6) this user's daily
+          // budget is used up - both render as the blocked-turn notice.
+          // auth-01 contract (reconciled): 409 {"error":"user_budget_exceeded","message":...}
           if (err instanceof ApiError && err.status === 409) {
-            updateTurn(turnId, { blocked: apiErrorMessage(err, 'This agent is paused.') });
+            updateTurn(turnId, {
+              blocked: apiErrorMessage(err, 'This agent is paused.'),
+              blockedCode: apiErrorCode(err) ?? undefined,
+            });
             return;
           }
-          updateTurn(turnId, { failed: err instanceof Error ? err.message : String(err) });
+          updateTurn(turnId, { failed: apiErrorMessage(err, err instanceof Error ? err.message : String(err)) });
+        })
+        .finally(() => {
+          void refreshMe();
         });
     },
-    [contextKey, liveByKey, selectedAgent, sendMessage, updateTurn],
+    [contextKey, liveByKey, selectedAgent, sendMessage, updateTurn, refreshMe],
   );
 
   const value = useMemo<ChatSession>(

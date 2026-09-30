@@ -12,6 +12,7 @@ import (
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/backtest"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -42,44 +43,52 @@ func NewBacktestHandler(u UseCase) *BacktestHandler {
 func (h *BacktestHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/backtest",
-			Action:  h.RunBacktest,
-			Method:  http.MethodPost,
+			Pattern:    "/backtest",
+			Action:     h.RunBacktest,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/backtest/walkforward",
-			Action:  h.RunWalkForward,
-			Method:  http.MethodPost,
+			Pattern:    "/backtest/walkforward",
+			Action:     h.RunWalkForward,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/backtest/{id:[0-9]+}",
-			Action:  h.GetByID,
-			Method:  http.MethodGet,
+			Pattern:    "/backtest/{id:[0-9]+}",
+			Action:     h.GetByID,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/backtest/{id:[0-9]+}",
-			Action:  h.DeleteBacktest,
-			Method:  http.MethodDelete,
+			Pattern:    "/backtest/{id:[0-9]+}",
+			Action:     h.DeleteBacktest,
+			Method:     http.MethodDelete,
+			Capability: authz.CapEditDrafts,
 		},
 		{
-			Pattern: "/backtest/{id:[0-9]+}/report",
-			Action:  h.GetReport,
-			Method:  http.MethodGet,
+			Pattern:    "/backtest/{id:[0-9]+}/report",
+			Action:     h.GetReport,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/backtest",
-			Action:  h.List,
-			Method:  http.MethodGet,
+			Pattern:    "/backtest",
+			Action:     h.List,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/backtest/{id:[0-9]+}/montecarlo",
-			Action:  h.RunMonteCarlo,
-			Method:  http.MethodPost,
+			Pattern:    "/backtest/{id:[0-9]+}/montecarlo",
+			Action:     h.RunMonteCarlo,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/backtest/{id:[0-9]+}/montecarlo",
-			Action:  h.GetMonteCarlo,
-			Method:  http.MethodGet,
+			Pattern:    "/backtest/{id:[0-9]+}/montecarlo",
+			Action:     h.GetMonteCarlo,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }
@@ -335,4 +344,3 @@ func parseBacktestID(w http.ResponseWriter, r *http.Request) (uint, bool) {
 	}
 	return uint(id), true
 }
-

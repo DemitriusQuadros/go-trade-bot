@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import { Play, Calendar, AlertCircle } from 'lucide-react';
 
@@ -82,7 +82,7 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
           });
       onLaunched(res.id);
     } catch (err: any) {
-      setError(err.message || 'Failed to execute backtest simulation');
+      setError(apiErrorMessage(err, 'Failed to execute backtest simulation'));
     } finally {
       setLaunching(false);
     }

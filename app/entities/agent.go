@@ -71,6 +71,10 @@ type AgentRun struct {
 	// (fix-02 B1). The run can still be "ok".
 	HitIterationCap bool
 
+	// UserID is the app user who started this chat run (auth-01 §6). Nil for
+	// unattended runs, service-token and legacy rows.
+	UserID *uint `gorm:"index"`
+
 	// Run outcome for chained triggers (agents-platform C-01 §4) - filled in
 	// memory by AgentUseCase.Run, never persisted: the reports the run wrote
 	// and how many notify calls succeeded. The agent:run processor uses them

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"go-trade-bot/app/entities"
 	agentrepo "go-trade-bot/app/repository/agent"
 	agentusecase "go-trade-bot/app/usecase/agent"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -53,6 +55,16 @@ type PersonaChat interface {
 	AgentNames(ctx context.Context) map[uint]string
 }
 
+// UserBudget is the per-user agent chat budget (auth-01 §6,
+// app/usecase/auth). Optional - nil means no per-user accounting.
+type UserBudget interface {
+	// CheckChatBudget returns a 409 user_budget_exceeded CustomError when
+	// the user's spend today reached their daily budget.
+	CheckChatBudget(ctx context.Context, p authz.Principal) error
+	// RecordChatUsage adds one run and its cost to the user's usage today.
+	RecordChatUsage(ctx context.Context, p authz.Principal, costUSD float64) error
+}
+
 const (
 	defaultListLimit = 20
 	// maxListLimit caps GET /agent/runs?limit= (Phase D-01 §1); larger
@@ -71,6 +83,7 @@ type AgentHandler struct {
 	useCase    UseCase
 	repository Repository
 	personas   PersonaChat
+	budget     UserBudget
 }
 
 func NewAgentHandler(u UseCase, r Repository) *AgentHandler {
@@ -81,6 +94,18 @@ func NewAgentHandler(u UseCase, r Repository) *AgentHandler {
 // (agent_id, 409 for a paused/halted agent, agent names on runs).
 func NewAgentHandlerWithPersonas(u UseCase, r Repository, p PersonaChat) *AgentHandler {
 	return &AgentHandler{useCase: u, repository: r, personas: p}
+}
+
+// NewAgentHandlerWithUsers is NewAgentHandlerWithPersonas plus the
+// per-user chat budget and usage accounting (auth-01 §6).
+func NewAgentHandlerWithUsers(u UseCase, r Repository, p PersonaChat, b UserBudget) *AgentHandler {
+	return &AgentHandler{useCase: u, repository: r, personas: p, budget: b}
+}
+
+// ownerFilter is the "this user's runs" filter for principal p:
+// service-token and legacy rows (user_id NULL) count as the admins'.
+func ownerFilter(p authz.Principal) *agentrepo.OwnerFilter {
+	return &agentrepo.OwnerFilter{UserID: p.UserID, IncludeUnowned: p.IsAdmin()}
 }
 
 func (h *AgentHandler) names(ctx context.Context) map[uint]string {
@@ -99,19 +124,22 @@ func writeJSONError(w http.ResponseWriter, status int, code, message string) {
 func (h *AgentHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/agent/runs",
-			Method:  http.MethodPost,
-			Action:  h.SendMessage,
+			Pattern:    "/agent/runs",
+			Method:     http.MethodPost,
+			Capability: authz.CapAgentChat,
+			Action:     h.SendMessage,
 		},
 		{
-			Pattern: "/agent/runs",
-			Method:  http.MethodGet,
-			Action:  h.ListRuns,
+			Pattern:    "/agent/runs",
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
+			Action:     h.ListRuns,
 		},
 		{
-			Pattern: "/agent/runs/{id:[0-9]+}",
-			Method:  http.MethodGet,
-			Action:  h.GetRun,
+			Pattern:    "/agent/runs/{id:[0-9]+}",
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
+			Action:     h.GetRun,
 		},
 	}
 }
@@ -276,6 +304,15 @@ func (h *AgentHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auth-01 §6: the acting user's daily budget is checked before the run.
+	principal, hasPrincipal := authz.FromContext(r.Context())
+	if hasPrincipal && h.budget != nil {
+		if err := h.budget.CheckChatBudget(r.Context(), principal); err != nil {
+			customerror.WriteJSON(w, err)
+			return
+		}
+	}
+
 	userInput := req.Input
 	// history defaults to whatever the client sent (today's behavior for a
 	// chat that isn't strategy-scoped yet). Once a strategy exists, memory
@@ -285,7 +322,18 @@ func (h *AgentHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if req.StrategyID != nil {
 		userInput = fmt.Sprintf("%s%d open in the workbench editor. Assume questions refer to it unless stated otherwise.]\n\n%s", strategyContextMarker, *req.StrategyID, req.Input)
 
-		if priorRuns, err := h.repository.ListRuns(r.Context(), historyLookbackLimit, req.StrategyID); err == nil {
+		var priorRuns []entities.AgentRun
+		var err error
+		if hasPrincipal {
+			// Chat transcripts are per user (auth-01 §6): replay only this
+			// user's own chat_ui runs for the strategy.
+			priorRuns, err = h.repository.ListRunsFiltered(r.Context(), agentrepo.RunFilter{
+				Limit: historyLookbackLimit, StrategyID: req.StrategyID, Triggers: []string{"chat_ui"}, Owner: ownerFilter(principal),
+			})
+		} else {
+			priorRuns, err = h.repository.ListRuns(r.Context(), historyLookbackLimit, req.StrategyID)
+		}
+		if err == nil {
 			history = historyFromPersistedRuns(priorRuns)
 		}
 		// A lookup failure here is not fatal to the turn itself - falling
@@ -299,7 +347,9 @@ func (h *AgentHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.useCase.RunToolLoop(r.Context(), "chat_ui", userInput, history, req.StrategyID)
+	// Agent tools act as system (auth-01 §3): the run gets no principal.
+	run, err := h.useCase.RunToolLoop(authz.WithoutUser(r.Context()), "chat_ui", userInput, history, req.StrategyID)
+	h.recordUsage(r.Context(), run)
 	if err != nil && run.ID == 0 {
 		// RunToolLoop only returns a zero-ID run alongside an error when it
 		// failed before ever persisting an AgentRun row (e.g. couldn't load
@@ -334,14 +384,23 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	run, err := h.personas.Run(ctx, agentusecase.RunRequest{
+	var userID *uint
+	if p, ok := authz.FromContext(ctx); ok {
+		userID = p.UserIDPtr()
+	}
+	// Agent tools act as system (auth-01 §3): the run gets no principal, so
+	// e.g. the strategy draft-only guard does not apply to tools (the agent
+	// write scope does).
+	run, err := h.personas.Run(authz.WithoutUser(ctx), agentusecase.RunRequest{
 		Agent:        agent,
 		Trigger:      "chat_ui",
 		UserInput:    userInput,
 		DisplayInput: req.Input,
 		History:      history,
 		StrategyID:   req.StrategyID,
+		UserID:       userID,
 	})
+	h.recordUsage(ctx, run)
 	if err != nil && run.ID == 0 {
 		customerror.WriteHTTPError(w, err)
 		return
@@ -351,12 +410,26 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(ToRunResponseWithNames(run, map[uint]string{agent.ID: agent.Name}))
 }
 
+// recordUsage adds a finished chat run's cost to the acting user's usage.
+func (h *AgentHandler) recordUsage(ctx context.Context, run entities.AgentRun) {
+	if h.budget == nil || run.ID == 0 {
+		return
+	}
+	if p, ok := authz.FromContext(ctx); ok {
+		if err := h.budget.RecordChatUsage(ctx, p, run.CostUSD); err != nil {
+			log.Printf("agent chat: recording user usage failed: %v", err)
+		}
+	}
+}
+
 // ListRuns implements GET /agent/runs (Frontend Specs 01/02, Phase D-01 §1):
 //   - limit: default 20, capped at 100;
 //   - strategy_id: a number, or "none" for runs without a strategy;
 //   - trigger: comma-separated AgentRun triggers (unknown -> 400 invalid_trigger);
 //   - agent_id: one persona's runs;
-//   - before_id: cursor, only runs with id < before_id.
+//   - before_id: cursor, only runs with id < before_id;
+//   - mine=true: only the requesting user's runs (auth-01 §6; service-token
+//     and legacy user_id NULL rows count as the admins').
 //
 // Always newest first ("id DESC").
 func (h *AgentHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
@@ -415,6 +488,12 @@ func (h *AgentHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.BeforeID = &id
+	}
+
+	if q.Get("mine") == "true" {
+		if p, ok := authz.FromContext(r.Context()); ok {
+			f.Owner = ownerFilter(p)
+		}
 	}
 
 	runs, err := h.repository.ListRunsFiltered(r.Context(), f)

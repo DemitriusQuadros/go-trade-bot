@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { setForbiddenHandler } from '@/api/client';
 import { ToastContainer, ToastMessage, ToastType } from '@/components/ui/Toast';
 
 // App-wide toast queue backing the (previously unused) ui/Toast container -
@@ -7,6 +8,8 @@ import { ToastContainer, ToastMessage, ToastType } from '@/components/ui/Toast';
 interface ToastApi {
   toast: (message: string, type?: ToastType) => void;
 }
+
+const DEDUPE_MS = 2000;
 
 const ToastContext = createContext<ToastApi | null>(null);
 
@@ -17,10 +20,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Identical toasts within DEDUPE_MS collapse into one: a 403 is toasted
+  // globally (below) and a page's own onError may toast the same message.
+  const recent = useRef(new Map<string, number>());
   const toast = useCallback((message: string, type: ToastType = 'success') => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const key = `${type}:${message}`;
+    const now = Date.now();
+    const last = recent.current.get(key);
+    if (last != null && now - last < DEDUPE_MS) return;
+    recent.current.set(key, now);
+    const id = `${now}-${Math.random().toString(36).slice(2)}`;
     setToasts((prev) => [...prev, { id, type, message }]);
   }, []);
+
+  // Any 403 on a mutation shows the backend's message (auth-02 §4) - the
+  // backend stays the source of truth even where the UI hid a control.
+  useEffect(() => {
+    setForbiddenHandler((message) => toast(message, 'error'));
+    return () => setForbiddenHandler(null);
+  }, [toast]);
 
   const value = useMemo(() => ({ toast }), [toast]);
 

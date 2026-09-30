@@ -59,7 +59,7 @@ func newProposalEnv(t *testing.T) *proposalEnv {
 
 	enq := &fakeApplyEnqueuer{}
 	uc := proposalusecase.NewUseCase(proposalrepo.NewGormRepository(db), strategy_repo.NewStrategyRepository(db), platform, enq)
-	router := NewServeMux([]Route{proposalshandler.NewProposalsHandler(uc)}, &configuration.Configuration{APIToken: testToken})
+	router := NewServeMux([]Route{proposalshandler.NewProposalsHandler(uc)}, &configuration.Configuration{APIToken: testToken}, nil)
 	return &proposalEnv{router: router, db: db, enqueuer: enq, champion: champion, agent: agent}
 }
 

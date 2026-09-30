@@ -6,6 +6,7 @@ import { useAddStrategyMemoryNote, useStrategyMemory } from '@/hooks/queries';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { MemoryKindBadge } from '@/components/domain/AgentBadges';
 import { formatRelative } from '@/lib/time';
+import { useAuth } from '@/context/AuthContext';
 
 // "Agent notes" (A-03 §9): the strategy's shared memory - journal entries,
 // findings and report references written by every agent, plus operator
@@ -16,6 +17,8 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
   const addNote = useAddStrategyMemoryNote(strategyId);
   const [draft, setDraft] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
+  // "Add note" needs `edit_drafts` (auth-02 §4); reading is for everyone.
+  const canNote = useAuth().can('edit_drafts');
 
   const entries = useMemo(() => data?.pages.flat() ?? [], [data]);
 
@@ -37,6 +40,7 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
       subtitle={entries.length ? `(${entries.length}${hasNextPage ? '+' : ''})` : undefined}
       defaultOpen={false}
     >
+      {canNote && (
       <form onSubmit={submit} className="flex items-center gap-2 mb-2">
         <input
           type="text"
@@ -56,6 +60,7 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
           Add note
         </button>
       </form>
+      )}
       {addError && (
         <div role="alert" className="mb-2 text-xs text-destructive bg-destructive/15 border border-destructive/40 rounded px-2 py-1.5">
           {addError}

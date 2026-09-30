@@ -10,6 +10,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/optimize"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 
 	"github.com/gorilla/mux"
@@ -39,24 +40,28 @@ func NewOptimizeHandler(u UseCase, w Worker) *OptimizeHandler {
 func (h *OptimizeHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/optimize",
-			Action:  h.Create,
-			Method:  http.MethodPost,
+			Pattern:    "/optimize",
+			Action:     h.Create,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/optimize/{id:[0-9]+}",
-			Action:  h.GetByID,
-			Method:  http.MethodGet,
+			Pattern:    "/optimize/{id:[0-9]+}",
+			Action:     h.GetByID,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/optimize/{id:[0-9]+}/results",
-			Action:  h.GetResults,
-			Method:  http.MethodGet,
+			Pattern:    "/optimize/{id:[0-9]+}/results",
+			Action:     h.GetResults,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/optimize",
-			Action:  h.List,
-			Method:  http.MethodGet,
+			Pattern:    "/optimize",
+			Action:     h.List,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

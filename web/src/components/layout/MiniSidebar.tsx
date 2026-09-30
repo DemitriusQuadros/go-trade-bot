@@ -13,7 +13,9 @@ import {
   Bot,
   FileText,
   GitPullRequest,
+  Users,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { usePendingProposalCount } from '@/hooks/queries';
 import { AgentKillSwitch } from '@/components/domain/AgentKillSwitch';
 
@@ -21,6 +23,8 @@ export function MiniSidebar() {
   const [expanded, setExpanded] = useState(false);
   // Polled every 60s; approve/reject invalidate it immediately (B-02 §2).
   const { data: pendingProposals = 0 } = usePendingProposalCount();
+  // Settings and Users are admin only (auth-02 §4).
+  const isAdmin = useAuth().can('admin');
 
   return (
     <aside
@@ -95,13 +99,16 @@ export function MiniSidebar() {
 
         <GroupLabel expanded={expanded}>Manage</GroupLabel>
         <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label="Candle Import" expanded={expanded} />
-        <NavItem
-          to="/settings"
-          icon={<Settings className="w-5 h-5" />}
-          label="Settings"
-          expanded={expanded}
-          dataWalkthrough="nav-settings"
-        />
+        {isAdmin && (
+          <NavItem
+            to="/settings"
+            icon={<Settings className="w-5 h-5" />}
+            label="Settings"
+            expanded={expanded}
+            dataWalkthrough="nav-settings"
+          />
+        )}
+        {isAdmin && <NavItem to="/users" icon={<Users className="w-5 h-5" />} label="Users" expanded={expanded} />}
         <NavItem
           to="/help"
           icon={<HelpCircle className="w-5 h-5" />}

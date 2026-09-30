@@ -9,6 +9,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/performancehistory"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 
 	"github.com/gorilla/mux"
@@ -29,9 +30,10 @@ func NewHandler(u UseCase) *Handler {
 func (h *Handler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/strategy/{id:[0-9]+}/performance/history",
-			Action:  h.GetHistory,
-			Method:  http.MethodGet,
+			Pattern:    "/strategy/{id:[0-9]+}/performance/history",
+			Action:     h.GetHistory,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

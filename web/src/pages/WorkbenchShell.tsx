@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { NavLink } from 'react-router-dom';
-import { useStrategy } from '@/hooks/queries';
+import { useCloneStrategyAsDraft, useStrategy } from '@/hooks/queries';
+import { apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { canEditStrategy } from '@/lib/permissions';
 import {
   Strategy,
   StrategyStatus,
@@ -29,6 +33,9 @@ import {
   ChartCandlestick,
   RefreshCw,
   GitBranch,
+  Lock,
+  Copy,
+  Loader2,
 } from 'lucide-react';
 
 // Editor tab content vs. the chart: which gets the screen. 'split' is the
@@ -219,6 +226,9 @@ export interface WorkbenchContext {
   setLoadingMoreHistory: (loading: boolean) => void;
   hasMoreHistory: boolean;
   setHasMoreHistory: (has: boolean) => void;
+  /** This user may not change this strategy (auth-02 §4): editor read-only,
+   * no Save buttons. */
+  readOnly: boolean;
 }
 
 interface WorkbenchShellProps {
@@ -239,20 +249,39 @@ const DEFAULT_DRAFT: ScriptEditorState = {
   previewSymbol: 'BTCUSDT',
 };
 
+// Workbench strings (kept together for the i18n pass).
+const WB_STRINGS = {
+  readOnlyDraftable:
+    'Read-only — only admins can change dryrun/live strategies. Clone it as a backtest draft to experiment.',
+  readOnlyNoEdit: "Read-only — your account can't edit strategies.",
+  clone: 'Clone as draft',
+  cloning: 'Cloning...',
+  cloned: (id: number) => `Draft #${id} created - you can edit and backtest it.`,
+};
+
 export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const strategyId = id ? Number(id) : null;
   const isEdit = mode === 'edit';
+  const { can } = useAuth();
+  const { toast } = useToast();
+  const cloneMutation = useCloneStrategyAsDraft();
 
   const { data: existingStrategy, isLoading: isStrategyLoading } = useStrategy(strategyId || 0);
+  // Read-only unless this user may change this strategy: admins always;
+  // edit_drafts users only for backtest-mode, non-productive drafts.
+  const readOnly = isEdit ? !!existingStrategy && !canEditStrategy(can, existingStrategy) : !can('edit_drafts');
   // Challenger banner (B-02 §4): a challenger is a dryrun clone an agent
   // iterates on; its champion is the (usually live) strategy it may one day
   // be promoted into. 0 disables the query for non-challengers.
   const championId = isEdit ? existingStrategy?.challenger_of_id ?? 0 : 0;
   const { data: champion } = useStrategy(championId);
 
-  const [draft, setDraft] = useState<ScriptEditorState>(DEFAULT_DRAFT);
+  // Non-admins can only create backtest drafts (auth-01 §3 draft guard).
+  const [draft, setDraft] = useState<ScriptEditorState>(() =>
+    can('admin') ? DEFAULT_DRAFT : { ...DEFAULT_DRAFT, mode: 'backtest', status: 'testing' },
+  );
   const [activeTraceSource, setActiveTraceSource] = useState<TraceSource>('editor');
   const [editorTrace, setEditorTrace] = useState<TraceRecord[]>([]);
   const [replTrace, setReplTrace] = useState<TraceRecord[]>([]);
@@ -397,8 +426,10 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       setLoadingMoreHistory,
       hasMoreHistory,
       setHasMoreHistory,
+      readOnly,
     }),
     [
+      readOnly,
       draft,
       activeTraceSource,
       editorTrace,
@@ -431,14 +462,37 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       currentSource: draft.source,
       applyScript: (source: string) => setDraft((prev) => ({ ...prev, source })),
       strategyId: strategyId ?? undefined,
+      readOnly,
     }),
-    [draft.source, setDraft, strategyId]
+    [draft.source, setDraft, strategyId, readOnly]
   );
   useRegisterEditorBridge(editorBridge);
 
   if (isEdit && isStrategyLoading) {
     return <LoadingScreen message={`Loading strategy #${strategyId}...`} />;
   }
+
+  const handleClone = () => {
+    if (!existingStrategy) return;
+    cloneMutation.mutate(
+      {
+        name: existingStrategy.name,
+        description: existingStrategy.description ?? '',
+        strategy_name: existingStrategy.strategy_name || 'script',
+        monitored_symbols: existingStrategy.monitored_symbols ?? [],
+        cycle: existingStrategy.cycle,
+        configuration: existingStrategy.configuration,
+        script_source: existingStrategy.script_source,
+      },
+      {
+        onSuccess: (created) => {
+          toast(WB_STRINGS.cloned(created.id));
+          navigate(`/strategies/${created.id}/edit`);
+        },
+        onError: (err) => toast(apiErrorMessage(err, 'Failed to clone the strategy'), 'error'),
+      },
+    );
+  };
 
   const tabBase = isEdit ? `/strategies/${strategyId}/edit` : '/strategies/new';
   const backtestDisabled = strategyId === null;
@@ -562,6 +616,29 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           </button>
         </div>
       </div>
+
+      {readOnly && isEdit && (
+        <div
+          role="note"
+          data-testid="workbench-readonly-banner"
+          className="mt-3 shrink-0 px-3 py-2 rounded-lg border border-warning/40 bg-warning/10 text-xs text-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-sans"
+        >
+          <Lock className="w-4 h-4 text-warning shrink-0" />
+          <span>{can('edit_drafts') ? WB_STRINGS.readOnlyDraftable : WB_STRINGS.readOnlyNoEdit}</span>
+          {can('edit_drafts') && (
+            <button
+              type="button"
+              onClick={handleClone}
+              disabled={cloneMutation.isPending || !existingStrategy}
+              data-testid="clone-as-draft-btn"
+              className="ml-auto bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1 font-semibold disabled:opacity-50 whitespace-nowrap"
+            >
+              {cloneMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+              {cloneMutation.isPending ? WB_STRINGS.cloning : WB_STRINGS.clone}
+            </button>
+          )}
+        </div>
+      )}
 
       {championId > 0 && (
         <div

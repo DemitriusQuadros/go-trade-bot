@@ -14,6 +14,7 @@ import (
 	"go-trade-bot/app/entities"
 	settingshandler "go-trade-bot/app/handler/web/settings"
 	usecase "go-trade-bot/app/usecase/agentplatform"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -42,11 +43,11 @@ func NewWebhookTargetsHandler(u UseCase) *Handler {
 // Handlers implements the Route interface.
 func (h *Handler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
-		{Pattern: "/webhook-targets", Method: http.MethodGet, Action: h.List},
-		{Pattern: "/webhook-targets", Method: http.MethodPost, Action: h.Create},
-		{Pattern: "/webhook-targets/{id:[0-9]+}", Method: http.MethodPut, Action: h.Update},
-		{Pattern: "/webhook-targets/{id:[0-9]+}", Method: http.MethodDelete, Action: h.Delete},
-		{Pattern: "/webhook-targets/{id:[0-9]+}/test", Method: http.MethodPost, Action: h.Test},
+		{Pattern: "/webhook-targets", Method: http.MethodGet, Action: h.List, Capability: authz.CapAdmin},
+		{Pattern: "/webhook-targets", Method: http.MethodPost, Action: h.Create, Capability: authz.CapAdmin},
+		{Pattern: "/webhook-targets/{id:[0-9]+}", Method: http.MethodPut, Action: h.Update, Capability: authz.CapAdmin},
+		{Pattern: "/webhook-targets/{id:[0-9]+}", Method: http.MethodDelete, Action: h.Delete, Capability: authz.CapAdmin},
+		{Pattern: "/webhook-targets/{id:[0-9]+}/test", Method: http.MethodPost, Action: h.Test, Capability: authz.CapAdmin},
 	}
 }
 

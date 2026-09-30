@@ -82,7 +82,7 @@ func newContractEnv(t *testing.T) *contractEnv {
 		agentreports.NewAgentReportsHandler(uc),
 		webhooktargets.NewWebhookTargetsHandler(uc),
 	}
-	router := NewServeMux(routes, &configuration.Configuration{APIToken: testToken})
+	router := NewServeMux(routes, &configuration.Configuration{APIToken: testToken}, nil)
 	return &contractEnv{router: router, db: db, enqueuer: enq, strategy: strat, platform: uc}
 }
 
@@ -302,7 +302,7 @@ func TestAgentsAPI_KillSwitchAndManualRun(t *testing.T) {
 }
 
 // A-02 AC#9: the HTML endpoint works with ?token= and sends the CSP.
-func TestAgentReportsAPI_HTMLWithTokenAndCSP(t *testing.T) {
+func TestAgentReportsAPI_HTMLWithBearerAndCSP(t *testing.T) {
 	e := newContractEnv(t)
 	var def entities.Agent
 	require.NoError(t, e.db.Where("is_default = ?", true).First(&def).Error)
@@ -311,7 +311,10 @@ func TestAgentReportsAPI_HTMLWithTokenAndCSP(t *testing.T) {
 		RenderedHTML: "<!DOCTYPE html>\n<html lang=\"en\">\n<head></head><body>report</body></html>", CreatedAt: time.Now()}
 	require.NoError(t, e.db.Create(&rep).Error)
 
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/agent-reports/%d/html?token=%s&theme=dark", rep.ID, testToken), nil)
+	// Auth-01: the ?token= query fallback is gone - iframes send the session
+	// cookie; scripts use the bearer header.
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/agent-reports/%d/html?theme=dark", rep.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -321,8 +324,8 @@ func TestAgentReportsAPI_HTMLWithTokenAndCSP(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `<html lang="en" class="dark">`)
 
 	unauth := httptest.NewRecorder()
-	e.router.ServeHTTP(unauth, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/agent-reports/%d/html", rep.ID), nil))
-	assert.Equal(t, http.StatusUnauthorized, unauth.Code)
+	e.router.ServeHTTP(unauth, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/agent-reports/%d/html?token=%s", rep.ID, testToken), nil))
+	assert.Equal(t, http.StatusUnauthorized, unauth.Code, "?token= is no longer accepted")
 
 	rec = e.do(t, http.MethodGet, fmt.Sprintf("/api/agent-reports?strategy_id=%d", e.strategy.ID), nil)
 	require.Equal(t, http.StatusOK, rec.Code)

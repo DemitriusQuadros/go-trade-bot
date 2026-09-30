@@ -16,6 +16,7 @@ import (
 	"go-trade-bot/app/entities"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	usecase "go-trade-bot/app/usecase/proposal"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -47,13 +48,13 @@ func NewProposalsHandler(u UseCase) *Handler {
 // patterns are numeric-only, so /proposals/pending-count never collides.
 func (h *Handler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
-		{Pattern: "/proposals", Method: http.MethodGet, Action: h.List},
-		{Pattern: "/proposals/pending-count", Method: http.MethodGet, Action: h.PendingCount},
-		{Pattern: "/proposals/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get},
-		{Pattern: "/proposals/{id:[0-9]+}/approve", Method: http.MethodPost, Action: h.Approve},
-		{Pattern: "/proposals/{id:[0-9]+}/reject", Method: http.MethodPost, Action: h.Reject},
-		{Pattern: "/deploy-gate", Method: http.MethodGet, Action: h.GetGate},
-		{Pattern: "/deploy-gate", Method: http.MethodPut, Action: h.PutGate},
+		{Pattern: "/proposals", Method: http.MethodGet, Action: h.List, Capability: authz.CapView},
+		{Pattern: "/proposals/pending-count", Method: http.MethodGet, Action: h.PendingCount, Capability: authz.CapView},
+		{Pattern: "/proposals/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get, Capability: authz.CapView},
+		{Pattern: "/proposals/{id:[0-9]+}/approve", Method: http.MethodPost, Action: h.Approve, Capability: authz.CapApproveProposals},
+		{Pattern: "/proposals/{id:[0-9]+}/reject", Method: http.MethodPost, Action: h.Reject, Capability: authz.CapApproveProposals},
+		{Pattern: "/deploy-gate", Method: http.MethodGet, Action: h.GetGate, Capability: authz.CapAdmin},
+		{Pattern: "/deploy-gate", Method: http.MethodPut, Action: h.PutGate, Capability: authz.CapAdmin},
 	}
 }
 
@@ -93,7 +94,11 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 	var ce *customerror.CustomError
 	if errors.As(err, &ce) {
-		writeErrorBody(w, ce.Code, errorCode(ce.Code), ce.Message)
+		code := ce.ErrorCode
+		if code == "" {
+			code = errorCode(ce.Code)
+		}
+		writeErrorBody(w, ce.Code, code, ce.Message)
 		return
 	}
 	writeErrorBody(w, http.StatusInternalServerError, "internal_error", err.Error())

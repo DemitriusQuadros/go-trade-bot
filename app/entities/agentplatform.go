@@ -129,11 +129,14 @@ type StrategyMemoryEntry struct {
 	ID            uint `gorm:"primaryKey"`
 	StrategyID    uint `gorm:"index"`
 	AuthorAgentID *uint
-	AgentRunID    *uint
-	Kind          MemoryKind
-	Content       string    `gorm:"type:text"`
-	RefID         *uint     // e.g. AgentReport.ID for report_ref
-	CreatedAt     time.Time `gorm:"index"`
+	// AuthorUserID is the app user who wrote an operator note (auth-01 §7);
+	// nil for agent entries and legacy operator notes.
+	AuthorUserID *uint
+	AgentRunID   *uint
+	Kind         MemoryKind
+	Content      string    `gorm:"type:text"`
+	RefID        *uint     // e.g. AgentReport.ID for report_ref
+	CreatedAt    time.Time `gorm:"index"`
 }
 
 // ReportSeverity is an AgentReport's severity.

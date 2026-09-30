@@ -49,7 +49,7 @@ func (r StrategyRepository) GetAll(ctx context.Context) ([]entities.Strategy, er
 // full-column Save would otherwise silently unlink a challenger from its
 // champion on every edit.
 func (r StrategyRepository) Update(ctx context.Context, strategy entities.Strategy) error {
-	return r.db.WithContext(ctx).Omit("CreatedAt", "ChallengerOfID", "CreatedByAgentID").Save(&strategy).Error
+	return r.db.WithContext(ctx).Omit("CreatedAt", "ChallengerOfID", "CreatedByAgentID", "CreatedByUserID").Save(&strategy).Error
 }
 
 // Delete removes a strategy and every row that references it, in one

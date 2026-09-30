@@ -8,6 +8,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/settings"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 )
 
@@ -30,14 +31,16 @@ func NewSettingsHandler(u UseCase) *SettingsHandler {
 func (h *SettingsHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/settings",
-			Action:  h.GetSettings,
-			Method:  http.MethodGet,
+			Pattern:    "/settings",
+			Action:     h.GetSettings,
+			Method:     http.MethodGet,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/settings",
-			Action:  h.PutSettings,
-			Method:  http.MethodPut,
+			Pattern:    "/settings",
+			Action:     h.PutSettings,
+			Method:     http.MethodPut,
+			Capability: authz.CapAdmin,
 		},
 	}
 }

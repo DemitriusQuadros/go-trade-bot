@@ -22,6 +22,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	proposalrepo "go-trade-bot/app/repository/proposal"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 )
 
@@ -69,6 +70,9 @@ type View struct {
 	Proposal           entities.StrategyChangeProposal
 	TargetStrategyName string
 	AgentName          string
+	// DecidedByName is the display name of the user who approved/rejected
+	// (auth-01 §7); empty when unknown or decided by the service token.
+	DecidedByName string
 	// Detail-only (live values at read time).
 	TargetHasOpenPosition          bool
 	TargetCurrentSourceMatchesBase bool
@@ -83,13 +87,53 @@ type ListFilter struct {
 	BeforeID   *uint
 }
 
+// UserNamer resolves app user display names (auth-01 §7 decided_by).
+type UserNamer interface {
+	UserNames(ctx context.Context) (map[uint]string, error)
+}
+
 // UseCase is the operator-facing proposals API (cmd/api).
 type UseCase struct {
 	repo       Repository
 	strategies StrategyReader
 	agents     AgentNamer
 	enqueuer   ApplyEnqueuer
+	users      UserNamer
 	now        func() time.Time
+}
+
+// SetUserNamer enables decided_by names (optional).
+func (u *UseCase) SetUserNamer(n UserNamer) { u.users = n }
+
+// decidedBy is the acting user's id for the audit column (nil for system
+// and the service token).
+func decidedBy(ctx context.Context) *uint {
+	if p, ok := authz.FromContext(ctx); ok {
+		return p.UserIDPtr()
+	}
+	return nil
+}
+
+// lazyUserNames loads user names at most once, on first use.
+func (u *UseCase) lazyUserNames(ctx context.Context) func() map[uint]string {
+	var cache map[uint]string
+	return func() map[uint]string {
+		if cache == nil {
+			cache = u.userNames(ctx)
+		}
+		return cache
+	}
+}
+
+func (u *UseCase) userNames(ctx context.Context) map[uint]string {
+	if u.users == nil {
+		return map[uint]string{}
+	}
+	names, err := u.users.UserNames(ctx)
+	if err != nil {
+		return map[uint]string{}
+	}
+	return names
 }
 
 // NewUseCase builds a UseCase.
@@ -118,8 +162,11 @@ func (u *UseCase) agentNames(ctx context.Context) map[uint]string {
 	return names
 }
 
-func (u *UseCase) view(ctx context.Context, p entities.StrategyChangeProposal, names map[uint]string, strategyNames map[uint]string) View {
+func (u *UseCase) view(ctx context.Context, p entities.StrategyChangeProposal, names map[uint]string, strategyNames map[uint]string, userNames func() map[uint]string) View {
 	v := View{Proposal: p, AgentName: names[p.AgentID]}
+	if p.DecidedByUserID != nil {
+		v.DecidedByName = userNames()[*p.DecidedByUserID]
+	}
 	if n, ok := strategyNames[p.TargetStrategyID]; ok {
 		v.TargetStrategyName = n
 	} else if s, err := u.strategies.GetByID(ctx, p.TargetStrategyID); err == nil {
@@ -137,9 +184,10 @@ func (u *UseCase) List(ctx context.Context, f ListFilter) ([]View, error) {
 	}
 	names := u.agentNames(ctx)
 	strategyNames := map[uint]string{}
+	users := u.lazyUserNames(ctx)
 	out := make([]View, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, u.view(ctx, p, names, strategyNames))
+		out = append(out, u.view(ctx, p, names, strategyNames, users))
 	}
 	return out, nil
 }
@@ -159,7 +207,7 @@ func (u *UseCase) Get(ctx context.Context, id uint) (View, error) {
 }
 
 func (u *UseCase) detail(ctx context.Context, p entities.StrategyChangeProposal) (View, error) {
-	v := u.view(ctx, p, u.agentNames(ctx), map[uint]string{})
+	v := u.view(ctx, p, u.agentNames(ctx), map[uint]string{}, u.lazyUserNames(ctx))
 	target, err := u.strategies.GetByID(ctx, p.TargetStrategyID)
 	if err != nil {
 		// The target was deleted: nothing is open and nothing matches.
@@ -194,13 +242,13 @@ func (u *UseCase) Approve(ctx context.Context, id uint, note string) (View, erro
 	if target.ScriptSource != p.BaseSource {
 		reason := "the target strategy's code changed since the proposal was created"
 		if _, err := u.repo.TransitionStatus(ctx, id, []entities.ProposalStatus{entities.ProposalPending}, entities.ProposalSuperseded,
-			proposalrepo.Transition{DecidedAt: &now, DecisionNote: &note, FailureReason: &reason}); err != nil {
+			proposalrepo.Transition{DecidedAt: &now, DecidedByUserID: decidedBy(ctx), DecisionNote: &note, FailureReason: &reason}); err != nil {
 			return View{}, err
 		}
 		return View{}, &SupersededError{Message: fmt.Sprintf("proposal %d is superseded: %s", id, reason)}
 	}
 	ok, err := u.repo.TransitionStatus(ctx, id, []entities.ProposalStatus{entities.ProposalPending}, entities.ProposalApproved,
-		proposalrepo.Transition{DecidedAt: &now, DecisionNote: &note})
+		proposalrepo.Transition{DecidedAt: &now, DecidedByUserID: decidedBy(ctx), DecisionNote: &note})
 	if err != nil {
 		return View{}, err
 	}
@@ -231,7 +279,7 @@ func (u *UseCase) Reject(ctx context.Context, id uint, note string) (View, error
 	}
 	now := u.now()
 	ok, err := u.repo.TransitionStatus(ctx, id, []entities.ProposalStatus{entities.ProposalPending}, entities.ProposalRejected,
-		proposalrepo.Transition{DecidedAt: &now, DecisionNote: &note})
+		proposalrepo.Transition{DecidedAt: &now, DecidedByUserID: decidedBy(ctx), DecisionNote: &note})
 	if err != nil {
 		return View{}, err
 	}

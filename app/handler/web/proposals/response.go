@@ -25,8 +25,11 @@ type ListItem struct {
 	GatePassed           *bool      `json:"gate_passed"`
 	CreatedAt            time.Time  `json:"created_at"`
 	DecidedAt            *time.Time `json:"decided_at"`
-	AppliedAt            *time.Time `json:"applied_at"`
-	FailureReason        string     `json:"failure_reason"`
+	// DecidedBy is the deciding user's display name (auth-01 §7), null
+	// when unknown (legacy rows, service token).
+	DecidedBy     *string    `json:"decided_by"`
+	AppliedAt     *time.Time `json:"applied_at"`
+	FailureReason string     `json:"failure_reason"`
 }
 
 // Detail is GET /proposals/{id} (and the approve/reject response).
@@ -50,6 +53,13 @@ func utcPtr(t *time.Time) *time.Time {
 	return &u
 }
 
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // ToListItem maps a usecase view.
 func ToListItem(v usecase.View) ListItem {
 	p := v.Proposal
@@ -57,7 +67,7 @@ func ToListItem(v usecase.View) ListItem {
 		ID: p.ID, Kind: string(p.Kind), TargetStrategyID: p.TargetStrategyID, TargetStrategyName: v.TargetStrategyName,
 		ChallengerStrategyID: p.ChallengerStrategyID, AgentID: p.AgentID, AgentName: v.AgentName, Rationale: p.Rationale,
 		Status: string(p.Status), Early: p.IsEarly(), GatePassed: agentusecase.GatePassedFromEvidence(p.EvidenceJSON),
-		CreatedAt: p.CreatedAt.UTC(), DecidedAt: utcPtr(p.DecidedAt), AppliedAt: utcPtr(p.AppliedAt), FailureReason: p.FailureReason,
+		CreatedAt: p.CreatedAt.UTC(), DecidedAt: utcPtr(p.DecidedAt), DecidedBy: nonEmpty(v.DecidedByName), AppliedAt: utcPtr(p.AppliedAt), FailureReason: p.FailureReason,
 	}
 }
 

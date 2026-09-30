@@ -3,6 +3,7 @@ package configuration
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -18,8 +19,18 @@ type Configuration struct {
 	Testnet             bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
 	WebhookURL          string // outbound trade-event notification target (Spec 09)
 	APIBaseURL          string // base URL for cmd/api (Spec TUI-01, default http://localhost:8080)
-	APIToken            string // shared bearer token (Spec backend-01)
-	AllowInsecureNoAuth bool   // explicit opt-out for auth (Spec backend-01)
+	// APIToken, when set, is a service token: Authorization: Bearer
+	// <API_TOKEN> acts as a synthetic admin principal (auth-01 §4) for
+	// scripts and MCP-over-HTTP. Optional - users log in with sessions.
+	APIToken string
+	// AllowInsecureNoAuth disables authentication (every request acts as a
+	// synthetic admin). Only ever true when ALLOW_INSECURE_NO_AUTH=true is
+	// set explicitly; auth is ON by default (auth-01 §4).
+	AllowInsecureNoAuth bool
+	// Auth configures app accounts and sessions (auth-01 §4).
+	Auth AuthConfig
+	// CFAccess configures Cloudflare Access JWT verification (auth-01 §4).
+	CFAccess CFAccessConfig
 	// InternalBridgeAddr is the address cmd/worker's host-internal
 	// settings-apply listener binds to (Spec backend-05) - loopback-only by
 	// default (127.0.0.1), deliberately never the wildcard/all-interfaces
@@ -40,6 +51,34 @@ type Configuration struct {
 	Agent                Agent
 	AgentRuntime         AgentRuntime
 }
+
+// AuthConfig is the AUTH.* block (auth-01 §4). All keys optional.
+type AuthConfig struct {
+	// TrustProxy trusts X-Forwarded-Proto for the cookie's Secure flag
+	// (AUTH.TRUST_PROXY; set it behind cloudflared/a reverse proxy).
+	TrustProxy bool
+	// AllowedOrigins are extra Origin values (e.g. "https://bot.example.com")
+	// accepted by the CSRF check besides the request's own host
+	// (AUTH.ALLOWED_ORIGINS, a list or a comma-separated string).
+	AllowedOrigins []string
+	// BootstrapAdminUsername/Password create the first admin on startup when
+	// the users table is empty (AUTH.BOOTSTRAP_ADMIN_USERNAME/_PASSWORD).
+	// Remove the password from config after the first run.
+	BootstrapAdminUsername string
+	BootstrapAdminPassword string
+}
+
+// CFAccessConfig is the CF_ACCESS.* block (auth-01 §4). Verification is on
+// only when both are set.
+type CFAccessConfig struct {
+	// TeamDomain, e.g. "myteam.cloudflareaccess.com" (CF_ACCESS.TEAM_DOMAIN).
+	TeamDomain string
+	// AUD is the Access application audience tag (CF_ACCESS.AUD).
+	AUD string
+}
+
+// Enabled reports whether both values are set.
+func (c CFAccessConfig) Enabled() bool { return c.TeamDomain != "" && c.AUD != "" }
 
 // AgentRuntime configures the cmd/agent binary (agents-platform A-02 §1).
 // Read leniently with defaults - absent keys never block any binary.
@@ -205,10 +244,14 @@ func NewConfiguration() *Configuration {
 	if apiToken == "" {
 		apiToken = viper.GetString("API.TOKEN")
 	}
+	// Auth is ON by default (auth-01 §4): there is no "no token -> insecure"
+	// fallback any more. Only an explicit ALLOW_INSECURE_NO_AUTH=true
+	// disables it (cmd/api logs a loud warning on every startup).
 	allowInsecure := viper.GetBool("ALLOW_INSECURE_NO_AUTH")
-	if apiToken == "" && !allowInsecure {
-		// When neither token nor explicit flag is specified, default allowInsecure to true for local/dev fallback
-		allowInsecure = true
+	authCfg := loadAuth()
+	cfAccess := CFAccessConfig{
+		TeamDomain: strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(viper.GetString("CF_ACCESS.TEAM_DOMAIN")), "https://"), "/"),
+		AUD:        strings.TrimSpace(viper.GetString("CF_ACCESS.AUD")),
 	}
 
 	internalBridgeAddr := viper.GetString("INTERNAL_BRIDGE_ADDR")
@@ -261,6 +304,8 @@ func NewConfiguration() *Configuration {
 		APIBaseURL:           apiBaseURL,
 		APIToken:             apiToken,
 		AllowInsecureNoAuth:  allowInsecure,
+		Auth:                 authCfg,
+		CFAccess:             cfAccess,
 		InternalBridgeAddr:   internalBridgeAddr,
 		InternalBridgeSecret: internalBridgeSecret,
 		DryRun: DryRunConfig{
@@ -311,6 +356,34 @@ func (rt AgentRuntime) WithDefaults() AgentRuntime {
 		rt.SyncInterval = DefaultAgentSyncInterval
 	}
 	return rt
+}
+
+func loadAuth() AuthConfig {
+	var origins []string
+	switch v := viper.Get("AUTH.ALLOWED_ORIGINS").(type) {
+	case []any:
+		for _, o := range v {
+			if s, ok := o.(string); ok {
+				origins = append(origins, s)
+			}
+		}
+	case []string:
+		origins = v
+	case string:
+		origins = strings.Split(v, ",")
+	}
+	cleaned := make([]string, 0, len(origins))
+	for _, o := range origins {
+		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {
+			cleaned = append(cleaned, o)
+		}
+	}
+	return AuthConfig{
+		TrustProxy:             viper.GetBool("AUTH.TRUST_PROXY"),
+		AllowedOrigins:         cleaned,
+		BootstrapAdminUsername: strings.TrimSpace(viper.GetString("AUTH.BOOTSTRAP_ADMIN_USERNAME")),
+		BootstrapAdminPassword: viper.GetString("AUTH.BOOTSTRAP_ADMIN_PASSWORD"),
+	}
 }
 
 func setupViper() error {

@@ -1,13 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useStrategies } from '@/hooks/queries';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
+import { canEditStrategy, PERMISSION_STRINGS } from '@/lib/permissions';
 import { Strategy, StrategyMode, StrategyStatus } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LoadingScreen } from '@/components/ui/Spinner';
-import { DropdownMenu } from '@/components/ui/DropdownMenu';
+import { DropdownMenu, DropdownMenuItem } from '@/components/ui/DropdownMenu';
 import {
   Plus,
   Play,
@@ -27,6 +29,11 @@ export function Strategies() {
   const { data: strategies = [], refetch: refetchStrategies, isLoading: isStrategiesLoading } = useStrategies();
   const [modeFilter, setModeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  // Capability-aware (auth-02 §4): mode/status/enqueue are admin only;
+  // friends create/edit/delete backtest drafts only.
+  const { can } = useAuth();
+  const isAdmin = can('admin');
+  const canCreate = can('edit_drafts');
 
   // Confirm dialog state. confirmText was previously hardcoded to "Confirm
   // LIVE Mode" at the single shared <ConfirmDialog> render site below -
@@ -89,7 +96,7 @@ export function Strategies() {
       setActionMessage({ type: 'success', text: `Strategy #${strat.id} set to ${newStatus}` });
       refetchStrategies();
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: err.message || 'Failed to update status' });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update status') });
     }
   };
 
@@ -117,7 +124,7 @@ export function Strategies() {
       setActionMessage({ type: 'success', text: `Strategy #${id} switched to ${mode} mode` });
       refetchStrategies();
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: err.message || 'Failed to update mode' });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update mode') });
     }
   };
 
@@ -141,7 +148,7 @@ export function Strategies() {
           setActionMessage({ type: 'success', text: `Strategy #${strat.id} deleted` });
           refetchStrategies();
         } catch (err: any) {
-          setActionMessage({ type: 'error', text: err.message || 'Failed to delete strategy' });
+          setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to delete strategy') });
         }
       },
     });
@@ -152,7 +159,7 @@ export function Strategies() {
       await api.enqueueStrategy();
       setActionMessage({ type: 'success', text: 'All active strategies enqueued for tick evaluation' });
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: err.message || 'Failed to trigger enqueue' });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to trigger enqueue') });
     }
   };
 
@@ -174,6 +181,7 @@ export function Strategies() {
         </div>
 
         <div className="flex items-center gap-3">
+          {isAdmin && (
           <button
             onClick={handleEnqueue}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5"
@@ -182,7 +190,9 @@ export function Strategies() {
             <Send className="w-3.5 h-3.5 text-primary" />
             <span>Enqueue Tick</span>
           </button>
+          )}
 
+          {canCreate && (
           <button
             data-walkthrough="new-strategy-btn"
             onClick={() => navigate('/strategies/new')}
@@ -191,6 +201,7 @@ export function Strategies() {
             <Plus className="w-4 h-4" />
             <span>New Strategy</span>
           </button>
+          )}
         </div>
       </div>
 
@@ -274,12 +285,14 @@ export function Strategies() {
         {strategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-3">
             <p>No strategies configured.</p>
+            {canCreate && (
             <button
               onClick={() => navigate('/strategies/new')}
               className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-3 py-1.5 font-bold"
             >
               + New Strategy
             </button>
+            )}
           </div>
         ) : filteredStrategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg">
@@ -298,7 +311,37 @@ export function Strategies() {
                 </tr>
               </thead>
               <tbody>
-                {filteredStrategies.map((strat) => (
+                {filteredStrategies.map((strat) => {
+                  const editable = canEditStrategy(can, strat);
+                  const items: DropdownMenuItem[] = [
+                    {
+                      label: editable ? 'View / Edit Script' : 'View Script',
+                      icon: <Code2 />,
+                      onClick: () => navigate(`/strategies/${strat.id}/edit`),
+                    },
+                    {
+                      label: 'Agent History',
+                      icon: <Bot />,
+                      onClick: () => navigate(`/activity?tab=agent&strategy_id=${strat.id}`),
+                    },
+                  ];
+                  if (isAdmin) {
+                    items.push({
+                      label: strat.status === 'disabled' ? 'Enable' : 'Disable',
+                      icon: strat.status === 'disabled' ? <Play /> : <Pause />,
+                      onClick: () => handleToggleStatus(strat),
+                    });
+                  }
+                  if (editable) {
+                    items.push({
+                      label: 'Delete',
+                      icon: <Trash2 />,
+                      onClick: () => handleDelete(strat),
+                      destructive: true,
+                      separatorBefore: true,
+                    });
+                  }
+                  return (
                   <tr
                     key={strat.id}
                     onClick={() => navigate(`/strategies/${strat.id}/edit`)}
@@ -371,7 +414,10 @@ export function Strategies() {
                       <select
                         value={strat.mode}
                         onChange={(e) => handleModeChange(strat, e.target.value as StrategyMode)}
-                        className="bg-secondary border border-border text-xs rounded px-2 py-1 text-foreground focus:outline-none focus:border-primary font-medium"
+                        disabled={!isAdmin}
+                        title={isAdmin ? undefined : PERMISSION_STRINGS.adminOnly}
+                        aria-label={`Mode of ${strat.name}`}
+                        className="bg-secondary border border-border text-xs rounded px-2 py-1 text-foreground focus:outline-none focus:border-primary font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <option value="dryrun">Dry Run</option>
                         <option value="paper">Paper</option>
@@ -380,36 +426,11 @@ export function Strategies() {
                       </select>
                     </td>
                     <td className="px-2 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu
-                        label={`Actions for ${strat.name}`}
-                        items={[
-                          {
-                            label: 'View / Edit Script',
-                            icon: <Code2 />,
-                            onClick: () => navigate(`/strategies/${strat.id}/edit`),
-                          },
-                          {
-                            label: 'Agent History',
-                            icon: <Bot />,
-                            onClick: () => navigate(`/activity?tab=agent&strategy_id=${strat.id}`),
-                          },
-                          {
-                            label: strat.status === 'disabled' ? 'Enable' : 'Disable',
-                            icon: strat.status === 'disabled' ? <Play /> : <Pause />,
-                            onClick: () => handleToggleStatus(strat),
-                          },
-                          {
-                            label: 'Delete',
-                            icon: <Trash2 />,
-                            onClick: () => handleDelete(strat),
-                            destructive: true,
-                            separatorBefore: true,
-                          },
-                        ]}
-                      />
+                      <DropdownMenu label={`Actions for ${strat.name}`} items={items} />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

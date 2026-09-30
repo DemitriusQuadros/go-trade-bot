@@ -573,6 +573,8 @@ export interface AgentRunFilter {
   trigger?: string[];
   agent_id?: number;
   before_id?: number;
+  // auth-01 contract (reconciled): mine param - only the caller's own runs (§6).
+  mine?: boolean;
 }
 
 // AgentHistoryTurn is the request-side shape sent as `history` on every
@@ -893,6 +895,9 @@ export interface Proposal {
   early: boolean;
   created_at: string;
   decided_at: string | null;
+  // auth-01 contract (reconciled): display name of the user who approved/rejected (§7);
+  // absent on older backends and undecided proposals.
+  decided_by?: string | null;
   applied_at: string | null;
   failure_reason: string;
   // Deploy-gate outcome recorded in the evidence; null when no gate ran.
@@ -979,4 +984,77 @@ export interface DeployGateConfig {
   train_months: number;
   test_months: number;
   timeframe: string; // "" = the strategy's own cycle-derived timeframe
+}
+
+// --- Auth & users (auth-01 §1, §2, §4, §5) ---------------------------------
+
+export type UserRole = 'admin' | 'friend' | 'viewer';
+
+// `admin` implies every other capability (auth-01 §2).
+export type Capability = 'view' | 'backtest' | 'edit_drafts' | 'agent_chat' | 'approve_proposals' | 'admin';
+
+// GET /auth/me.
+// auth-01 contract (reconciled): field names per §4.
+export interface Me {
+  id: number;
+  username: string;
+  display_name: string;
+  email: string;
+  role: UserRole;
+  capabilities: Capability[];
+  locale: string;
+  daily_agent_budget_usd: number;
+  today_agent_cost_usd: number;
+}
+
+// What GET /auth/me resolved to.
+export type MeResult = { kind: 'user'; me: Me } | { kind: 'anonymous' } | { kind: 'setup_required' };
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  user: Me;
+}
+
+export interface UpdateMeRequest {
+  display_name?: string;
+  locale?: string;
+  current_password?: string;
+  new_password?: string;
+}
+
+// GET /users list item (never carries a password hash).
+// auth-01 contract (reconciled): field names per §1/§5.
+export interface User {
+  id: number;
+  username: string;
+  display_name: string;
+  email: string;
+  role: UserRole;
+  capabilities: Capability[];
+  daily_agent_budget_usd: number;
+  today_agent_cost_usd: number;
+  disabled: boolean;
+  last_login_at: string | null;
+  created_at?: string;
+}
+
+export interface UserCreateRequest {
+  username: string;
+  display_name: string;
+  email?: string;
+  role: UserRole;
+  password: string;
+}
+
+export interface UserUpdateRequest {
+  display_name: string;
+  email: string;
+  role: UserRole;
+  capabilities?: Capability[];
+  daily_agent_budget_usd: number;
+  disabled: boolean;
 }

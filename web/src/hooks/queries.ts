@@ -19,6 +19,10 @@ import {
   ProposalFilter,
   ProposalDecisionRequest,
   DeployGateConfig,
+  StrategyMode,
+  StrategyStatus,
+  UserCreateRequest,
+  UserUpdateRequest,
 } from '@/api/types';
 import { ChatContextKey, strategyIdOfKey } from '@/lib/chatTurn';
 import { planTurnCards } from '@/lib/toolRefs';
@@ -63,6 +67,8 @@ export const QUERY_KEYS = {
   proposal: (id: number) => ['proposals', 'detail', id],
   pendingProposalCount: ['proposals', 'pendingCount'],
   deployGate: ['deployGate'],
+  agentsKillSwitch: ['agentsKillSwitch'],
+  users: ['users'],
 };
 
 export function useAccount() {
@@ -159,6 +165,9 @@ export function useChatTranscript(contextKey: ChatContextKey) {
           // D-01 contract (reconciled): strategy_id=none selects runs with no strategy.
           strategy_id: strategyId ?? 'none',
           before_id: pageParam,
+          // Each user hydrates only their own chat turns (auth-02 §7).
+          // auth-01 contract (reconciled): mine param
+          mine: true,
         },
         { signal },
       ),
@@ -257,6 +266,37 @@ export function useDeleteStrategy() {
   });
 }
 
+// "Clone as draft" (auth-02 §4): a backtest/testing copy of any strategy
+// a non-admin can experiment on.
+export function useCloneStrategyAsDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (src: {
+      name: string;
+      description: string;
+      strategy_name: string;
+      monitored_symbols: string[];
+      cycle: number;
+      configuration: Record<string, unknown> | null;
+      script_source?: string;
+    }) =>
+      api.createStrategy({
+        name: `${src.name} (draft)`,
+        description: src.description,
+        strategy_name: src.strategy_name,
+        status: 'testing' as StrategyStatus,
+        mode: 'backtest' as StrategyMode,
+        monitored_symbols: src.monitored_symbols,
+        cycle: src.cycle,
+        configuration: src.configuration ?? {},
+        script_source: src.script_source,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.strategies });
+    },
+  });
+}
+
 export function usePatchStrategyStatus(id: number) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -302,11 +342,30 @@ export function useRuleSummaryPreview(ruleDefinition: unknown, enabled: boolean)
 }
 
 // Platform Settings
-export function usePlatformSettings() {
+// GET /settings is admin-only (auth-01 §3): pass enabled=false for others.
+export function usePlatformSettings(enabled = true) {
   return useQuery({
     queryKey: QUERY_KEYS.settings,
     queryFn: ({ signal }) => api.getSettings({ signal }),
+    enabled,
   });
+}
+
+// The global agents kill switch state for everyone: admins read it from
+// GET /settings; other users from a read-only endpoint. `paused` is
+// undefined when the state couldn't be read.
+export function useAgentsPausedState(isAdmin: boolean): { paused: boolean | undefined; isLoading: boolean } {
+  const settings = usePlatformSettings(isAdmin);
+  const fallback = useQuery({
+    queryKey: QUERY_KEYS.agentsKillSwitch,
+    // auth-01 contract (reconciled): GET /agents/kill-switch for non-admins (not in §3).
+    queryFn: ({ signal }) => api.getAgentsKillSwitch({ signal }),
+    enabled: !isAdmin,
+    retry: false,
+    refetchInterval: 60_000,
+  });
+  if (isAdmin) return { paused: settings.data?.agents_paused, isLoading: settings.isLoading };
+  return { paused: fallback.data?.agents_paused, isLoading: fallback.isLoading };
 }
 
 export function useUpdateSettings() {
@@ -527,10 +586,12 @@ export function useAgentReport(id: number) {
   });
 }
 
-export function useWebhookTargets() {
+// GET /webhook-targets is admin-only (auth-01 §3).
+export function useWebhookTargets(enabled = true) {
   return useQuery({
     queryKey: QUERY_KEYS.webhookTargets,
     queryFn: ({ signal }) => api.listWebhookTargets({ signal }),
+    enabled,
   });
 }
 
@@ -604,6 +665,7 @@ export function useSetAgentsPaused() {
     mutationFn: (paused: boolean) => api.setAgentsKillSwitch(paused),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.settings });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.agentsKillSwitch });
       qc.invalidateQueries({ queryKey: QUERY_KEYS.agents });
     },
   });
@@ -699,5 +761,45 @@ export function useUpdateDeployGateConfig() {
       if (saved) qc.setQueryData(QUERY_KEYS.deployGate, saved);
       qc.invalidateQueries({ queryKey: QUERY_KEYS.deployGate });
     },
+  });
+}
+
+// --- Users (auth-01 §5, admin) ---------------------------------------------
+
+export function useUsers(enabled = true) {
+  return useQuery({
+    queryKey: QUERY_KEYS.users,
+    queryFn: ({ signal }) => api.listUsers({ signal }),
+    enabled,
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UserCreateRequest) => api.createUser(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEYS.users }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, req }: { id: number; req: UserUpdateRequest }) => api.updateUser(id, req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEYS.users }),
+  });
+}
+
+export function useResetUserPassword() {
+  return useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) => api.resetUserPassword(id, password),
+  });
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteUser(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEYS.users }),
   });
 }

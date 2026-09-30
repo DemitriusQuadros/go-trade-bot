@@ -53,6 +53,18 @@ type RunFilter struct {
 	AgentID *uint
 	// BeforeID is a cursor: only runs with id < BeforeID.
 	BeforeID *uint
+	// Owner restricts to one user's runs (auth-01 §6 mine=true / per-user
+	// chat history); nil = everyone's.
+	Owner *OwnerFilter
+}
+
+// OwnerFilter selects runs by AgentRun.UserID. UserID 0 means "no user"
+// (service token / legacy rows, user_id IS NULL). IncludeUnowned also
+// returns user_id IS NULL rows - service-token and legacy rows count as
+// the admins'.
+type OwnerFilter struct {
+	UserID         uint
+	IncludeUnowned bool
 }
 
 type GormRepository struct {
@@ -152,6 +164,16 @@ func (r *GormRepository) ListRunsFiltered(ctx context.Context, f RunFilter) ([]e
 	}
 	if f.BeforeID != nil {
 		query = query.Where("id < ?", *f.BeforeID)
+	}
+	if o := f.Owner; o != nil {
+		switch {
+		case o.UserID == 0:
+			query = query.Where("user_id IS NULL")
+		case o.IncludeUnowned:
+			query = query.Where("(user_id = ? OR user_id IS NULL)", o.UserID)
+		default:
+			query = query.Where("user_id = ?", o.UserID)
+		}
 	}
 	var runs []entities.AgentRun
 	err := query.Find(&runs).Error

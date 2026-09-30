@@ -37,6 +37,7 @@ type Filter struct {
 type Transition struct {
 	DecisionNote    *string
 	DecidedAt       *time.Time
+	DecidedByUserID *uint // auth-01 §7
 	AppliedAt       *time.Time
 	FailureReason   *string
 	LastFlatCheckAt *time.Time
@@ -143,6 +144,9 @@ func (r *GormRepository) TransitionStatus(ctx context.Context, id uint, from []e
 	}
 	if t.DecidedAt != nil {
 		updates["decided_at"] = *t.DecidedAt
+	}
+	if t.DecidedByUserID != nil {
+		updates["decided_by_user_id"] = *t.DecidedByUserID
 	}
 	if t.AppliedAt != nil {
 		updates["applied_at"] = *t.AppliedAt

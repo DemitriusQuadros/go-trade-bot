@@ -8,7 +8,7 @@ import { CardAction, CardFallback, CardSkeleton, ChatCard, ChatDensity } from '.
 
 // A write_report result (Phase D-02 §6). "View inline" embeds the same
 // server-rendered HTML AgentReportDetail shows, with the same URL builder
-// (api.getAgentReportHtmlUrl: ?token= + ?theme=) and the same empty sandbox.
+// (api.getAgentReportHtmlUrl: session cookie + theme) and the same empty sandbox.
 export function ReportCard({ id, density }: { id: number; density: ChatDensity }) {
   const { data: report, isLoading, error } = useAgentReport(id);
   const isDark = useIsDarkMode();

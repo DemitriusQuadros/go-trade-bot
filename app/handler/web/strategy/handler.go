@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 	"io"
@@ -39,60 +40,71 @@ func NewStrategyHandler(u UseCase) *StrategyHandler {
 func (h *StrategyHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/strategy/{id}/versions",
-			Action:  h.GetVersions,
-			Method:  http.MethodGet,
+			Pattern:    "/strategy/{id}/versions",
+			Action:     h.GetVersions,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/strategy/{id}/versions/{versionId}/revert",
-			Action:  h.RevertVersion,
-			Method:  http.MethodPost,
+			Pattern:    "/strategy/{id}/versions/{versionId}/revert",
+			Action:     h.RevertVersion,
+			Method:     http.MethodPost,
+			Capability: authz.CapEditDrafts,
 		},
 
 		{
-			Pattern: "/strategy",
-			Action:  h.Post,
-			Method:  http.MethodPost,
+			Pattern:    "/strategy",
+			Action:     h.Post,
+			Method:     http.MethodPost,
+			Capability: authz.CapEditDrafts,
 		},
 		{
-			Pattern: "/strategy/enqueue",
-			Action:  h.Enqueue,
-			Method:  http.MethodPost,
+			Pattern:    "/strategy/enqueue",
+			Action:     h.Enqueue,
+			Method:     http.MethodPost,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/strategy/performance",
-			Action:  h.GetPerformance,
-			Method:  http.MethodGet,
+			Pattern:    "/strategy/performance",
+			Action:     h.GetPerformance,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/strategy",
-			Action:  h.GetAll,
-			Method:  http.MethodGet,
+			Pattern:    "/strategy",
+			Action:     h.GetAll,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/strategy/{id:[0-9]+}/status",
-			Action:  h.PatchStatus,
-			Method:  http.MethodPatch,
+			Pattern:    "/strategy/{id:[0-9]+}/status",
+			Action:     h.PatchStatus,
+			Method:     http.MethodPatch,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/strategy/{id:[0-9]+}/mode",
-			Action:  h.PatchMode,
-			Method:  http.MethodPatch,
+			Pattern:    "/strategy/{id:[0-9]+}/mode",
+			Action:     h.PatchMode,
+			Method:     http.MethodPatch,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/strategy/{id}",
-			Action:  h.Put,
-			Method:  http.MethodPut,
+			Pattern:    "/strategy/{id}",
+			Action:     h.Put,
+			Method:     http.MethodPut,
+			Capability: authz.CapEditDrafts,
 		},
 		{
-			Pattern: "/strategy/{id}",
-			Action:  h.GetById,
-			Method:  http.MethodGet,
+			Pattern:    "/strategy/{id}",
+			Action:     h.GetById,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/strategy/{id:[0-9]+}",
-			Action:  h.Delete,
-			Method:  http.MethodDelete,
+			Pattern:    "/strategy/{id:[0-9]+}",
+			Action:     h.Delete,
+			Method:     http.MethodDelete,
+			Capability: authz.CapEditDrafts,
 		},
 	}
 }
@@ -172,7 +184,9 @@ func (h *StrategyHandler) Put(w http.ResponseWriter, r *http.Request) {
 
 	err = h.UseCase.Update(r.Context(), strategy)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Carries the usecase's status (403 draft-only guard, 400
+		// validation); any other error is still a 500.
+		customerror.WriteHTTPError(w, err)
 		return
 	}
 
@@ -312,7 +326,7 @@ func (h *StrategyHandler) RevertVersion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := h.UseCase.RevertScriptVersion(r.Context(), uint(id), uint(versionId)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		customerror.WriteHTTPError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

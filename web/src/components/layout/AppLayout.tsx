@@ -12,12 +12,12 @@ import {
   GitPullRequest,
   LineChart,
   ListChecks,
-  LogOut,
   Moon,
   Settings,
   Sun,
 } from 'lucide-react';
-import { clearToken } from '@/api/client';
+import { UserMenu } from './UserMenu';
+import { useAuth } from '@/context/AuthContext';
 import { PlatformSettings } from '@/api/types';
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/DropdownMenu';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -157,10 +157,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const bridge = useEditorBridge();
   const agentMode = location.pathname === AGENT_MODE_PATH;
   const [dockOpen, setDockOpen] = usePersistedOpen(AGENT_DOCK_OPEN_KEY, false);
-  const handleLogout = () => {
-    clearToken();
-    window.location.reload();
-  };
+  // Monitoring dropdown: admin only (auth-02 §4) - it reads GET /settings.
+  const isAdmin = useAuth().can('admin');
 
   useEffect(() => {
     if (agentMode) return;
@@ -229,6 +227,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
+              <UserMenu />
             </div>
           </div>
         </header>
@@ -248,7 +247,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="mr-auto">
               <ModeToggle agentMode={false} onAgent={goAgent} onCode={goCode} />
             </div>
-            <MonitoringMenu />
+            {isAdmin && <MonitoringMenu />}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
@@ -257,14 +256,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button
-              onClick={handleLogout}
-              className={HEADER_BUTTON}
-              title="Disconnect and clear token"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
+            <UserMenu />
           </div>
         </header>
         {/* min-w-0: a flex item's default min-width is auto (its content's

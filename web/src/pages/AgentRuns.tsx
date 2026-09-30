@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Play, RefreshCw } from 'lucide-react';
 import { apiErrorMessage } from '@/api/client';
-import { useAgent, useAgentRunsForAgent, usePlatformSettings } from '@/hooks/queries';
+import { useAgent, useAgentRunsForAgent, useAgentsPausedState } from '@/hooks/queries';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { AgentRunsTable } from '@/components/domain/AgentRunsTable';
@@ -17,14 +18,16 @@ export function AgentRuns() {
   const { id } = useParams<{ id: string }>();
   const agentId = Number(id);
   const { data: agent } = useAgent(agentId);
-  const { data: settings } = usePlatformSettings();
+  // Run-now is admin only (auth-02 §4).
+  const isAdmin = useAuth().can('admin');
+  const globallyPaused = useAgentsPausedState(isAdmin).paused ?? false;
   const { data, isLoading, isFetching, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useAgentRunsForAgent(agentId);
   const [runOpen, setRunOpen] = useState(false);
 
   const runs = useMemo(() => data?.pages.flat() ?? [], [data]);
   const shownCost = runs.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0);
-  const canRun = !!agent && !agent.paused && !(settings?.agents_paused ?? false);
+  const canRun = !!agent && !agent.paused && !globallyPaused;
 
   if (isLoading) return <LoadingScreen message="Loading runs..." />;
 
@@ -50,8 +53,9 @@ export function AgentRuns() {
             to={`/agents/${agentId}`}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5"
           >
-            <Pencil className="w-3.5 h-3.5" /> Edit
+            <Pencil className="w-3.5 h-3.5" /> {isAdmin ? 'Edit' : 'View'}
           </Link>
+          {isAdmin && (
           <button
             onClick={() => setRunOpen(true)}
             disabled={!canRun}
@@ -60,6 +64,7 @@ export function AgentRuns() {
           >
             <Play className="w-3.5 h-3.5" /> Run now
           </button>
+          )}
         </div>
       </div>
 

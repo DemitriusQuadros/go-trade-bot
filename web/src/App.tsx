@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthGate } from '@/auth/AuthGate';
+import { RequireCapability } from '@/auth/RequireCapability';
+import { AuthProvider } from '@/context/AuthContext';
+import { Users } from '@/pages/Users';
+import { Profile } from '@/pages/Profile';
 import { Dashboard } from '@/pages/Dashboard';
 import { Strategies } from '@/pages/Strategies';
 import { WorkbenchShell } from '@/pages/WorkbenchShell';
@@ -52,6 +56,7 @@ export function App() {
   };
 
   return (
+    <AuthProvider>
     <AuthGate>
       <BrowserRouter>
       <EditorBridgeProvider>
@@ -64,7 +69,14 @@ export function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/strategies" element={<Strategies />} />
-            <Route path="/strategies/new" element={<WorkbenchShell mode="create" />}>
+            <Route
+              path="/strategies/new"
+              element={
+                <RequireCapability cap="edit_drafts">
+                  <WorkbenchShell mode="create" />
+                </RequireCapability>
+              }
+            >
               <Route index element={<EditorPane />} />
               <Route path="repl" element={<ReplPane />} />
               {/* backtest intentionally omitted for mode="create" - the shell's
@@ -91,7 +103,14 @@ export function App() {
                 cmd/api's SPA fallback serves index.html for them on a hard
                 refresh (every backend route lives under /api). */}
             <Route path="/agents" element={<Agents />} />
-            <Route path="/agents/new" element={<AgentEditor key="new" />} />
+            <Route
+              path="/agents/new"
+              element={
+                <RequireCapability cap="admin">
+                  <AgentEditor key="new" />
+                </RequireCapability>
+              }
+            />
             <Route path="/agents/reports" element={<AgentReports />} />
             <Route path="/agents/reports/:id" element={<AgentReportDetail />} />
             {/* Phase B (B-02): proposals inbox + detail. /agents/proposals/:id
@@ -112,7 +131,23 @@ export function App() {
                 sidebar and the Code-mode dock on this route. */}
             <Route path="/agent" element={<AgentMode />} />
             <Route path="/candles" element={<CandleImport />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route
+              path="/settings"
+              element={
+                <RequireCapability cap="admin">
+                  <Settings />
+                </RequireCapability>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <RequireCapability cap="admin">
+                  <Users />
+                </RequireCapability>
+              }
+            />
+            <Route path="/profile" element={<Profile />} />
             <Route
               path="/help"
               element={<Help onReplayWalkthrough={handleReplayWalkthrough} />}
@@ -130,5 +165,6 @@ export function App() {
       </EditorBridgeProvider>
       </BrowserRouter>
     </AuthGate>
+    </AuthProvider>
   );
 }

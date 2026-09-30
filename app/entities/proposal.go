@@ -69,7 +69,9 @@ type StrategyChangeProposal struct {
 	Status               ProposalStatus `gorm:"index"`
 	DecisionNote         string
 	DecidedAt            *time.Time
-	AppliedAt            *time.Time
+	// DecidedByUserID is the app user who approved/rejected (auth-01 §7).
+	DecidedByUserID *uint
+	AppliedAt       *time.Time
 	// LastFlatCheckAt is stamped by agent:apply_proposal every time it
 	// checks whether the target is flat (no open position).
 	LastFlatCheckAt *time.Time

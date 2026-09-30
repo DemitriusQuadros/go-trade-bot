@@ -103,6 +103,10 @@ func Migrate(db *gorm.DB) error {
 		// Agents platform Phase B-01.
 		&entities.StrategyChangeProposal{},
 		&entities.DeployGateConfig{},
+		// Auth-01 (multi-user) - keep in sync with cmd/api.
+		&entities.User{},
+		&entities.Session{},
+		&entities.UserUsage{},
 	); err != nil {
 		return err
 	}

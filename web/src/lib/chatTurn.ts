@@ -14,6 +14,8 @@ export interface Turn {
   // 409 from POST /agent/runs: the agent (or every agent, via the global
   // kill switch) is paused - rendered as a notice, not a failure.
   blocked?: string;
+  // Machine code of the 409 (e.g. `user_budget_exceeded`, auth-01 §6).
+  blockedCode?: string;
   // Loaded from GET /agent/runs (a previous session), not sent this session.
   hydrated?: boolean;
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"go-trade-bot/app/usecase/realtime"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 )
 
@@ -31,14 +32,16 @@ func NewRealtimeHandler(broadcaster Broadcaster, previewBroadcaster PreviewBroad
 func (h *RealtimeHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/stream/dashboard",
-			Action:  h.StreamDashboard,
-			Method:  http.MethodGet,
+			Pattern:    "/stream/dashboard",
+			Action:     h.StreamDashboard,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/stream/script-preview/{id}",
-			Action:  h.StreamPreview,
-			Method:  http.MethodGet,
+			Pattern:    "/stream/script-preview/{id}",
+			Action:     h.StreamPreview,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

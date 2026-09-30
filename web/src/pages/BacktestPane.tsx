@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 import { useBacktest } from '@/hooks/queries';
 import { MonteCarloSummary, DrawdownPoint } from '@/api/types';
 import { Card, CardHeader, MetricCard } from '@/components/ui/Card';
@@ -38,6 +39,8 @@ export function BacktestPane() {
   const [mcLoading, setMcLoading] = useState(false);
   const [mcError, setMcError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'analytics' | 'report'>('analytics');
+  // Launching backtests / Monte Carlo needs `backtest` (auth-02 §4).
+  const canBacktest = useAuth().can('backtest');
 
   useEffect(() => {
     setActiveTraceSource('backtest');
@@ -77,7 +80,7 @@ export function BacktestPane() {
       const res = await api.runMonteCarlo(numericRunId, 1000);
       setMonteCarlo(res);
     } catch (err: any) {
-      setMcError(err.message || 'Failed to compute Monte Carlo simulations');
+      setMcError(apiErrorMessage(err, 'Failed to compute Monte Carlo simulations'));
     } finally {
       setMcLoading(false);
     }
@@ -127,6 +130,13 @@ export function BacktestPane() {
       return (
         <div className="p-8 text-center text-xs text-muted-foreground">
           Save this strategy before running a backtest.
+        </div>
+      );
+    }
+    if (!canBacktest) {
+      return (
+        <div className="p-8 text-center text-xs text-muted-foreground" data-testid="backtest-no-permission">
+          Your account can't run backtests. Pick a past run from Backtest Runs to view it.
         </div>
       );
     }
@@ -280,6 +290,7 @@ export function BacktestPane() {
             subtitle="(1,000 iterations)"
             defaultOpen
             action={
+              canBacktest && (
               <button
                 onClick={handleRunMonteCarlo}
                 disabled={mcLoading}
@@ -288,6 +299,7 @@ export function BacktestPane() {
                 <Dices className="w-3.5 h-3.5 text-foreground" />
                 <span>{mcLoading ? 'Simulating...' : 'Run Monte Carlo'}</span>
               </button>
+              )
             }
           >
             {mcError && (

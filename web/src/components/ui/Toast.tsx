@@ -15,8 +15,9 @@ interface ToastProps {
 }
 
 export function ToastContainer({ toasts, onDismiss }: ToastProps) {
+  // bottom-24: clears the floating agent launcher (bottom-5, 56px, AgentDock).
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-24 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}

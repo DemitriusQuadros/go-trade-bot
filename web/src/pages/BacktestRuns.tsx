@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStrategies, useBacktests, useDeleteBacktest } from '@/hooks/queries';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { History, Trash2, ArrowRight } from 'lucide-react';
 
@@ -18,6 +19,8 @@ export function BacktestRuns() {
   const [strategyFilter, setStrategyFilter] = useState<string>('all');
   const { data: runs = [], isLoading } = useBacktests(strategyFilter === 'all' ? undefined : Number(strategyFilter));
   const deleteBacktest = useDeleteBacktest();
+  // DELETE /backtest/{id} needs edit_drafts (auth-01 §3).
+  const canDelete = useAuth().can('edit_drafts');
 
   const strategyMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -98,6 +101,7 @@ export function BacktestRuns() {
                         {isPositive ? '+' : ''}
                         {run.total_return_pct.toFixed(2)}%
                       </span>
+                      {canDelete && (
                       <button
                         type="button"
                         onClick={(e) => handleDeleteRun(e, run.id)}
@@ -106,6 +110,7 @@ export function BacktestRuns() {
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      )}
                     </div>
                   </div>
                   <div className="text-[11px] text-muted-foreground mb-1 truncate">

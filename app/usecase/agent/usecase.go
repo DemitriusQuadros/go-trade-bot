@@ -407,6 +407,9 @@ type RunRequest struct {
 	// ChainPath is every agent already in this chain, source-first (chain
 	// runs only, C-01 §4); trigger_agent refuses any agent in it.
 	ChainPath []uint
+	// UserID is the app user who started a chat run (auth-01 §6), recorded
+	// on AgentRun.UserID. Nil for unattended and service-token runs.
+	UserID *uint
 }
 
 // DefaultAgent returns the default "Copilot" persona. Without a Platform
@@ -506,6 +509,7 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 		StartedAt:    time.Now(),
 		ChainDepth:   req.ChainDepth,
 		ParentRunID:  req.ParentRunID,
+		UserID:       req.UserID,
 	}
 	if agent.ID != 0 {
 		id := agent.ID

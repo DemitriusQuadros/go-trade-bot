@@ -9,6 +9,8 @@ import { ApplyScriptDialog } from '@/components/domain/ApplyScriptDialog';
 import { ChatTranscript } from '@/components/domain/agentchat/ChatTranscript';
 import { ChatComposer } from '@/components/domain/agentchat/ChatComposer';
 import { ApplyTarget } from '@/components/domain/agentchat/types';
+import { ChatBudgetLine, ChatDisabledNotice } from '@/components/domain/agentchat/ChatAccess';
+import { useAuth } from '@/context/AuthContext';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 720;
@@ -34,6 +36,7 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
   const s = useChatSession();
   const navigate = useNavigate();
   const bridge = useEditorBridge();
+  const canChat = useAuth().can('agent_chat');
   const [storedWidth, setWidth, commitWidth] = usePersistedNumber(AGENT_DOCK_WIDTH_KEY, DEFAULT_WIDTH);
   const width = clampWidth(storedWidth);
   const [pendingApply, setPendingApply] = useState<string | null>(null);
@@ -97,7 +100,8 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
     );
   }
 
-  const applyTarget: ApplyTarget | undefined = bridge
+  // No "apply to editor" into a read-only workbench (auth-02 §4).
+  const applyTarget: ApplyTarget | undefined = bridge && !bridge.readOnly
     ? { strategyId: bridge.strategyId ?? s.strategyId, onApply: (source) => setPendingApply(source) }
     : undefined;
 
@@ -219,16 +223,25 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
         />
 
         <div className="p-2.5 border-t border-border shrink-0">
-          <ChatComposer
-            density="compact"
-            value={s.draft}
-            onChange={s.setDraft}
-            disabled={s.sending}
-            onSubmit={() => {
-              s.send(s.draft);
-              s.setDraft('');
-            }}
-          />
+          {canChat ? (
+            <>
+              <ChatComposer
+                density="compact"
+                value={s.draft}
+                onChange={s.setDraft}
+                disabled={s.sending}
+                onSubmit={() => {
+                  s.send(s.draft);
+                  s.setDraft('');
+                }}
+              />
+              <div className="mt-1 text-[10px] text-right">
+                <ChatBudgetLine />
+              </div>
+            </>
+          ) : (
+            <ChatDisabledNotice density="compact" />
+          )}
         </div>
       </div>
 

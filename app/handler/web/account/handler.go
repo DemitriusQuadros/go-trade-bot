@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 	"net/http"
 )
@@ -24,14 +25,16 @@ func NewAccountHandler(u UseCase) *AccountHandler {
 func (h *AccountHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/account",
-			Action:  h.Post,
-			Method:  http.MethodPost,
+			Pattern:    "/account",
+			Action:     h.Post,
+			Method:     http.MethodPost,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/account",
-			Action:  h.Get,
-			Method:  http.MethodGet,
+			Pattern:    "/account",
+			Action:     h.Get,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

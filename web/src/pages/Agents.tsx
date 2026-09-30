@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Play, Pause, History, Trash2, RefreshCw, X, Bot, PowerOff } from 'lucide-react';
 import { Agent } from '@/api/types';
 import { apiErrorMessage } from '@/api/client';
-import { useAgents, useDeleteAgent, usePauseAgent, usePlatformSettings } from '@/hooks/queries';
+import { useAgents, useAgentsPausedState, useDeleteAgent, usePauseAgent } from '@/hooks/queries';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DropdownMenu, DropdownMenuItem } from '@/components/ui/DropdownMenu';
@@ -34,8 +35,9 @@ function runtimeStatus(agent: Agent, globallyPaused: boolean): AgentRuntimeStatu
 export function Agents() {
   const navigate = useNavigate();
   const { data: agents = [], isLoading, isFetching, refetch, error } = useAgents();
-  const { data: settings } = usePlatformSettings();
-  const globallyPaused = settings?.agents_paused ?? false;
+  // Create / edit / delete / pause / run-now are admin only (auth-02 §4).
+  const isAdmin = useAuth().can('admin');
+  const globallyPaused = useAgentsPausedState(isAdmin).paused ?? false;
   const pauseAgent = usePauseAgent();
   const deleteAgent = useDeleteAgent();
   const { toast } = useToast();
@@ -78,6 +80,7 @@ export function Agents() {
             and daily budget. Agents never place orders and never modify live strategies.
           </p>
         </div>
+        {isAdmin && (
         <button
           onClick={() => navigate('/agents/new')}
           className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
@@ -85,13 +88,14 @@ export function Agents() {
           <Plus className="w-4 h-4" />
           <span>New Agent</span>
         </button>
+        )}
       </div>
 
       {globallyPaused && (
         <div className="p-3 rounded-lg border border-warning/40 bg-warning/15 text-xs text-foreground flex items-center gap-2">
           <PowerOff className="w-4 h-4 text-warning shrink-0" />
           <span>
-            The global kill switch is on - no agent runs start until it's turned back on from the sidebar footer.
+            The global kill switch is on - no agent runs start until it's turned back on (admins: sidebar footer).
           </span>
         </div>
       )}
@@ -133,12 +137,14 @@ export function Agents() {
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-3">
             <Bot className="w-8 h-8 mx-auto opacity-40" />
             <p>No agents configured yet.</p>
+            {isAdmin && (
             <button
               onClick={() => navigate('/agents/new')}
               className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-3 py-1.5 font-bold"
             >
               + New Agent
             </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
@@ -159,7 +165,12 @@ export function Agents() {
               <tbody>
                 {agents.map((agent) => {
                   const status = runtimeStatus(agent, globallyPaused);
-                  const items: DropdownMenuItem[] = [
+                  const items: DropdownMenuItem[] = !isAdmin
+                    ? [
+                        { label: 'View', icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
+                        { label: 'View runs', icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
+                      ]
+                    : [
                     { label: 'Edit', icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
                     {
                       label: 'Run now',
@@ -174,7 +185,7 @@ export function Agents() {
                     },
                     { label: 'View runs', icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
                   ];
-                  if (!agent.is_default) {
+                  if (isAdmin && !agent.is_default) {
                     items.push({
                       label: 'Delete',
                       icon: <Trash2 />,

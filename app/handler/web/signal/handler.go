@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 	"net/http"
 	"strconv"
@@ -31,19 +32,22 @@ func NewSignalHandler(u UseCase) *SignalHandler {
 func (h *SignalHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/signal/close/{id}",
-			Action:  h.Close,
-			Method:  http.MethodPost,
+			Pattern:    "/signal/close/{id}",
+			Action:     h.Close,
+			Method:     http.MethodPost,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/signal",
-			Action:  h.GetAll,
-			Method:  http.MethodGet,
+			Pattern:    "/signal",
+			Action:     h.GetAll,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/signal/{id}",
-			Action:  h.GetById,
-			Method:  http.MethodGet,
+			Pattern:    "/signal/{id}",
+			Action:     h.GetById,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

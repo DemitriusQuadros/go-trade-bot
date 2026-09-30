@@ -189,7 +189,19 @@ type MemoryEntryResponse struct {
 
 // ToMemoryEntryResponse maps an entry, resolving the author name.
 func ToMemoryEntryResponse(e entities.StrategyMemoryEntry, names map[uint]string) MemoryEntryResponse {
+	return ToMemoryEntryResponseWithUsers(e, names, nil)
+}
+
+// ToMemoryEntryResponseWithUsers also resolves operator notes' author to
+// the writing user's display name (auth-01 §7); legacy operator notes
+// (no AuthorUserID) keep "operator".
+func ToMemoryEntryResponseWithUsers(e entities.StrategyMemoryEntry, names map[uint]string, userNames map[uint]string) MemoryEntryResponse {
 	author := "operator"
+	if e.AuthorAgentID == nil && e.AuthorUserID != nil {
+		if n, ok := userNames[*e.AuthorUserID]; ok && n != "" {
+			author = n
+		}
+	}
 	if e.AuthorAgentID != nil {
 		if n, ok := names[*e.AuthorAgentID]; ok {
 			author = n

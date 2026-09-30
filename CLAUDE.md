@@ -57,10 +57,9 @@ There is no frontend test suite yet.
 
 ### Configuration
 Copy `config.example.yml` to `config.yml` and fill in credentials. The app reads `config.yml` from the
-working directory by default, or from the path in `CONFIG_PATH` env var. **`config.example.yml` is stale**
-— it only documents the original `BROKER`/`DB`/`REDIS`/`PROMETHEUS` keys and is missing everything added
-across Phases 1-4 and the web frontend pivot: `MODE`, `CONFIRM_LIVE`, `TESTNET`, `BROKER.TESTNET_KEY`/
-`TESTNET_SECRET`, `WEBHOOK_URL`, `DRY_RUN.{SLIPPAGE_PCT,FEE_PCT,FILL_DELAY}`, and `API_TOKEN` (auth). Check
+working directory by default, or from the path in `CONFIG_PATH` env var. `config.example.yml` was rewritten
+with the multi-user auth work and documents `MODE`, `CONFIRM_LIVE`, `TESTNET`, `DRY_RUN.*`, `API_TOKEN`, `AUTH.*`
+and `CF_ACCESS.*`; still check
 `internal/configuration/configuration.go` for the authoritative current list before configuring a new
 environment. It does now document the agent keys: `AGENT.{PROVIDER,ANTHROPIC_KEY,ANTHROPIC_MODEL,GEMINI_KEY,
 GEMINI_MODEL}`, `AGENT_RUNTIME.{CONCURRENCY (default 2), METRICS_PORT (default "9194"), SYNC_INTERVAL
@@ -77,9 +76,21 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
 ### Entry Points (`cmd/`)
 - **api** — REST API server (`gorilla/mux`), port 8080. Strategy/account/signal/backtest/optimize/
   performance-history CRUD, real order execution, and serves the embedded web frontend (`cmd/api/webui/`,
-  `go:embed`) with SPA fallback routing. Runs DB migrations on startup via GORM `AutoMigrate`. Every route
-  except `/metrics` and static asset serving requires `Authorization: Bearer <API_TOKEN>`
-  (`internal/middleware/auth_middleware.go`). Every handler-declared route is mounted under `/api`
+  `go:embed`) with SPA fallback routing. Runs DB migrations on startup via GORM `AutoMigrate`. **Multi-user
+  auth** (spec `docs/specs/multiuser/auth-01-backend.md`): users (`app/entities/user.go`, roles admin/friend/
+  viewer + per-user capabilities `view|backtest|edit_drafts|agent_chat|approve_proposals|admin`), bcrypt
+  passwords, HttpOnly `gtb_session` cookie sessions, `/api/auth/{login,logout,me}`, admin `/api/users*`.
+  Every `handler.Configuration` MUST set `Capability` - `NewServeMux` panics on an empty/unknown one; the
+  route→capability map is in the handlers themselves (`internal/authz`). Cookie-authenticated writes need
+  `X-Requested-With: gtb` or a same-host `Origin` (CSRF). `API_TOKEN` (optional) is a bearer service token
+  acting as admin; there is no `?token=` fallback any more. Auth is ON by default (`ALLOW_INSECURE_NO_AUTH`
+  only when explicitly true). First admin: `AUTH.BOOTSTRAP_ADMIN_{USERNAME,PASSWORD}` when the users table
+  is empty. Optional Cloudflare Access JWT check (`CF_ACCESS.{TEAM_DOMAIN,AUD}`, `internal/cfaccess`).
+  Non-admins can only create/change `backtest`-mode, non-productive strategies - enforced in
+  `app/usecase/strategy` from the request principal (no principal = system/agents = not guarded). Chat has a
+  per-user daily budget (`UserUsage`, 409 `user_budget_exceeded`) and per-user transcripts (`mine=true`,
+  per-user history replay). Deployment: `docs/deploy/cloudflare-tunnel.md` (expose only 8080). Every
+  handler-declared route is mounted under `/api`
   (`NewServeMux` in `cmd/api/main.go`, an `apiRouter := router.PathPrefix("/api").Subrouter()`) — this
   keeps the backend's path space completely disjoint from the SPA's client-side routes, several of which
   share a bare name with a backend route (`/backtest`, `/strategy`, `/settings`, ...). Before this, a full
@@ -389,7 +400,7 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
 - **`report/`** — HTML backtest report generation.
 - **`grpc/`** — `strategy.proto` + generated stubs for the `mlgrpc` strategy adapter.
 - **`configuration/`** — Viper-based config loader. Keys map to `config.yml`/env vars. See its source for
-  the authoritative current field list (config.example.yml is stale, see Commands above).
+  the authoritative current field list.
 - **`memcache/`** — Thread-safe in-memory key-value store, still used by the Grid strategy for cross-cycle
   state (injected via `Context.Config["_cache"]`, not a package-level global).
 - **`report/agentreport/`** — agent report renderer: typed blocks (`summary`, `callout`, `kpi_grid`,
@@ -414,8 +425,8 @@ to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `
 - **`metrics/`** — Prometheus counter/gauge/histogram wrapper (`MetricsCollector`). The worker's `/metrics`
   endpoint on `:9191` was, for a long time, silently unreachable (mounted the wrong routes) despite
   `prometheus.yml` scraping it — fixed, but worth knowing if metrics ever look mysteriously empty again.
-- **`middleware/`** — HTTP and Asynq middleware: config/metrics injection, and (new) `auth_middleware.go`
-  for the web frontend's bearer-token auth.
+- **`middleware/`** — HTTP and Asynq middleware: config/metrics injection, and `auth_middleware.go`
+  (session cookie / service bearer → `authz.Principal` in the request context, capability check, CSRF).
 
 ### Strategy Execution Loop
 1. Strategy saved via API → persisted to DB → immediately enqueued as an asynq task.
@@ -479,9 +490,9 @@ keep the two in sync when a tool's result format changes). `GET /agent/runs` als
 
 **Design system**: "Console Pro" (color tokens, typography, component conventions, chart/code-editor
 theming) — check existing components for conventions before adding or restyling any UI; the standalone
-design-system doc has been removed. Auth token lives in
-`localStorage`, attached as `Authorization: Bearer <token>` (query-param fallback for the SSE endpoint and
-the backtest HTML report iframe, since browsers can't attach custom headers to those requests).
+design-system doc has been removed. Auth is the same-origin session cookie (`context/AuthContext.tsx`,
+`can(cap)`; SSE and report iframes need no token); every request sends `X-Requested-With: gtb`. UI hides or
+disables what the user's capabilities don't allow, but the backend is the source of truth.
 
 **Known inconsistency, not yet resolved**: the frontend was originally built with a plain `fetch` wrapper,
 no React Query, and Recharts for charts (deliberate decisions at the time). A later, unreviewed "redesign"

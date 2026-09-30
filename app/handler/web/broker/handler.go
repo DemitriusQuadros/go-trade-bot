@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/exchange"
 	"go-trade-bot/internal/handler"
 	"net/http"
@@ -28,14 +29,16 @@ func NewBrokerHandler(e exchange.ExchangeClient) *BrokerHandler {
 func (h *BrokerHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/broker/prices",
-			Action:  h.ListPrices,
-			Method:  http.MethodGet,
+			Pattern:    "/broker/prices",
+			Action:     h.ListPrices,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/broker/klines",
-			Action:  h.ListKlines,
-			Method:  http.MethodGet,
+			Pattern:    "/broker/klines",
+			Action:     h.ListKlines,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 	}
 }

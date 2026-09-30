@@ -19,11 +19,13 @@ interface LuaScriptEditorProps {
   // Script/Split/Chart view modes, where this editor should stretch to use
   // whatever vertical space is available rather than stopping at 500px.
   fill?: boolean;
+  // auth-02 §4: a strategy this user can't change opens read-only.
+  readOnly?: boolean;
 }
 
 // The Lua source editor, deliberately separate from StrategyMetadataForm so
 // the two can be laid out, collapsed, and reasoned about independently.
-export function LuaScriptEditor({ source, onChange, diagnostics, onCreateEditor, fill = false }: LuaScriptEditorProps) {
+export function LuaScriptEditor({ source, onChange, diagnostics, onCreateEditor, fill = false, readOnly = false }: LuaScriptEditorProps) {
   const isDark = useIsDarkMode();
   return (
     <div className={fill ? 'h-full text-sm bg-background/95' : 'text-sm bg-background/95 -m-3'}>
@@ -32,6 +34,8 @@ export function LuaScriptEditor({ source, onChange, diagnostics, onCreateEditor,
         height={fill ? '100%' : '500px'}
         theme={isDark ? 'dark' : 'light'}
         onCreateEditor={onCreateEditor}
+        readOnly={readOnly}
+        editable={!readOnly}
         extensions={[
           StreamLanguage.define(lua),
           isDark ? luaEditorDarkTheme : luaEditorLightTheme,

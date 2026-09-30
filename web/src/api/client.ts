@@ -48,9 +48,30 @@ import { ScriptVersion,
   ProposalDecisionRequest,
   DeployGateConfig,
   PendingProposalCount,
+  Me,
+  MeResult,
+  LoginRequest,
+  LoginResponse,
+  UpdateMeRequest,
+  User,
+  UserCreateRequest,
+  UserUpdateRequest,
 } from './types';
 
-const TOKEN_STORAGE_KEY = 'gtb_api_token';
+// Migration hygiene (auth-02 §1): the shared-token login is gone - the session
+// now lives in the HttpOnly `gtb_session` cookie. Drop the old token once.
+try {
+  localStorage.removeItem('gtb_api_token');
+} catch {
+  /* storage unavailable - nothing to clean up */
+}
+
+// CSRF (auth-01 §4): every cookie-authenticated non-GET request must carry
+// this header; it is sent on every request so the rule never has to be
+// remembered per call site.
+// auth-01 contract (reconciled): header name/value `X-Requested-With: gtb`.
+const CSRF_HEADER = 'X-Requested-With';
+const CSRF_VALUE = 'gtb';
 
 // Every backend route lives under "/api" (see cmd/api/main.go's
 // NewServeMux) so it can never collide with an SPA client-side route of the
@@ -74,40 +95,50 @@ export class NetworkError extends Error {
   }
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_STORAGE_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-}
-
+// Session handlers, registered by AuthContext / the toast bridge:
+// - onUnauthorized: any 401 -> back to the login screen.
+// - onAccessRequired: 403 {"error":"access_required"} (Cloudflare Access
+//   session expired) -> full-page "reload to sign in" message.
+// - onForbidden: any other 403 on a mutation -> the backend's message in a
+//   toast (the backend is the source of truth for permissions).
 let onUnauthorized: (() => void) | null = null;
-export function setUnauthorizedHandler(fn: () => void): void {
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  opts?: { signal?: AbortSignal }
-): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+let onAccessRequired: (() => void) | null = null;
+export function setAccessRequiredHandler(fn: (() => void) | null): void {
+  onAccessRequired = fn;
+}
+
+let onForbidden: ((message: string) => void) | null = null;
+export function setForbiddenHandler(fn: ((message: string) => void) | null): void {
+  onForbidden = fn;
+}
+
+// auth-01 contract (reconciled): Cloudflare Access error code `access_required` (§4).
+export const ACCESS_REQUIRED_CODE = 'access_required';
+
+interface RequestOptions {
+  signal?: AbortSignal;
+  // Auth probes (/auth/me, /auth/login) handle 401 themselves - a wrong
+  // password must not bounce the login screen through the global handler.
+  skipUnauthorizedHandler?: boolean;
+}
+
+async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [CSRF_HEADER]: CSRF_VALUE,
+  };
 
   let res: Response;
   try {
     res = await fetch(`${API_PREFIX}${path}`, {
       method,
       headers,
+      // The session cookie (gtb_session) - same origin only.
+      credentials: 'same-origin',
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: opts?.signal,
     });
@@ -119,8 +150,18 @@ async function request<T>(
   }
 
   if (res.status === 401) {
-    onUnauthorized?.();
-    throw new ApiError(401, await res.text().catch(() => ''));
+    const text = await res.text().catch(() => '');
+    if (!opts?.skipUnauthorizedHandler) onUnauthorized?.();
+    throw new ApiError(401, text);
+  }
+  if (res.status === 403) {
+    const err = new ApiError(403, await res.text().catch(() => ''));
+    if (apiErrorCode(err) === ACCESS_REQUIRED_CODE) {
+      onAccessRequired?.();
+    } else if (method !== 'GET' && method !== 'HEAD') {
+      onForbidden?.(apiErrorMessage(err, 'You don\'t have permission to do that.'));
+    }
+    throw err;
   }
   if (!res.ok) {
     throw new ApiError(res.status, await res.text().catch(() => ''));
@@ -237,10 +278,9 @@ export const api = {
     api.post<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, { iterations }),
   getMonteCarlo: (runId: number, opts?: { signal?: AbortSignal }) =>
     api.get<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, opts),
-  getReportUrl: (runId: number) => {
-    const token = getToken();
-    return `${API_PREFIX}/backtest/${runId}/report${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-  },
+  // iframe / new-tab URL. The session cookie rides along (same origin), so
+  // no credential is ever put in the URL.
+  getReportUrl: (runId: number) => `${API_PREFIX}/backtest/${runId}/report`,
 
   // Optimization
   startOptimization: (req: CreateOptimizationRequest) =>
@@ -299,6 +339,8 @@ export const api = {
         trigger: filter.trigger?.length ? filter.trigger.join(',') : undefined,
         agent_id: filter.agent_id,
         before_id: filter.before_id,
+        // auth-01 contract (reconciled): mine param - `mine=true` filters to the caller's own runs (§6).
+        mine: filter.mine ? 'true' : undefined,
       })}`,
       opts,
     ),
@@ -338,14 +380,10 @@ export const api = {
     api.get<AgentReportSummary[]>(`/agent-reports${buildQuery({ ...filter })}`, opts),
   getAgentReport: (id: number, opts?: { signal?: AbortSignal }) =>
     api.get<AgentReport>(`/agent-reports/${id}`, opts),
-  // iframe src - browsers can't attach an Authorization header to an
-  // iframe request, so the token rides as ?token= (same pattern as
-  // getReportUrl above). theme makes the server-rendered report match the
-  // app's current light/dark mode.
-  getAgentReportHtmlUrl: (id: number, theme?: 'dark' | 'light') => {
-    const token = getToken();
-    return `${API_PREFIX}/agent-reports/${id}/html${buildQuery({ token: token ?? undefined, theme })}`;
-  },
+  // iframe src - authenticated by the same-origin session cookie. theme
+  // makes the server-rendered report match the app's light/dark mode.
+  getAgentReportHtmlUrl: (id: number, theme?: 'dark' | 'light') =>
+    `${API_PREFIX}/agent-reports/${id}/html${buildQuery({ theme })}`,
 
   // Webhook targets (agent notifications)
   listWebhookTargets: (opts?: { signal?: AbortSignal }) =>
@@ -393,7 +431,59 @@ export const api = {
     api.get<DeployGateConfig>('/deploy-gate', opts),
   updateDeployGateConfig: (req: DeployGateConfig) =>
     api.put<DeployGateConfig>('/deploy-gate', req),
+
+  // Read-only kill switch state for non-admins (GET /settings is admin-only).
+  // auth-01 contract (reconciled): GET /agents/kill-switch is not in the §3 route map -
+  // callers treat any error as "state unknown" and render nothing.
+  getAgentsKillSwitch: (opts?: { signal?: AbortSignal }) =>
+    api.get<{ agents_paused: boolean }>('/agents/kill-switch', opts),
+
+  // --- Auth (auth-01 §4) -----------------------------------------------
+  // GET /auth/me decides between the login screen and the app.
+  // auth-01 contract (reconciled): setup_required may come back as a 200 or a 401 body;
+  // both are handled. A 401 without it means "not signed in".
+  getMe: async (opts?: { signal?: AbortSignal }): Promise<MeResult> => {
+    try {
+      const body = await request<(Me & { setup_required?: boolean }) | null>('GET', '/auth/me', undefined, {
+        ...opts,
+        skipUnauthorizedHandler: true,
+      });
+      if (body?.setup_required) return { kind: 'setup_required' };
+      if (!body || typeof body.id !== 'number') return { kind: 'anonymous' };
+      return { kind: 'user', me: body };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return apiErrorBodyFlag(err, 'setup_required') ? { kind: 'setup_required' } : { kind: 'anonymous' };
+      }
+      throw err;
+    }
+  },
+  // auth-01 contract (reconciled): 200 {user} (§4); 401 invalid_credentials, 429 rate_limited.
+  login: (req: LoginRequest) =>
+    request<LoginResponse>('POST', '/auth/login', req, { skipUnauthorizedHandler: true }),
+  logout: () => request<void>('POST', '/auth/logout', undefined, { skipUnauthorizedHandler: true }),
+  // auth-01 contract (reconciled): PATCH /auth/me returns the updated `me` shape.
+  updateMe: (req: UpdateMeRequest) => api.patch<Me>('/auth/me', req),
+
+  // --- Users (auth-01 §5, admin) ------------------------------------------
+  // auth-01 contract (reconciled): list is a bare array; create/update return the user.
+  listUsers: (opts?: { signal?: AbortSignal }) => api.get<User[]>('/users', opts),
+  createUser: (req: UserCreateRequest) => api.post<User>('/users', req),
+  updateUser: (id: number, req: UserUpdateRequest) => api.put<User>(`/users/${id}`, req),
+  resetUserPassword: (id: number, password: string) =>
+    api.post<void>(`/users/${id}/reset-password`, { password }),
+  deleteUser: (id: number) => api.delete<void>(`/users/${id}`),
 };
+
+// True when a JSON error body carries `flag: true` (e.g. setup_required).
+function apiErrorBodyFlag(err: ApiError, flag: string): boolean {
+  try {
+    const parsed = JSON.parse(err.body ?? '') as Record<string, unknown>;
+    return parsed[flag] === true;
+  } catch {
+    return false;
+  }
+}
 
 // buildQuery renders "?a=1&b=x" from the defined (non-undefined, non-empty)
 // entries of params, or "" when there are none.

@@ -14,6 +14,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/agentplatform"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -40,9 +41,9 @@ func NewAgentReportsHandler(u UseCase) *Handler {
 // Handlers implements the Route interface.
 func (h *Handler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
-		{Pattern: "/agent-reports", Method: http.MethodGet, Action: h.List},
-		{Pattern: "/agent-reports/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get},
-		{Pattern: "/agent-reports/{id:[0-9]+}/html", Method: http.MethodGet, Action: h.HTML},
+		{Pattern: "/agent-reports", Method: http.MethodGet, Action: h.List, Capability: authz.CapView},
+		{Pattern: "/agent-reports/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get, Capability: authz.CapView},
+		{Pattern: "/agent-reports/{id:[0-9]+}/html", Method: http.MethodGet, Action: h.HTML, Capability: authz.CapView},
 	}
 }
 

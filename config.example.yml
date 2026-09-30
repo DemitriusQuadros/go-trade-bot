@@ -1,6 +1,9 @@
 BROKER:
   KEY: dummy
   SECRET: dummy
+  # Used only when TESTNET: true (paper mode) - never the production keys.
+  TESTNET_KEY: ""
+  TESTNET_SECRET: ""
 
 DB:
   HOST: localhost
@@ -15,6 +18,62 @@ REDIS:
 
 PROMETHEUS:
   ADDRESS: localhost:9090
+
+# Process-wide execution-mode ceiling: backtest | dryrun | paper | live.
+# Unset = dryrun (the safest tier). A strategy only trades live when BOTH its
+# own mode and this ceiling allow it.
+MODE: dryrun
+# Required (true) for cmd/worker to start with MODE: live. Leave false.
+CONFIRM_LIVE: false
+# true = the exchange adapter targets the Binance testnet (paper mode).
+# MODE: live refuses to start with TESTNET: true.
+TESTNET: false
+
+# Simulated fills for dryrun strategies.
+DRY_RUN:
+  SLIPPAGE_PCT: 0      # % applied to market fills and simulated stops (default 0)
+  FEE_PCT: 0.1         # % fee per fill (default 0.1)
+  FILL_DELAY: 0s       # default 0s
+
+# Outbound trade-event webhook (optional; empty = disabled).
+WEBHOOK_URL: ""
+
+# --- Authentication (auth-01) ------------------------------------------------
+# Auth is ON by default. Users sign in with a username + password and get an
+# HttpOnly session cookie (gtb_session, 30 days, sliding).
+AUTH:
+  # First run only: when the users table is empty, cmd/api creates this admin
+  # on startup. Remove BOOTSTRAP_ADMIN_PASSWORD after the first start.
+  BOOTSTRAP_ADMIN_USERNAME: ""
+  BOOTSTRAP_ADMIN_PASSWORD: ""   # >= 10 characters
+  # Trust X-Forwarded-Proto for the cookie's Secure flag. Set true behind
+  # cloudflared or any HTTPS reverse proxy.
+  TRUST_PROXY: false
+  # Extra Origin values accepted by the CSRF check besides the request's own
+  # host (the web UI also sends X-Requested-With: gtb).
+  ALLOWED_ORIGINS: []            # e.g. ["https://bot.example.com"]
+
+# Cloudflare Access (defense in depth, optional). When BOTH are set, every
+# request (API and web UI) must carry a valid Cf-Access-Jwt-Assertion header
+# or CF_Authorization cookie, otherwise 403 {"error":"access_required"}.
+# See docs/deploy/cloudflare-tunnel.md.
+CF_ACCESS:
+  TEAM_DOMAIN: ""   # e.g. myteam.cloudflareaccess.com
+  AUD: ""           # the Access application's audience (AUD) tag
+
+# Optional service token for scripts and MCP-over-HTTP:
+# "Authorization: Bearer <API_TOKEN>" acts as an admin ("service") principal.
+# The old ?token= query parameter is no longer accepted.
+API_TOKEN: ""
+
+# DANGER: disables authentication entirely - every request acts as an admin.
+# Only for a local machine that is never reachable from a network. cmd/api
+# logs a loud warning on every start when this is true.
+ALLOW_INSECURE_NO_AUTH: false
+
+# cmd/api -> cmd/worker loopback settings bridge.
+INTERNAL_BRIDGE_ADDR: 127.0.0.1:9193
+INTERNAL_BRIDGE_SECRET: ""
 
 # AI agent (model provider credentials). PROVIDER: anthropic | gemini.
 # Agent personas may override provider/model individually (Agents page).
@@ -32,5 +91,5 @@ AGENT_RUNTIME:
   SYNC_INTERVAL: 30s    # how often cron schedules are re-read from the DB
 
 # Base URL used in agent report deep links sent to webhooks
-# (<API_BASE_URL>/agents/reports/<id>).
+# (<API_BASE_URL>/agents/reports/<id>). Behind a tunnel: https://<your host>.
 API_BASE_URL: http://localhost:8080

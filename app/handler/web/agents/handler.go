@@ -15,6 +15,7 @@ import (
 	"go-trade-bot/app/entities"
 	agenthandler "go-trade-bot/app/handler/web/agent"
 	usecase "go-trade-bot/app/usecase/agentplatform"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
 
@@ -33,6 +34,7 @@ type UseCase interface {
 	ListRuns(ctx context.Context, agentID uint, limit int, beforeID *uint) ([]entities.AgentRun, entities.Agent, error)
 	Usage(ctx context.Context, agentID uint, days int) (usecase.UsageDay, []usecase.UsageDay, error)
 	SetKillSwitch(ctx context.Context, paused bool) (bool, error)
+	KillSwitch(ctx context.Context) (bool, error)
 	ListMemory(ctx context.Context, strategyID uint, kinds []string, limit int, beforeID *uint) ([]entities.StrategyMemoryEntry, error)
 	AddOperatorNote(ctx context.Context, strategyID uint, content string) (entities.StrategyMemoryEntry, error)
 	AgentNames(ctx context.Context) map[uint]string
@@ -54,19 +56,20 @@ func NewAgentsHandler(u UseCase) *Handler {
 // collides with /agents/{id}.
 func (h *Handler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
-		{Pattern: "/agents", Method: http.MethodGet, Action: h.List},
-		{Pattern: "/agents", Method: http.MethodPost, Action: h.Create},
-		{Pattern: "/agents/kill-switch", Method: http.MethodPut, Action: h.KillSwitch},
-		{Pattern: "/agents/market-symbols", Method: http.MethodGet, Action: h.MarketSymbols},
-		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get},
-		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodPut, Action: h.Update},
-		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodDelete, Action: h.Delete},
-		{Pattern: "/agents/{id:[0-9]+}/pause", Method: http.MethodPost, Action: h.Pause},
-		{Pattern: "/agents/{id:[0-9]+}/run", Method: http.MethodPost, Action: h.Run},
-		{Pattern: "/agents/{id:[0-9]+}/runs", Method: http.MethodGet, Action: h.Runs},
-		{Pattern: "/agents/{id:[0-9]+}/usage", Method: http.MethodGet, Action: h.Usage},
-		{Pattern: "/strategies/{id:[0-9]+}/memory", Method: http.MethodGet, Action: h.ListMemory},
-		{Pattern: "/strategies/{id:[0-9]+}/memory", Method: http.MethodPost, Action: h.AddMemory},
+		{Pattern: "/agents", Method: http.MethodGet, Action: h.List, Capability: authz.CapView},
+		{Pattern: "/agents", Method: http.MethodPost, Action: h.Create, Capability: authz.CapAdmin},
+		{Pattern: "/agents/kill-switch", Method: http.MethodGet, Action: h.GetKillSwitch, Capability: authz.CapView},
+		{Pattern: "/agents/kill-switch", Method: http.MethodPut, Action: h.KillSwitch, Capability: authz.CapAdmin},
+		{Pattern: "/agents/market-symbols", Method: http.MethodGet, Action: h.MarketSymbols, Capability: authz.CapView},
+		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodGet, Action: h.Get, Capability: authz.CapView},
+		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodPut, Action: h.Update, Capability: authz.CapAdmin},
+		{Pattern: "/agents/{id:[0-9]+}", Method: http.MethodDelete, Action: h.Delete, Capability: authz.CapAdmin},
+		{Pattern: "/agents/{id:[0-9]+}/pause", Method: http.MethodPost, Action: h.Pause, Capability: authz.CapAdmin},
+		{Pattern: "/agents/{id:[0-9]+}/run", Method: http.MethodPost, Action: h.Run, Capability: authz.CapAdmin},
+		{Pattern: "/agents/{id:[0-9]+}/runs", Method: http.MethodGet, Action: h.Runs, Capability: authz.CapView},
+		{Pattern: "/agents/{id:[0-9]+}/usage", Method: http.MethodGet, Action: h.Usage, Capability: authz.CapView},
+		{Pattern: "/strategies/{id:[0-9]+}/memory", Method: http.MethodGet, Action: h.ListMemory, Capability: authz.CapView},
+		{Pattern: "/strategies/{id:[0-9]+}/memory", Method: http.MethodPost, Action: h.AddMemory, Capability: authz.CapEditDrafts},
 	}
 }
 
@@ -83,6 +86,10 @@ func WriteError(w http.ResponseWriter, err error) {
 	}
 	var ce *customerror.CustomError
 	if errors.As(err, &ce) {
+		if ce.ErrorCode != "" {
+			writeJSON(w, ce.Code, map[string]string{"error": ce.ErrorCode, "message": ce.Message})
+			return
+		}
 		status, msg = ce.Code, ce.Message
 	}
 	writeErrorBody(w, status, msg)
@@ -356,6 +363,18 @@ func (h *Handler) KillSwitch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, killSwitchResponse{AgentsPaused: paused})
 }
 
+// GetKillSwitch is GET /agents/kill-switch -> {"agents_paused": bool}
+// (capability view, so non-admins - who can't read GET /settings - can
+// still show the state read-only).
+func (h *Handler) GetKillSwitch(w http.ResponseWriter, r *http.Request) {
+	paused, err := h.useCase.KillSwitch(r.Context())
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, killSwitchResponse{AgentsPaused: paused})
+}
+
 // --- strategy memory ---------------------------------------------------------
 
 func (h *Handler) ListMemory(w http.ResponseWriter, r *http.Request) {
@@ -388,9 +407,10 @@ func (h *Handler) ListMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := h.useCase.AgentNames(r.Context())
+	users := h.userNames(r.Context())
 	out := make([]MemoryEntryResponse, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, ToMemoryEntryResponse(e, names))
+		out = append(out, ToMemoryEntryResponseWithUsers(e, names, users))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -415,5 +435,17 @@ func (h *Handler) AddMemory(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, ToMemoryEntryResponse(entry, nil))
+	writeJSON(w, http.StatusCreated, ToMemoryEntryResponseWithUsers(entry, nil, h.userNames(r.Context())))
+}
+
+// userNamer is optionally implemented by the usecase (auth-01 §7).
+type userNamer interface {
+	UserNames(ctx context.Context) map[uint]string
+}
+
+func (h *Handler) userNames(ctx context.Context) map[uint]string {
+	if n, ok := h.useCase.(userNamer); ok {
+		return n.UserNames(ctx)
+	}
+	return nil
 }

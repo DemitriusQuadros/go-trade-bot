@@ -27,6 +27,8 @@ import { AgentStatusBadge, ProposalStatusBadge } from '@/components/domain/Agent
 import { AgentNotesPanel } from '@/components/domain/AgentNotesPanel';
 import { ChatTranscript } from '@/components/domain/agentchat/ChatTranscript';
 import { ChatComposer, ChatComposerHandle } from '@/components/domain/agentchat/ChatComposer';
+import { ChatBudgetLine, ChatDisabledNotice } from '@/components/domain/agentchat/ChatAccess';
+import { useAuth } from '@/context/AuthContext';
 
 const STRATEGY_PROMPTS = [
   'Backtest this over the last 6 months',
@@ -49,6 +51,7 @@ export function AgentMode() {
   const s = useChatSession();
   const [searchParams, setSearchParams] = useSearchParams();
   const composerRef = useRef<ChatComposerHandle>(null);
+  const canChat = useAuth().can('agent_chat');
   const [leftDrawer, setLeftDrawer] = useState(false);
   const [rightDrawer, setRightDrawer] = useState(false);
   const [rightRailOpen, setRightRailOpen] = usePersistedOpen('gtb_agent_mode_right_rail', true);
@@ -146,7 +149,7 @@ export function AgentMode() {
                   ? `Talk to ${s.selectedAgent?.name ?? 'the agent'} about strategy #${s.strategyId}.`
                   : `Ask ${s.selectedAgent?.name ?? 'the agent'} about your strategies, backtests and proposals.`}
               </p>
-              <div className="flex flex-wrap justify-center gap-2 mt-1">
+              {canChat && <div className="flex flex-wrap justify-center gap-2 mt-1">
                 {prompts.map((p) => (
                   <button
                     key={p}
@@ -160,13 +163,14 @@ export function AgentMode() {
                     {p}
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
           }
         />
 
         <div className="shrink-0 border-t border-border px-4 py-3">
           <div className="max-w-3xl mx-auto">
+            {canChat ? (
             <ChatComposer
               ref={composerRef}
               density="comfortable"
@@ -179,8 +183,12 @@ export function AgentMode() {
                 s.setDraft('');
               }}
             />
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Agents only change backtest/dryrun testing strategies; live changes need your approval.
+            ) : (
+              <ChatDisabledNotice density="comfortable" />
+            )}
+            <p className="mt-1.5 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <span>Agents only change backtest/dryrun testing strategies; live changes need your approval.</span>
+              {canChat && <ChatBudgetLine className="ml-auto" />}
             </p>
           </div>
         </div>

@@ -26,6 +26,9 @@ export interface EditorBridge {
   /** The strategy currently open in the workbench, if this is an edit
    * (not a brand-new, not-yet-saved strategy). */
   strategyId?: number;
+  /** The workbench is read-only for this user (auth-02 §4) - the chat must
+   * not offer "apply to editor". */
+  readOnly?: boolean;
 }
 
 interface EditorBridgeContextValue {

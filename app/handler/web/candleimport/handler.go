@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gorilla/mux"
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/usecase/candleimport"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
-	"github.com/gorilla/mux"
 )
 
 type CandleImportHandler struct {
@@ -22,34 +23,40 @@ func NewCandleImportHandler(uc candleimport.UseCase) *CandleImportHandler {
 func (h *CandleImportHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/candles/import",
-			Action:  h.PostImport,
-			Method:  http.MethodPost,
+			Pattern:    "/candles/import",
+			Action:     h.PostImport,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/candles/import/{job_id}",
-			Action:  h.GetJob,
-			Method:  http.MethodGet,
+			Pattern:    "/candles/import/{job_id}",
+			Action:     h.GetJob,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/candles/schedule",
-			Action:  h.PostSchedule,
-			Method:  http.MethodPost,
+			Pattern:    "/candles/schedule",
+			Action:     h.PostSchedule,
+			Method:     http.MethodPost,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/candles/schedule",
-			Action:  h.GetSchedules,
-			Method:  http.MethodGet,
+			Pattern:    "/candles/schedule",
+			Action:     h.GetSchedules,
+			Method:     http.MethodGet,
+			Capability: authz.CapView,
 		},
 		{
-			Pattern: "/candles/schedule/{id}",
-			Action:  h.PatchSchedule,
-			Method:  http.MethodPatch,
+			Pattern:    "/candles/schedule/{id}",
+			Action:     h.PatchSchedule,
+			Method:     http.MethodPatch,
+			Capability: authz.CapAdmin,
 		},
 		{
-			Pattern: "/candles/schedule/{id}",
-			Action:  h.DeleteSchedule,
-			Method:  http.MethodDelete,
+			Pattern:    "/candles/schedule/{id}",
+			Action:     h.DeleteSchedule,
+			Method:     http.MethodDelete,
+			Capability: authz.CapAdmin,
 		},
 	}
 }
@@ -87,7 +94,7 @@ func (h *CandleImportHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	
+
 	var res interface{}
 	if len(job.ResultJSON) > 0 {
 		json.Unmarshal(job.ResultJSON, &res)
@@ -150,7 +157,7 @@ func (h *CandleImportHandler) PatchSchedule(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	var target *entities.ImportSchedule
 	for i := range schedules {
 		if schedules[i].ID == uint(id) {

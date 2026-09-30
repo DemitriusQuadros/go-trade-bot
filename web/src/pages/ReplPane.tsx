@@ -6,6 +6,7 @@ import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { luaEditorDarkTheme, luaEditorLightTheme } from '@/lib/codeMirrorTheme';
 import { luaAutocompletion } from '@/lib/luaCompletions';
 import { api } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 import { TraceRecord } from '@/api/types';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { WorkbenchContext } from './WorkbenchShell';
@@ -35,7 +36,22 @@ const TIMEFRAME_OPTIONS = ['1m', '5m', '15m', '1h', '4h', '1d'];
 // operator is looking at.
 const MAX_WINDOW_CANDLES = 2000;
 
+// The REPL evaluates on the backend (POST /script/repl) - needs `backtest`
+// (auth-02 §4). Without it, show a notice instead of an editor that would
+// 403 on every keystroke.
 export function ReplPane() {
+  const canRun = useAuth().can('backtest');
+  if (!canRun) {
+    return (
+      <div className="p-8 text-center text-xs text-muted-foreground font-sans" data-testid="repl-no-permission">
+        Your account can't run the script REPL.
+      </div>
+    );
+  }
+  return <ReplPaneInner />;
+}
+
+function ReplPaneInner() {
   const ctx = useOutletContext<WorkbenchContext>();
   const { setReplTrace, setReplResult, setActiveTraceSource, draft, appendConsoleEntry } = ctx;
   const isDark = useIsDarkMode();

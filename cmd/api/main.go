@@ -8,6 +8,7 @@ import (
 	agenthandler "go-trade-bot/app/handler/web/agent"
 	agentreports "go-trade-bot/app/handler/web/agentreports"
 	agentshandler "go-trade-bot/app/handler/web/agents"
+	authhandler "go-trade-bot/app/handler/web/auth"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
 	candleimport "go-trade-bot/app/handler/web/candleimport"
@@ -19,6 +20,7 @@ import (
 	settings "go-trade-bot/app/handler/web/settings"
 	signal "go-trade-bot/app/handler/web/signal"
 	strategy "go-trade-bot/app/handler/web/strategy"
+	usershandler "go-trade-bot/app/handler/web/users"
 	webhooktargets "go-trade-bot/app/handler/web/webhooktargets"
 	agentrepo "go-trade-bot/app/repository/agent"
 	"go-trade-bot/app/repository/agentplatform"
@@ -26,8 +28,11 @@ import (
 	"go-trade-bot/app/strategies"
 	_ "go-trade-bot/app/strategies/mlgrpc"
 	strategyscript "go-trade-bot/app/strategies/script"
+	authusecase "go-trade-bot/app/usecase/auth"
 	"go-trade-bot/cmd/api/modules"
 	"go-trade-bot/cmd/api/webui"
+	"go-trade-bot/internal/authz"
+	"go-trade-bot/internal/cfaccess"
 	config "go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/handler"
 	"go-trade-bot/internal/metrics"
@@ -71,32 +76,26 @@ func appOptions() fx.Option {
 		modules.ScriptModule,
 		modules.AgentModule,
 		modules.AgentPlatformModule,
+		modules.AuthModule,
+		fx.Provide(routeProviders()...),
 		fx.Provide(
 			NewHTTPServer,
-			AsRoute(strategy.NewStrategyHandler),
-			AsRoute(broker.NewBrokerHandler),
-			AsRoute(account.NewAccountHandler),
-			AsRoute(signal.NewSignalHandler),
-			AsRoute(backtest.NewBacktestHandler),
-			AsRoute(optimize.NewOptimizeHandler),
-			AsRoute(performancehistory.NewHandler),
-			AsRoute(realtime.NewRealtimeHandler),
-			AsRoute(candleimport.NewCandleImportHandler),
-			AsRoute(settings.NewSettingsHandler),
-			AsRoute(scripthandler.NewScriptHandler),
-			AsRoute(agenthandler.NewAgentHandlerWithPersonas),
-			AsRoute(agentshandler.NewAgentsHandler),
-			AsRoute(agentreports.NewAgentReportsHandler),
-			AsRoute(webhooktargets.NewWebhookTargetsHandler),
-			AsRoute(proposalshandler.NewProposalsHandler),
 			fx.Annotate(
 				NewServeMux,
-				fx.ParamTags(`group:"routes"`, ``),
+				fx.ParamTags(`group:"routes"`, ``, ``),
 			),
 		),
 		fx.Invoke(func(db *gorm.DB) {
 			if err := Migrate(db); err != nil {
 				log.Fatalf("failed to migrate database: %v", err)
+			}
+		}),
+		// Auth-01: create the first admin from AUTH.BOOTSTRAP_ADMIN_* when
+		// the users table is empty (runs after Migrate - fx.Invoke order).
+		fx.Invoke(func(u *authusecase.UseCase, cfg *config.Configuration) {
+			middleware.WarnIfInsecure(cfg)
+			if err := u.Bootstrap(context.Background(), cfg.Auth.BootstrapAdminUsername, cfg.Auth.BootstrapAdminPassword); err != nil {
+				log.Fatalf("auth: bootstrap admin failed: %v", err)
 			}
 		}),
 		fx.Invoke(RegisterScriptStrategy),
@@ -122,7 +121,9 @@ func NewHTTPServer(
 	cfg *config.Configuration,
 	collector *metrics.MetricsCollector,
 ) *http.Server {
-	wrappedMux := middleware.ConfigMiddleware(cfg, collector)(router)
+	// Cloudflare Access (auth-01 §4) guards the whole hostname - /api and the
+	// SPA - when CF_ACCESS.TEAM_DOMAIN and CF_ACCESS.AUD are both set.
+	wrappedMux := middleware.ConfigMiddleware(cfg, collector)(cfaccess.Wrap(cfg.CFAccess.TeamDomain, cfg.CFAccess.AUD, router))
 	srv := &http.Server{Addr: ":8080", Handler: wrappedMux}
 
 	lc.Append(fx.Hook{
@@ -150,19 +151,62 @@ func NewHTTPServer(
 // index.html, since mux matches routes in registration order and the API
 // routes were registered before the catch-all). "/metrics" (Prometheus
 // scrape target) and the embedded SPA's static assets stay unprefixed.
-func NewServeMux(routes []Route, cfg *config.Configuration) *mux.Router {
+//
+// Auth-01 §3: every route is wrapped with auth.Authenticate (session cookie,
+// API_TOKEN bearer, or the explicit insecure mode) and
+// middleware.RequireCapability(route.Capability). A route with an empty or
+// unknown capability panics here, at startup, so it can never ship
+// unprotected. auth may be nil (tests): then only the API_TOKEN bearer and
+// insecure mode authenticate.
+func NewServeMux(routes []Route, cfg *config.Configuration, auth *middleware.Auth) *mux.Router {
+	if auth == nil {
+		auth = middleware.NewAuth(cfg, nil)
+	}
 	router := mux.NewRouter()
 
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	for _, route := range routes {
 		for _, h := range route.Handlers() {
-			apiRouter.HandleFunc(h.Pattern, middleware.RequireAuth(cfg, h.Action)).Methods(h.Method)
+			authz.MustRouteCapability(h.Method, h.Pattern, h.Capability)
+			apiRouter.HandleFunc(h.Pattern, auth.Authenticate(middleware.RequireCapability(h.Capability, h.Action))).Methods(h.Method)
 		}
 	}
 
 	router.Handle("/metrics", promhttp.Handler())
 	router.PathPrefix("/").Handler(webui.Handler())
 	return router
+}
+
+// routeConstructors are every Route mounted under /api. The route-walk
+// test (auth-01 §3) iterates this list, so every registered route is
+// checked for a capability.
+var routeConstructors = []any{
+	strategy.NewStrategyHandler,
+	broker.NewBrokerHandler,
+	account.NewAccountHandler,
+	signal.NewSignalHandler,
+	backtest.NewBacktestHandler,
+	optimize.NewOptimizeHandler,
+	performancehistory.NewHandler,
+	realtime.NewRealtimeHandler,
+	candleimport.NewCandleImportHandler,
+	settings.NewSettingsHandler,
+	scripthandler.NewScriptHandler,
+	agenthandler.NewAgentHandlerWithUsers,
+	agentshandler.NewAgentsHandler,
+	agentreports.NewAgentReportsHandler,
+	webhooktargets.NewWebhookTargetsHandler,
+	proposalshandler.NewProposalsHandler,
+	authhandler.NewAuthHandler,
+	usershandler.NewUsersHandler,
+}
+
+func routeProviders() []any {
+	out := make([]any, 0, len(routeConstructors))
+	for _, c := range routeConstructors {
+		out = append(out, AsRoute(c))
+	}
+	return out
 }
 
 func AsRoute(f any) any {
@@ -202,6 +246,10 @@ func Migrate(db *gorm.DB) error {
 		// Agents platform Phase B-01.
 		&entities.StrategyChangeProposal{},
 		&entities.DeployGateConfig{},
+		// Auth-01 (multi-user).
+		&entities.User{},
+		&entities.Session{},
+		&entities.UserUsage{},
 	); err != nil {
 		return err
 	}

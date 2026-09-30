@@ -11,6 +11,7 @@ import (
 	proposalrepo "go-trade-bot/app/repository/proposal"
 	settings_repo "go-trade-bot/app/repository/settings"
 	strategy_repo "go-trade-bot/app/repository/strategy"
+	userrepo "go-trade-bot/app/repository/user"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	platformusecase "go-trade-bot/app/usecase/agentplatform"
 	proposalusecase "go-trade-bot/app/usecase/proposal"
@@ -55,10 +56,13 @@ var AgentPlatformModule = fx.Module("agentplatform",
 			settings settings_repo.Repository,
 			n *notifier.MultiTargetNotifier,
 			cfg *configuration.Configuration,
+			db *gorm.DB,
 		) *platformusecase.UseCase {
 			uc := platformusecase.NewUseCase(platform, strategies, runs, worker, settings, n)
 			// C-01 §6: the market-watch status snapshot cmd/agent writes to Redis.
 			uc.SetMarketStatusReader(marketstatus.NewRedisStoreFromAddr(cfg.Redis.Addr))
+			// Auth-01 §7: operator notes show the writing user's name.
+			uc.SetUserNamer(userrepo.NewGormRepository(db))
 			return uc
 		},
 		func(u *platformusecase.UseCase) agentshandler.UseCase { return u },
@@ -69,7 +73,10 @@ var AgentPlatformModule = fx.Module("agentplatform",
 		// agent:apply_proposal (queue "agents", cmd/agent); cmd/api itself
 		// never applies a proposal.
 		func(db *gorm.DB, platform agentplatform.Repository, strategies strategy_repo.StrategyRepository, worker agentworker.AgentWorker) *proposalusecase.UseCase {
-			return proposalusecase.NewUseCase(proposalrepo.NewGormRepository(db), strategies, platform, worker)
+			uc := proposalusecase.NewUseCase(proposalrepo.NewGormRepository(db), strategies, platform, worker)
+			// Auth-01 §7: decided_by display names.
+			uc.SetUserNamer(userrepo.NewGormRepository(db))
+			return uc
 		},
 		func(u *proposalusecase.UseCase) proposalshandler.UseCase { return u },
 	),

@@ -50,8 +50,12 @@ type Strategy struct {
 	// path), so it stays in that agent's write scope even if the operator
 	// later edits the agent's bindings. Set only at creation.
 	CreatedByAgentID *uint `gorm:"index"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// CreatedByUserID records the app user who created this strategy
+	// (auth-01 §1/§7). Set only at creation - StrategyRepository.Update
+	// never writes it. Nil for system/agent-created and legacy rows.
+	CreatedByUserID *uint `gorm:"index"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // IsLiveOrProductive reports whether s is a live-mode or productive

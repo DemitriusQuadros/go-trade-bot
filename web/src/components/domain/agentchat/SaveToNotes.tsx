@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BookmarkPlus, Check } from 'lucide-react';
 import { useAddStrategyMemoryNote } from '@/hooks/queries';
 import { apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 
 // Operator notes are capped server-side (agentplatform.maxOperatorNoteLen).
 const MAX_NOTE_CHARS = 4000;
@@ -13,8 +14,10 @@ const MAX_NOTE_CHARS = 4000;
 export function SaveToNotes({ strategyId, content, className = '' }: { strategyId: number; content: string; className?: string }) {
   const addNote = useAddStrategyMemoryNote(strategyId);
   const [saved, setSaved] = useState(false);
+  // Adding notes needs `edit_drafts` (auth-02 §4).
+  const canNote = useAuth().can('edit_drafts');
   const text = content.trim();
-  if (!text) return null;
+  if (!text || !canNote) return null;
 
   const tooLong = text.length > MAX_NOTE_CHARS;
   const save = () => {

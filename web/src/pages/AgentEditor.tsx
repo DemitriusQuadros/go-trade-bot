@@ -13,6 +13,7 @@ import {
   useWebhookTargets,
 } from '@/hooks/queries';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
@@ -138,7 +139,11 @@ export function AgentEditor() {
 
   const { data: agent, isLoading, error: loadError } = useAgent(agentId);
   const { data: strategies = [] } = useStrategies();
-  const { data: targets = [] } = useWebhookTargets();
+  // Only admins create/edit agents (auth-02 §4); everyone else gets a
+  // read-only view. Webhook targets are admin-only data.
+  const isAdmin = useAuth().can('admin');
+  const readOnly = !isAdmin;
+  const { data: targets = [] } = useWebhookTargets(isAdmin);
   const { data: allAgents = [] } = useAgents();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent(agentId);
@@ -193,6 +198,7 @@ export function AgentEditor() {
 
   const handleSave = (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (readOnly) return;
     setSaveError(null);
     setChainError(null);
     setShowTriggerErrors(true);
@@ -298,9 +304,16 @@ export function AgentEditor() {
               <History className="w-3.5 h-3.5" /> Runs
             </Link>
           )}
-          <SaveButton saving={saving} dirty={dirty || !isEdit} />
+          {!readOnly && <SaveButton saving={saving} dirty={dirty || !isEdit} />}
         </div>
       </div>
+
+      {readOnly && (
+        <div role="note" data-testid="agent-readonly-banner" className="p-3 rounded-lg border border-warning/40 bg-warning/10 text-xs text-foreground flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
+          <span>Read-only — only admins can change agents.</span>
+        </div>
+      )}
 
       {saveError && (
         <div role="alert" className="p-3 rounded-lg border border-destructive/40 bg-destructive/15 text-xs text-foreground flex items-start gap-2">
@@ -312,6 +325,8 @@ export function AgentEditor() {
         </div>
       )}
 
+      {/* A disabled fieldset disables every control below for non-admins. */}
+      <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 space-y-6">
       {/* 1. Identity */}
       <Card>
         <CardHeader title="Identity" subtitle="Who this agent is and what it's for" />
@@ -595,12 +610,18 @@ export function AgentEditor() {
           title="Notifications"
           subtitle="Where this agent's notify tool sends messages (needs the notify permission)"
           action={
-            <Link to="/settings#agent-notifications" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-              Manage targets <ExternalLink className="w-3 h-3" />
-            </Link>
+            isAdmin ? (
+              <Link to="/settings#agent-notifications" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                Manage targets <ExternalLink className="w-3 h-3" />
+              </Link>
+            ) : undefined
           }
         />
-        {targets.length === 0 ? (
+        {!isAdmin ? (
+          <p className="text-xs text-muted-foreground">
+            {form.webhook_target_ids.length} notification target{form.webhook_target_ids.length === 1 ? '' : 's'} selected.
+          </p>
+        ) : targets.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No webhook targets yet -{' '}
             <Link to="/settings#agent-notifications" className="text-primary hover:underline">
@@ -729,6 +750,8 @@ export function AgentEditor() {
         </div>
       </Card>
 
+      </fieldset>
+
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -737,7 +760,7 @@ export function AgentEditor() {
         >
           {dirty ? 'Cancel' : 'Back'}
         </button>
-        <SaveButton saving={saving} dirty={dirty || !isEdit} large />
+        {!readOnly && <SaveButton saving={saving} dirty={dirty || !isEdit} large />}
       </div>
     </form>
 

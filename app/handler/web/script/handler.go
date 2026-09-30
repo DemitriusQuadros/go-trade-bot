@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	usecase "go-trade-bot/app/usecase/script"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/handler"
 )
 
@@ -30,14 +31,16 @@ func NewScriptHandler(u UseCase) *ScriptHandler {
 func (h *ScriptHandler) Handlers() []handler.Configuration {
 	return []handler.Configuration{
 		{
-			Pattern: "/script/repl",
-			Action:  h.Repl,
-			Method:  http.MethodPost,
+			Pattern:    "/script/repl",
+			Action:     h.Repl,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 		{
-			Pattern: "/script/fast-rerun",
-			Action:  h.FastRerun,
-			Method:  http.MethodPost,
+			Pattern:    "/script/fast-rerun",
+			Action:     h.FastRerun,
+			Method:     http.MethodPost,
+			Capability: authz.CapBacktest,
 		},
 	}
 }

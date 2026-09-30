@@ -239,6 +239,14 @@ function ProposalRow({ proposal: p, target, showStatus }: { proposal: Proposal; 
             <span className="font-mono">from challenger #{p.challenger_strategy_id}</span>
           </>
         )}
+        {p.decided_by && (
+          <>
+            <span className="text-muted-foreground/50">·</span>
+            <span>
+              decided by <span className="text-foreground">{p.decided_by}</span>
+            </span>
+          </>
+        )}
         {p.status === 'failed' && p.failure_reason && (
           <>
             <span className="text-muted-foreground/50">·</span>

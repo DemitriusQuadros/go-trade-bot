@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
+import { useAuth } from '@/context/AuthContext';
 import { useStrategies } from '@/hooks/queries';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -120,6 +121,8 @@ export function Optimization() {
   });
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Starting a sweep needs `backtest` (auth-02 §4); results stay viewable.
+  const canLaunch = useAuth().can('backtest');
 
   // Status polling for active run
 
@@ -158,6 +161,7 @@ export function Optimization() {
 
   const handleLaunch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canLaunch) return;
     setError(null);
     setLaunching(true);
     setResults(null);
@@ -178,7 +182,7 @@ export function Optimization() {
       });
       setActiveRunId(res.id);
     } catch (err: any) {
-      setError(err.message || 'Failed to start optimization run');
+      setError(apiErrorMessage(err, 'Failed to start optimization run'));
     } finally {
       setLaunching(false);
     }
@@ -440,6 +444,11 @@ export function Optimization() {
                 </div>
               </div>
 
+              {!canLaunch ? (
+                <p className="text-xs text-muted-foreground text-center" data-testid="optimization-no-permission">
+                  Your account can't start optimizations.
+                </p>
+              ) : (
               <button
                 type="submit"
                 disabled={launching || (!!activeRunId && !isTerminal)}
@@ -454,6 +463,7 @@ export function Optimization() {
                       : 'Start Parameter Sweep'}
                 </span>
               </button>
+              )}
 
               <datalist id="optimize-param-suggestions">
                 {availableParams.map((p) => (

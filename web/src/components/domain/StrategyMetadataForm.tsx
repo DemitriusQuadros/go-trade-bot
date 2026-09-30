@@ -1,5 +1,7 @@
 import React from 'react';
 import { ScriptEditorState } from '@/pages/WorkbenchShell';
+import { StrategyStatus } from '@/api/types';
+import { PERMISSION_STRINGS } from '@/lib/permissions';
 
 interface StrategyMetadataFormProps {
   draft: ScriptEditorState;
@@ -8,7 +10,18 @@ interface StrategyMetadataFormProps {
   setSymbolInput: (v: string) => void;
   onAddSymbol: () => void;
   onRemoveSymbol: (sym: string) => void;
+  // auth-02 §4: every field disabled (a strategy this user can't change).
+  readOnly?: boolean;
+  // auth-02 §4: non-admins get mode/status selects limited to backtest and
+  // testing/disabled (the backend's draft-only guard).
+  draftOnlyModeStatus?: boolean;
 }
+
+// Non-admin status choices (auth-01 §3 draft guard).
+const DRAFT_STATUSES: { value: StrategyStatus; label: string }[] = [
+  { value: 'testing', label: 'Testing' },
+  { value: 'disabled', label: 'Disabled' },
+];
 
 // Strategy metadata (name/description/cycle/risk/symbols) - deliberately its
 // own component, separate from LuaScriptEditor, so the two can be laid out,
@@ -21,10 +34,48 @@ export function StrategyMetadataForm({
   setSymbolInput,
   onAddSymbol,
   onRemoveSymbol,
+  readOnly = false,
+  draftOnlyModeStatus = false,
 }: StrategyMetadataFormProps) {
   return (
-    <>
+    // A disabled fieldset disables every control inside it natively.
+    <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 disabled:opacity-80">
       <div className="grid grid-cols-1 gap-4 text-xs">
+        {draftOnlyModeStatus && !readOnly && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label htmlFor="strategy-mode" className="block text-[11px] text-muted-foreground uppercase font-semibold">
+                Mode
+              </label>
+              <select
+                id="strategy-mode"
+                value="backtest"
+                disabled
+                title={PERMISSION_STRINGS.adminOnly}
+                className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <option value="backtest">Backtest</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="strategy-status" className="block text-[11px] text-muted-foreground uppercase font-semibold">
+                Status
+              </label>
+              <select
+                id="strategy-status"
+                value={draft.status === 'disabled' ? 'disabled' : 'testing'}
+                onChange={(e) => setDraft((prev) => ({ ...prev, status: e.target.value as StrategyStatus }))}
+                className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
+              >
+                {DRAFT_STATUSES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
         <div className="space-y-1">
           <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Strategy Name *</label>
           <input
@@ -144,6 +195,6 @@ export function StrategyMetadataForm({
           ))}
         </select>
       </div>
-    </>
+    </fieldset>
   );
 }

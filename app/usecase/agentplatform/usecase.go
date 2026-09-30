@@ -19,6 +19,7 @@ import (
 	"go-trade-bot/app/entities"
 	repo "go-trade-bot/app/repository/agentplatform"
 	agentworker "go-trade-bot/app/workers/agent"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/cronspec"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/marketstatus"
@@ -69,7 +70,28 @@ type UseCase struct {
 	settings   SettingsStore
 	sender     TestSender
 	market     marketstatus.Reader
+	users      UserNamer
 	now        func() time.Time
+}
+
+// UserNamer resolves app user display names (auth-01 §7 note authors).
+type UserNamer interface {
+	UserNames(ctx context.Context) (map[uint]string, error)
+}
+
+// SetUserNamer enables user display names on operator notes (optional).
+func (u *UseCase) SetUserNamer(n UserNamer) { u.users = n }
+
+// UserNames maps user id -> display name (empty without a UserNamer).
+func (u *UseCase) UserNames(ctx context.Context) map[uint]string {
+	if u.users == nil {
+		return map[uint]string{}
+	}
+	names, err := u.users.UserNames(ctx)
+	if err != nil {
+		return map[uint]string{}
+	}
+	return names
 }
 
 // NewUseCase builds a UseCase.
@@ -658,5 +680,10 @@ func (u *UseCase) AddOperatorNote(ctx context.Context, strategyID uint, content 
 	if len([]rune(content)) > maxOperatorNoteLen {
 		return entities.StrategyMemoryEntry{}, badRequest("content must be at most %d characters", maxOperatorNoteLen)
 	}
-	return u.repo.AppendMemory(ctx, entities.StrategyMemoryEntry{StrategyID: strategyID, Kind: entities.MemoryJournal, Content: content})
+	entry := entities.StrategyMemoryEntry{StrategyID: strategyID, Kind: entities.MemoryJournal, Content: content}
+	// Audit (auth-01 §7): the acting user writes the note.
+	if p, ok := authz.FromContext(ctx); ok {
+		entry.AuthorUserID = p.UserIDPtr()
+	}
+	return u.repo.AppendMemory(ctx, entry)
 }
