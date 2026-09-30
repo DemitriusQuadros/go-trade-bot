@@ -171,6 +171,22 @@ func (e *phaseBEnv) call(t *testing.T, a entities.Agent, tool string, args map[s
 	return records[0].Result, records[0].Error
 }
 
+func (e *phaseBEnv) callChat(t *testing.T, a entities.Agent, tool string, args map[string]any) (string, string) {
+	t.Helper()
+	uc := *e.uc
+	uc.Model = &scriptedModel{calls: []modelprovider.ToolCall{{ID: "1", Name: tool, Args: rawArgs(args)}}}
+	run, err := uc.Run(context.Background(), agentusecase.RunRequest{Agent: a, Trigger: "chat_ui", UserInput: "go"})
+	require.NoError(t, err)
+	var records []struct {
+		Tool   string `json:"tool"`
+		Result string `json:"result"`
+		Error  string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(run.ToolCallsJSON, &records))
+	require.Len(t, records, 1)
+	return records[0].Result, records[0].Error
+}
+
 func (e *phaseBEnv) reload(t *testing.T, id uint) entities.Strategy {
 	t.Helper()
 	var s entities.Strategy
@@ -712,4 +728,55 @@ type noCandles struct{}
 
 func (noCandles) CountInRange(context.Context, string, string, time.Time, time.Time) (int64, error) {
 	return 1000, nil
+}
+
+func TestDeployToTesting_SkipGateWhenApprovedByOperator(t *testing.T) {
+	e := newPhaseBEnv(t)
+	e.gate.pass = false // Gate would fail if run!
+	s := e.strategy(t, "Dry", "dryrun", entities.Testing)
+	a := e.agent(t, "Improver", 2, allPerms, s.ID)
+
+	args := deployArgs(s.ID)
+	args["skip_gate"] = true
+
+	// If called via chat_ui with skip_gate: true, it should deploy directly without running the gate!
+	res, errText := e.callChat(t, a, "deploy_to_testing", args)
+	require.Empty(t, errText)
+	assert.Contains(t, res, `"deployed":true`)
+	assert.Contains(t, res, `"gate_skipped":true`)
+
+	got := e.reload(t, s.ID)
+	assert.Equal(t, newSource, got.ScriptSource)
+	assert.Equal(t, "dryrun", got.Mode)
+	assert.Equal(t, entities.Testing, got.Status)
+
+	mem, err := e.platform.ListMemory(context.Background(), s.ID, []entities.MemoryKind{entities.MemoryFinding}, 10, nil)
+	require.NoError(t, err)
+	require.Len(t, mem, 1)
+	assert.Contains(t, mem[0].Content, "Directly applied new code without testing")
+}
+
+func TestDeployToTesting_SkipGateRefusesScheduledTrigger(t *testing.T) {
+	e := newPhaseBEnv(t)
+	s := e.strategy(t, "Dry", "dryrun", entities.Testing)
+	a := e.agent(t, "Improver", 2, allPerms, s.ID)
+
+	args := deployArgs(s.ID)
+	args["skip_gate"] = true
+
+	// Unattended run (manual/cron) must refuse skip_gate
+	_, errText := e.call(t, a, "deploy_to_testing", args)
+	assert.Contains(t, errText, "skip_gate is only permitted during interactive chat")
+}
+
+func TestDeployToTesting_SkipGateRefusesLiveOrProductive(t *testing.T) {
+	e := newPhaseBEnv(t)
+	s := e.strategy(t, "LiveStrat", "live", entities.Productive)
+	a := e.agent(t, "Improver", 2, allPerms, s.ID)
+
+	args := deployArgs(s.ID)
+	args["skip_gate"] = true
+
+	_, errText := e.callChat(t, a, "deploy_to_testing", args)
+	assert.Contains(t, errText, "agents never change live or productive strategies")
 }

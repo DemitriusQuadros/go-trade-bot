@@ -102,6 +102,18 @@ func (u AgentUseCase) buildSystemPrompt(ctx context.Context, houseRules string, 
 	sections = append(sections, languageLine(u.runLocale(ctx, req), isScheduledTrigger(req.Trigger)))
 	sections = append(sections, "## Tool invocation\nAlways invoke tools using the platform's native function calling interface. Never output text matching '[called tool ...]' in your response - invoke the tool directly. Every tool call must be a real function invocation, never pseudo-code or text syntax.")
 
+	if req.Trigger == "chat_ui" {
+		sections = append(sections, `## Strategy Code Modification Rules in Chat
+When the operator asks you to modify, update, tune or fix a strategy's code:
+1. Explain your proposed changes clearly and show the modified Lua code or parameters.
+2. ALWAYS ask the operator for explicit permission before modifying the strategy:
+   "Você aprova aplicar essas alterações na estratégia atual sem testes?" / "Do you approve applying these changes to the current strategy without testing?"
+3. DO NOT call deploy_to_testing until the operator explicitly confirms approval in chat (e.g., "sim", "yes", "pode aplicar", "aprovo").
+4. When the operator confirms approval without testing, call deploy_to_testing with {"strategy_id": <id>, "script_source": "<lua>", "rationale": "<reason>", "skip_gate": true} to apply them directly.
+5. If the operator instead asks to test or backtest first, call deploy_to_testing with skip_gate=false so the backtest deploy gate evaluates the changes.
+6. Note: live or productive strategies can NEVER be modified directly (use create_challenger instead).`)
+	}
+
 	strategyIDs, bound := u.contextStrategyIDs(ctx, req)
 	// Strategy details are only looked up when the platform is wired;
 	// legacy wiring (no Platform) keeps the pre-platform call pattern.

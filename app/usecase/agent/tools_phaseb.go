@@ -311,9 +311,10 @@ func (u AgentUseCase) createChallengerTool() Tool {
 var deployToTestingSchema = json.RawMessage(`{
 	"type": "object",
 	"properties": {
-		"strategy_id": {"type": "integer", "description": "a non-live, non-productive strategy in your scope (e.g. a challenger)"},
+		"strategy_id": {"type": "integer", "description": "a non-live, non-productive strategy in your scope (e.g. a challenger or dryrun strategy)"},
 		"script_source": {"type": "string", "description": "the complete new Lua source"},
-		"rationale": {"type": "string", "description": "why this change should be better"}
+		"rationale": {"type": "string", "description": "why this change should be better"},
+		"skip_gate": {"type": "boolean", "description": "set to true to skip the backtest gate and apply code directly when the operator explicitly approves in chat without testing"}
 	},
 	"required": ["strategy_id", "script_source", "rationale"]
 }`)
@@ -322,10 +323,7 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name: "deploy_to_testing",
-			Description: "Deploy new code to a non-live, non-productive strategy in your scope, behind a hard metric gate computed server-side: " +
-				"two walk-forward backtests (current vs new code) over the configured lookback, compared on trades, Sharpe, max drawdown and " +
-				"profit factor using the operator's thresholds (see get_deploy_gate_config). Pass: the code is deployed and counts toward your " +
-				"daily auto-deploy limit. Fail: nothing changes and the change is filed as a pending proposal for the operator. Slow (minutes).",
+			Description: "Deploy new code to a non-live, non-productive strategy in your scope. Set skip_gate=true if the operator explicitly approved applying the code via chat without testing, which deploys directly without running the slow walk-forward backtest gate. Otherwise, runs the server-side metric gate (two walk-forward backtests). Live/productive strategies are never modified directly.",
 			InputSchema: deployToTestingSchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -335,12 +333,13 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 			if u.Gate == nil || u.Proposals == nil {
 				return "", fmt.Errorf("deploy_to_testing: the deploy gate is not available on this server")
 			}
-			// Only these three fields are read; any threshold/metric-like
+			// Only these fields are read; any threshold/metric-like
 			// keys in the args are ignored (the gate reads DeployGateConfig).
 			var in struct {
 				StrategyID   uint   `json:"strategy_id"`
 				ScriptSource string `json:"script_source"`
 				Rationale    string `json:"rationale"`
+				SkipGate     bool   `json:"skip_gate"`
 			}
 			if err := json.Unmarshal(raw, &in); err != nil {
 				return "", fmt.Errorf("deploy_to_testing: invalid args: %w", err)
@@ -365,6 +364,49 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 			}
 			if err := u.inWriteScope(ctx, agent, target); err != nil {
 				return "", fmt.Errorf("deploy_to_testing: %w", err)
+			}
+
+			if in.SkipGate {
+				if sc, ok := scopeFrom(ctx); ok && isScheduledTrigger(sc.trigger) {
+					return "", fmt.Errorf("deploy_to_testing: skip_gate is only permitted during interactive chat when approved by the operator")
+				}
+				release, err := u.acquireStrategyLock(ctx, target.ID)
+				if err != nil {
+					return "", err
+				}
+				defer release()
+
+				if err := u.validator().Validate(in.ScriptSource); err != nil {
+					return "", fmt.Errorf("deploy_to_testing: script_source does not compile: %v", err)
+				}
+				if in.ScriptSource == target.ScriptSource {
+					return "", fmt.Errorf("deploy_to_testing: script_source is identical to strategy %d's current source", target.ID)
+				}
+
+				current, err := u.Strategy.GetByID(ctx, target.ID)
+				if err != nil {
+					return "", fmt.Errorf("deploy_to_testing: could not reload strategy %d: %w", target.ID, err)
+				}
+				if current.IsLiveOrProductive() {
+					return "", fmt.Errorf("deploy_to_testing: strategy %d became %s/%s - live/productive strategies cannot be modified directly", current.ID, current.Status, current.Mode)
+				}
+
+				updated := current
+				updated.ScriptSource = in.ScriptSource
+				updated.Mode = clampAgentMode(updated.Mode)
+				if updated.Status != entities.Disabled {
+					updated.Status = entities.Testing
+				}
+				if err := u.Strategy.Update(ctx, updated); err != nil {
+					return "", fmt.Errorf("deploy_to_testing: %w", err)
+				}
+
+				agentID := agent.ID
+				u.appendMemory(ctx, entities.StrategyMemoryEntry{
+					StrategyID: target.ID, AuthorAgentID: &agentID, AgentRunID: runID, Kind: entities.MemoryFinding,
+					Content: truncate(fmt.Sprintf("Directly applied new code without testing (operator approved via chat). Rationale: %s", in.Rationale), maxJournalChars),
+				})
+				return compactJSON(map[string]any{"deployed": true, "strategy_id": target.ID, "gate_skipped": true})
 			}
 
 			// 1. Daily auto-deploy cap (re-read the persona: the operator may
