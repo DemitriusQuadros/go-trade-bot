@@ -100,6 +100,7 @@ func (u AgentUseCase) buildSystemPrompt(ctx context.Context, houseRules string, 
 	}
 	sections = append(sections, persona)
 	sections = append(sections, languageLine(u.runLocale(ctx, req), isScheduledTrigger(req.Trigger)))
+	sections = append(sections, "## Tool invocation\nAlways invoke tools using the platform's native function calling interface. Never output text matching '[called tool ...]' in your response - invoke the tool directly. Every tool call must be a real function invocation, never pseudo-code or text syntax.")
 
 	strategyIDs, bound := u.contextStrategyIDs(ctx, req)
 	// Strategy details are only looked up when the platform is wired;

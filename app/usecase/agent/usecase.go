@@ -358,10 +358,105 @@ func buildHistoryMessages(history []PriorTurn) []modelprovider.Message {
 		}
 
 		if turn.ResponseText != "" {
-			messages = append(messages, modelprovider.Message{Role: "assistant", Content: turn.ResponseText})
+			respText := turn.ResponseText
+			if strings.Contains(respText, "[called tool ") {
+				_, respText = parsePseudoToolCalls(respText)
+			}
+			if respText != "" {
+				messages = append(messages, modelprovider.Message{Role: "assistant", Content: respText})
+			}
 		}
 	}
 	return messages
+}
+
+// BuildHistoryMessages exposes buildHistoryMessages for testing and callers.
+func BuildHistoryMessages(history []PriorTurn) []modelprovider.Message {
+	return buildHistoryMessages(history)
+}
+
+// ParsePseudoToolCalls exposes parsePseudoToolCalls for testing and callers.
+func ParsePseudoToolCalls(text string) ([]modelprovider.ToolCall, string) {
+	return parsePseudoToolCalls(text)
+}
+
+// parsePseudoToolCalls extracts pseudo tool calls formatted as
+// `[called tool <name> with args <json>]` from text where a model mimicked
+// the conversation history format instead of emitting native function calls.
+// It returns the parsed tool calls and any remaining non-tool text.
+func parsePseudoToolCalls(text string) ([]modelprovider.ToolCall, string) {
+	var calls []modelprovider.ToolCall
+	var remaining strings.Builder
+
+	cur := text
+	for {
+		idx := strings.Index(cur, "[called tool ")
+		if idx == -1 {
+			remaining.WriteString(cur)
+			break
+		}
+
+		remaining.WriteString(cur[:idx])
+
+		afterMarker := cur[idx+len("[called tool "):]
+		argsMarker := " with args "
+		argsIdx := strings.Index(afterMarker, argsMarker)
+		if argsIdx == -1 {
+			remaining.WriteString(cur[idx : idx+len("[called tool ")])
+			cur = afterMarker
+			continue
+		}
+
+		toolName := strings.TrimSpace(afterMarker[:argsIdx])
+		if toolName == "" || strings.ContainsAny(toolName, " \t\r\n[]{}") {
+			remaining.WriteString(cur[idx : idx+len("[called tool ")])
+			cur = afterMarker
+			continue
+		}
+
+		jsonCandidate := afterMarker[argsIdx+len(argsMarker):]
+		trimmed := strings.TrimLeft(jsonCandidate, " \t\r\n")
+		leadingWhitespaceLen := len(jsonCandidate) - len(trimmed)
+		if len(trimmed) == 0 {
+			remaining.WriteString(cur[idx : idx+len("[called tool ")])
+			cur = afterMarker
+			continue
+		}
+
+		var raw json.RawMessage
+		dec := json.NewDecoder(strings.NewReader(trimmed))
+		if err := dec.Decode(&raw); err != nil {
+			remaining.WriteString(cur[idx : idx+len("[called tool ")])
+			cur = afterMarker
+			continue
+		}
+
+		consumed := dec.InputOffset()
+		afterJSON := trimmed[consumed:]
+		afterJSONTrimmed := strings.TrimLeft(afterJSON, " \t\r\n")
+		if !strings.HasPrefix(afterJSONTrimmed, "]") {
+			remaining.WriteString(cur[idx : idx+len("[called tool ")])
+			cur = afterMarker
+			continue
+		}
+
+		calls = append(calls, modelprovider.ToolCall{
+			Name: toolName,
+			Args: []byte(raw),
+		})
+
+		bracketOffset := int(consumed) + (len(afterJSON) - len(afterJSONTrimmed))
+		totalAdvanced := leadingWhitespaceLen + bracketOffset + 1
+		cur = jsonCandidate[totalAdvanced:]
+	}
+
+	cleanRemaining := strings.TrimSpace(remaining.String())
+	cleanRemaining = strings.ReplaceAll(cleanRemaining, "```\n```", "")
+	cleanRemaining = strings.ReplaceAll(cleanRemaining, "``````", "")
+	if strings.Trim(cleanRemaining, "` \t\r\n") == "" {
+		cleanRemaining = ""
+	}
+	return calls, cleanRemaining
 }
 
 // RunToolLoop drives one agent turn end-to-end: builds the system prompt
@@ -611,6 +706,19 @@ func (u AgentUseCase) Run(ctx context.Context, req RunRequest) (entities.AgentRu
 			return finish(entities.AgentRunError, fmt.Sprintf("model completion failed: %v", err))
 		}
 		u.recordUsage(ctx, &run, agent, providerName, modelName, result.Usage)
+
+		// If the model produced no native tool calls but emitted pseudo tool
+		// call syntax ([called tool <name> with args <json>]) in its text -
+		// which happens with models like Gemini that mimic the conversation
+		// history format - parse and recover them so the tools actually get
+		// executed instead of dumping raw JSON args to the user.
+		if len(result.ToolCalls) == 0 && strings.Contains(result.Text, "[called tool ") {
+			if pseudoCalls, remaining := parsePseudoToolCalls(result.Text); len(pseudoCalls) > 0 {
+				result.ToolCalls = pseudoCalls
+				result.Text = remaining
+				result.StopReason = "tool_use"
+			}
+		}
 
 		// Record this turn as a single assistant message covering BOTH any
 		// text the model produced AND every tool call it made - not just
