@@ -1308,6 +1308,7 @@ const ptBR: Messages = {
     thisAgent: 'Este agente',
     cantAnswer: '{agent} não pode responder agora',
     openProfile: 'Abrir seu perfil',
+    openUsers: 'Gerenciar usuários',
     openAgents: 'Abrir Agentes',
     requestFailed: 'A solicitação falhou',
     turnCost: 'Custo do modelo neste turno',

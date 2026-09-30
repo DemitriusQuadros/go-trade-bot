@@ -10,6 +10,7 @@ import { ToolActivity } from './ToolActivity';
 import { ApplyTarget, ChatDensity } from './types';
 import { SaveToNotes } from './SaveToNotes';
 import { useChatSession } from '@/context/ChatSessionContext';
+import { useAuth } from '@/context/AuthContext';
 import { useT } from '@/i18n';
 
 // One transcript turn (Phase D-02 §6), in this order: the operator's
@@ -17,6 +18,8 @@ import { useT } from '@/i18n';
 // "N tool calls" disclosure.
 export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDensity; apply?: ApplyTarget }) {
   const t = useT();
+  const { me } = useAuth();
+  const isAdmin = me?.role === 'admin';
   const compact = density === 'compact';
   const text = compact ? 'text-xs' : 'text-sm';
   const run = turn.run;
@@ -60,8 +63,8 @@ export function ChatTurn({ turn, density, apply }: { turn: Turn; density: ChatDe
             </div>
             <div className="text-muted-foreground mt-0.5">{turn.blocked}</div>
             {turn.blockedCode === 'user_budget_exceeded' ? (
-              <Link to="/profile" className="inline-block mt-1 text-primary hover:underline">
-                {t('chat.openProfile')}
+              <Link to={isAdmin ? '/users' : '/profile'} className="inline-block mt-1 text-primary hover:underline">
+                {isAdmin ? t('chat.openUsers') : t('chat.openProfile')}
               </Link>
             ) : (
               <Link to="/agents" className="inline-block mt-1 text-primary hover:underline">

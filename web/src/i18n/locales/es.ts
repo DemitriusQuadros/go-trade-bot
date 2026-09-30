@@ -1308,6 +1308,7 @@ const es: Messages = {
     thisAgent: 'Este agente',
     cantAnswer: '{agent} no puede responder ahora',
     openProfile: 'Abrir tu perfil',
+    openUsers: 'Administrar usuarios',
     openAgents: 'Abrir Agentes',
     requestFailed: 'La solicitud falló',
     turnCost: 'Costo del modelo en este turno',

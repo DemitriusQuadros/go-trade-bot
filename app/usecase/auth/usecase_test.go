@@ -262,6 +262,14 @@ func TestChatBudget(t *testing.T) {
 
 	// Synthetic principals are not limited.
 	assert.NoError(t, f.uc.CheckChatBudget(ctx, authz.ServicePrincipal()))
+
+	// Users with budget <= 0 (0 = unlimited) are not limited.
+	zeroUser := f.mkUser(t, "unlimited_user", authz.RoleAdmin)
+	zeroUser.DailyAgentBudgetUSD = 0
+	require.NoError(t, f.repo.UpdateUser(ctx, zeroUser))
+	pZero := auth.PrincipalFor(zeroUser, 0)
+	require.NoError(t, f.uc.RecordChatUsage(ctx, pZero, 10.0))
+	assert.NoError(t, f.uc.CheckChatBudget(ctx, pZero))
 }
 
 func TestUserManagement(t *testing.T) {

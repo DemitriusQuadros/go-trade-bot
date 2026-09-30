@@ -179,7 +179,7 @@ export function Users() {
                         <span className={u.daily_agent_budget_usd > 0 && u.today_agent_cost_usd >= u.daily_agent_budget_usd ? 'text-destructive' : 'text-foreground'}>
                           {formatUsd(u.today_agent_cost_usd)}
                         </span>
-                        <span className="text-muted-foreground"> / {formatUsd(u.daily_agent_budget_usd)}</span>
+                        <span className="text-muted-foreground"> / {u.daily_agent_budget_usd > 0 ? formatUsd(u.daily_agent_budget_usd) : t('agents.noBudget')}</span>
                       </td>
                       <td className="px-4 py-3 align-top text-xs text-muted-foreground whitespace-nowrap">
                         {u.last_login_at ? (

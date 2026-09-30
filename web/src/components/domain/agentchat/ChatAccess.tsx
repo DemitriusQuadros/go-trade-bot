@@ -36,7 +36,10 @@ export function ChatBudgetLine({ className = '' }: { className?: string }) {
       className={`font-mono tabular-nums ${exhausted ? 'text-destructive' : 'text-muted-foreground'} ${className}`}
       title={t('chat.budgetTitle')}
     >
-      {t('chat.budgetLine', { spent: formatUsd(me.today_agent_cost_usd), budget: formatUsd(me.daily_agent_budget_usd) })}
+      {t('chat.budgetLine', {
+        spent: formatUsd(me.today_agent_cost_usd),
+        budget: me.daily_agent_budget_usd > 0 ? formatUsd(me.daily_agent_budget_usd) : t('agents.noBudget'),
+      })}
     </span>
   );
 }

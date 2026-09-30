@@ -1310,6 +1310,7 @@ const en = {
     thisAgent: 'This agent',
     cantAnswer: '{agent} can\'t answer right now',
     openProfile: 'Open your profile',
+    openUsers: 'Manage users',
     openAgents: 'Open Agents',
     requestFailed: 'Request failed',
     turnCost: 'Model cost of this turn',

@@ -134,7 +134,9 @@ export function Profile() {
           <dd className="font-mono text-foreground">
             {me.daily_agent_budget_usd > 0
               ? t('profile.agentSpendValue', { spent: formatUsd(me.today_agent_cost_usd), budget: formatUsd(me.daily_agent_budget_usd) })
-              : t('profile.noChat')}
+              : caps.includes('agent_chat') || me.role === 'admin'
+                ? t('profile.agentSpendValue', { spent: formatUsd(me.today_agent_cost_usd), budget: t('agents.noBudget') })
+                : t('profile.noChat')}
           </dd>
 
           {/* i18n-01 §2: saved on the account via PATCH /auth/me {locale}. */}

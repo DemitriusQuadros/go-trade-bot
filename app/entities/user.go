@@ -24,7 +24,7 @@ type User struct {
 	Role         string
 	Capabilities datatypes.JSONSlice[string] `gorm:"type:jsonb"`
 	// DailyAgentBudgetUSD caps the user's agent chat spend per UTC day
-	// (0 = no chat).
+	// (0 = unlimited; chat capability controls access).
 	DailyAgentBudgetUSD float64 `gorm:"default:1"`
 	// Locale is "en" | "es" | "pt-BR", or "" (the client decides).
 	Locale      string

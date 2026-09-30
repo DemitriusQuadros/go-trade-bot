@@ -441,8 +441,9 @@ func (u *UseCase) UpdateMe(ctx context.Context, p authz.Principal, req UpdateMeR
 // --- per-user agent chat budget (auth-01 §6) ------------------------------------
 
 // CheckChatBudget returns a 409 user_budget_exceeded when the user's spend
-// today reached their DailyAgentBudgetUSD. Synthetic principals are not
-// limited (the persona budgets still apply).
+// today reached their DailyAgentBudgetUSD. Synthetic principals and users with
+// DailyAgentBudgetUSD <= 0 (0 = unlimited) are not limited (the persona budgets
+// still apply).
 func (u *UseCase) CheckChatBudget(ctx context.Context, p authz.Principal) error {
 	if p.UserID == 0 {
 		return nil
@@ -450,6 +451,10 @@ func (u *UseCase) CheckChatBudget(ctx context.Context, p authz.Principal) error 
 	user, err := u.repo.GetUser(ctx, p.UserID)
 	if err != nil {
 		return err
+	}
+	// 0 means unlimited (matches frontend validation "0 = unlimited" and ChatAccess).
+	if user.DailyAgentBudgetUSD <= 0 {
+		return nil
 	}
 	usage, err := u.repo.GetUsage(ctx, user.ID, u.Now())
 	if err != nil {
