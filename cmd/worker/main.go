@@ -185,6 +185,10 @@ func RegisterHandlers(
 	// route cmd/api's PUT /settings handler forwards risk-bearing (and, for
 	// consistency, safe-tier) changes to.
 	settingsRepo := settings_repo.NewRepository(db)
+	// i18n-02 §4: trade-event webhook texts in Settings.DefaultLocale (read
+	// through this repo, cached 60 s, only on the delivery goroutine - never
+	// on the trading path; en on error).
+	swappableNotifier.SetLocaleSource(settings_repo.NewDefaultLocaleSource(settingsRepo))
 	settingsUseCase := settings_usecase.NewUseCase(settingsRepo, swappableExchange, swappableNotifier, processor, nil)
 	if cfg.InternalBridgeSecret == "" {
 		log.Printf("WARNING: INTERNAL_BRIDGE_SECRET is not set - the internal settings-apply bridge (%s) "+

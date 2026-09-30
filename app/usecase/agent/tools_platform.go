@@ -12,6 +12,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/agentplatform"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
 	"go-trade-bot/internal/report/agentreport"
@@ -464,23 +465,37 @@ func (u AgentUseCase) writeReportTool() Tool {
 			if runID != nil {
 				runIDVal = *runID
 			}
-			html, err := u.Reports.Render(ctx, agentreport.ReportMeta{
+			// i18n-02 §3: frozen snapshots in every locale (only chrome/labels
+			// differ); RenderedHTML keeps the Settings.DefaultLocale one.
+			byLocale, err := u.Reports.RenderLocales(ctx, agentreport.ReportMeta{
 				Title: in.Title, Severity: in.Severity, AgentName: agent.Name, RunID: runIDVal,
 				CreatedAt: now, StrategyNames: names,
-			}, in.Blocks)
+			}, in.Blocks, i18n.Supported)
 			if err != nil {
 				return "", fmt.Errorf("write_report: %w", err)
+			}
+			html := byLocale[u.defaultLocale(ctx)]
+			if html == "" {
+				html = byLocale[i18n.Default]
+			}
+			snapshots := make(map[string]string, len(byLocale))
+			for loc, h := range byLocale {
+				snapshots[string(loc)] = h
 			}
 			blocksJSON, err := json.Marshal(in.Blocks)
 			if err != nil {
 				return "", fmt.Errorf("write_report: %w", err)
 			}
 
-			rep, err := u.Platform.CreateReport(ctx, entities.AgentReport{
+			report := entities.AgentReport{
 				AgentID: agent.ID, AgentRunID: runIDVal, StrategyIDs: strategyIDs, Title: in.Title,
 				Severity: entities.ReportSeverity(in.Severity), Summary: agentreport.FirstSummary(in.Blocks),
 				BlocksJSON: blocksJSON, RenderedHTML: html, CreatedAt: now,
-			})
+			}
+			if err := report.SetLocaleSnapshots(snapshots); err != nil {
+				return "", fmt.Errorf("write_report: %w", err)
+			}
+			rep, err := u.Platform.CreateReport(ctx, report)
 			if err != nil {
 				return "", err
 			}

@@ -6,7 +6,8 @@ import { AgentToolCallCard } from '@/components/domain/AgentToolCallCard';
 import { RunTriggerBadge, RunTriggerDetail } from '@/components/domain/AgentTriggerDisplay';
 import { useAgents } from '@/hooks/queries';
 import { MarkdownMessage } from '@/components/domain/MarkdownMessage';
-import { formatDuration, formatRelative, formatTokens, formatUsd } from '@/lib/time';
+import { formatDateTime, formatDuration, formatRelative, formatTokens, formatUsd } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // AgentRunsTable is the one expandable run-history table, shared by the
 // Activity page's "Agent Log" tab (every run, optionally one strategy's) and
@@ -23,11 +24,12 @@ interface AgentRunsTableProps {
 }
 
 export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
+  const t = useT();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const colCount = 8;
   // Resolves chain-source agent names (C-02 §4); shares the Agents page's cache.
   const { data: agents = [] } = useAgents();
-  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? `Agent #${id}`;
+  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? t('agents.agentNumber', { id });
 
   return (
     <div className="overflow-x-auto rounded border border-border/60">
@@ -36,24 +38,24 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
           {variant === 'agent' ? (
             <tr>
               <th></th>
-              <th>Started</th>
-              <th>Trigger</th>
-              <th>Status</th>
-              <th>Duration</th>
-              <th className="text-right">Tokens (in / out)</th>
-              <th className="text-right">Cost</th>
-              <th>Input</th>
+              <th>{t('agents.colStarted')}</th>
+              <th>{t('agents.colTrigger')}</th>
+              <th>{t('agents.colStatus')}</th>
+              <th>{t('agents.colDuration')}</th>
+              <th className="text-right">{t('agents.colTokens')}</th>
+              <th className="text-right">{t('agents.colCost')}</th>
+              <th>{t('agents.colInput')}</th>
             </tr>
           ) : (
             <tr>
               <th></th>
-              <th>Started</th>
-              <th>Trigger</th>
-              <th>Agent</th>
-              <th>Provider / Model</th>
-              <th>Status</th>
-              <th>Strategy</th>
-              <th>Input</th>
+              <th>{t('agents.colStarted')}</th>
+              <th>{t('agents.colTrigger')}</th>
+              <th>{t('agents.colAgent')}</th>
+              <th>{t('agents.colProviderModel')}</th>
+              <th>{t('agents.colStatus')}</th>
+              <th>{t('agents.colStrategy')}</th>
+              <th>{t('agents.colInput')}</th>
             </tr>
           )}
         </thead>
@@ -80,8 +82,8 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                   <td className="text-muted-foreground">
                     {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                   </td>
-                  <td className="font-mono text-muted-foreground whitespace-nowrap" title={new Date(run.started_at).toLocaleString()}>
-                    {variant === 'agent' ? formatRelative(run.started_at) : new Date(run.started_at).toLocaleString()}
+                  <td className="font-mono text-muted-foreground whitespace-nowrap" title={formatDateTime(run.started_at, { seconds: true })}>
+                    {variant === 'agent' ? formatRelative(run.started_at) : formatDateTime(run.started_at, { seconds: true })}
                   </td>
                   <td className="max-w-[16rem]">
                     <div className="flex flex-col items-start gap-0.5">
@@ -122,15 +124,15 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                             : 'bg-success/15 text-success border border-success/40'
                       }`}
                     >
-                      {run.status}
+                      {t.enum('runStatus', run.status)}
                     </span>
                     {run.hit_iteration_cap && (
                       <span
                         className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-warning/15 text-warning border border-warning/40"
-                        title="The run reached its tool-iteration cap; the final answer came from a forced turn with tools disabled."
+                        title={t('agents.iterationCapTitle')}
                       >
                         <AlertTriangle className="w-3 h-3" aria-hidden="true" />
-                        hit iteration cap
+                        {t('agents.iterationCap')}
                       </span>
                     )}
                   </td>
@@ -171,7 +173,7 @@ export function AgentRunsTable({ runs, variant = 'log' }: AgentRunsTableProps) {
                         </div>
                       )}
                       {run.tool_calls.length === 0 ? (
-                        <div className="text-xs text-muted-foreground italic">No tool calls in this run.</div>
+                        <div className="text-xs text-muted-foreground italic">{t('agents.noToolCalls')}</div>
                       ) : (
                         <div className="space-y-2">
                           {run.tool_calls.map((call, i) => (

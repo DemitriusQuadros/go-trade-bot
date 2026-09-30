@@ -1,6 +1,11 @@
 package settings
 
-import "go-trade-bot/app/entities"
+import (
+	"strings"
+
+	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/i18n"
+)
 
 // PlatformSettingsUpdateRequestDTO mirrors
 // web/src/api/types.ts's PlatformSettingsUpdateRequest. Secret fields are
@@ -21,6 +26,10 @@ type PlatformSettingsUpdateRequestDTO struct {
 	GrafanaURL             string            `json:"grafana_url"`
 	AsynqmonURL            string            `json:"asynqmon_url"`
 	AgentsAsynqmonURL      string            `json:"agents_asynqmon_url"`
+	// DefaultLocale (i18n-02 §1): "en" | "es" | "pt-BR". Omitted/empty keeps
+	// the stored value (older clients don't send it); anything else is a
+	// 400 invalid_locale (checked by the handler before MergeInto).
+	DefaultLocale string `json:"default_locale"`
 }
 
 // resolveSecret implements the "omitted/empty/masked-placeholder means keep
@@ -59,6 +68,27 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		// agents_paused in the body is ignored): it is owned by
 		// PUT /agents/kill-switch, so a normal settings save can never flip
 		// it (and never has to assert confirm_live to do so).
-		AgentsPaused: existing.AgentsPaused,
+		AgentsPaused:  existing.AgentsPaused,
+		DefaultLocale: r.mergedDefaultLocale(existing.DefaultLocale),
 	}
+}
+
+// mergedDefaultLocale is the DefaultLocale PUT /settings stores: the
+// request's (canonicalized) value, or the existing one when omitted/invalid
+// (the handler rejects invalid values before this runs).
+func (r PlatformSettingsUpdateRequestDTO) mergedDefaultLocale(existing string) string {
+	if loc, ok := i18n.Parse(r.DefaultLocale); ok {
+		return string(loc)
+	}
+	return existing
+}
+
+// ValidDefaultLocale reports whether the request's default_locale is
+// acceptable: omitted/empty or a supported locale.
+func (r PlatformSettingsUpdateRequestDTO) ValidDefaultLocale() bool {
+	if strings.TrimSpace(r.DefaultLocale) == "" {
+		return true
+	}
+	_, ok := i18n.Parse(r.DefaultLocale)
+	return ok
 }

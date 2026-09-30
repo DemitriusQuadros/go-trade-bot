@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"html/template"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/metrics_provider"
 )
 
@@ -32,6 +34,7 @@ type MonthlyPnL struct {
 
 type reportTemplateData struct {
 	BacktestReportInput
+	Lang                string
 	ProfitFactorDisplay string
 	EquitySVG           template.HTML
 	DrawdownSVG         template.HTML
@@ -51,64 +54,72 @@ func Generate(outputDir string, run BacktestReportInput) (string, error) {
 	}
 	filePath := filepath.Join(outputDir, fileName)
 
-	// Format Profit Factor
-	pfDisplay := fmt.Sprintf("%.2f", run.Metrics.ProfitFactor)
-	if math.IsInf(run.Metrics.ProfitFactor, 1) {
-		pfDisplay = "∞ (no losing trades)"
-	} else if math.IsNaN(run.Metrics.ProfitFactor) || run.Metrics.TotalTrades == 0 {
-		pfDisplay = "N/A"
-	}
-
-	// Format Duration
-	durDisplay := run.Metrics.AvgTradeDuration.Round(time.Second).String()
-	if run.Metrics.AvgTradeDuration == 0 {
-		durDisplay = "N/A"
-	}
-
-	// Generate Charts
-	equitySVG := renderEquitySVG(run.Metrics.EquityCurve)
-	drawdownSVG := renderDrawdownSVG(run.Metrics.EquityCurve)
-
-	// Calculate Monthly PnL
-	monthlyPnL := calculateMonthlyPnL(run.Trades)
-
-	data := reportTemplateData{
-		BacktestReportInput: run,
-		ProfitFactorDisplay: pfDisplay,
-		EquitySVG:           template.HTML(equitySVG),
-		DrawdownSVG:         template.HTML(drawdownSVG),
-		MonthlyPnL:          monthlyPnL,
-		FormattedDuration:   durDisplay,
-	}
-
-	funcMap := template.FuncMap{
-		"add": func(a, b int) int { return a + b },
-		"float": func(a int) float64 { return float64(a) },
-		"mul": func(a, b float64) float64 { return a * b },
-		"div": func(a, b float64) float64 {
-			if b == 0 {
-				return 0
-			}
-			return a / b
-		},
-	}
-
-	tmpl, err := template.New("report").Funcs(funcMap).Parse(reportHTMLTemplate)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
-	}
-
 	f, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create report file: %w", err)
 	}
 	defer f.Close()
 
-	if err := tmpl.Execute(f, data); err != nil {
-		return "", fmt.Errorf("failed to execute report template: %w", err)
+	if err := Render(f, run, i18n.EN); err != nil {
+		return "", err
 	}
 
 	return filePath, nil
+}
+
+// Render writes the backtest HTML report for run in loc (i18n-02 §3:
+// GET /backtest/{id}/report?lang= renders non-EN reports on request). Only
+// static labels change with the locale; numbers and dates keep their format.
+func Render(w io.Writer, run BacktestReportInput, loc i18n.Locale) error {
+	loc = i18n.ParseOr(string(loc), i18n.Default)
+
+	// Format Profit Factor (the backtest usecase persists +Inf as the
+	// math.MaxFloat64 sentinel)
+	pfDisplay := fmt.Sprintf("%.2f", run.Metrics.ProfitFactor)
+	if math.IsInf(run.Metrics.ProfitFactor, 1) || run.Metrics.ProfitFactor >= 1e15 {
+		pfDisplay = Messages.T(loc, "pf_infinite")
+	} else if math.IsNaN(run.Metrics.ProfitFactor) || run.Metrics.TotalTrades == 0 {
+		pfDisplay = Messages.T(loc, "na")
+	}
+
+	// Format Duration
+	durDisplay := run.Metrics.AvgTradeDuration.Round(time.Second).String()
+	if run.Metrics.AvgTradeDuration == 0 {
+		durDisplay = Messages.T(loc, "na")
+	}
+
+	data := reportTemplateData{
+		BacktestReportInput: run,
+		Lang:                string(loc),
+		ProfitFactorDisplay: pfDisplay,
+		EquitySVG:           template.HTML(renderEquitySVG(loc, run.Metrics.EquityCurve)),
+		DrawdownSVG:         template.HTML(renderDrawdownSVG(loc, run.Metrics.EquityCurve)),
+		MonthlyPnL:          calculateMonthlyPnL(run.Trades),
+		FormattedDuration:   durDisplay,
+	}
+
+	funcMap := template.FuncMap{
+		"add":   func(a, b int) int { return a + b },
+		"float": func(a int) float64 { return float64(a) },
+		"mul":   func(a, b float64) float64 { return a * b },
+		"div": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"t":  func(key string) string { return Messages.T(loc, key) },
+		"tf": func(key string, args ...any) string { return Messages.F(loc, key, args...) },
+	}
+
+	tmpl, err := template.New("report").Funcs(funcMap).Parse(reportHTMLTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+	if err := tmpl.Execute(w, data); err != nil {
+		return fmt.Errorf("failed to execute report template: %w", err)
+	}
+	return nil
 }
 
 func calculateMonthlyPnL(trades []metrics_provider.TradeLogEntry) []MonthlyPnL {
@@ -146,9 +157,9 @@ func calculateMonthlyPnL(trades []metrics_provider.TradeLogEntry) []MonthlyPnL {
 	return result
 }
 
-func renderEquitySVG(curve []metrics_provider.EquityPoint) string {
+func renderEquitySVG(loc i18n.Locale, curve []metrics_provider.EquityPoint) string {
 	if len(curve) < 2 {
-		return `<svg viewBox="0 0 600 200" width="100%" height="200"><line x1="50" y1="100" x2="550" y2="100" stroke="#3b82f6" stroke-width="2"/><text x="300" y="90" fill="#9ca3af" text-anchor="middle" font-size="12">Flat Equity Curve</text></svg>`
+		return `<svg viewBox="0 0 600 200" width="100%" height="200"><line x1="50" y1="100" x2="550" y2="100" stroke="#3b82f6" stroke-width="2"/><text x="300" y="90" fill="#9ca3af" text-anchor="middle" font-size="12">` + template.HTMLEscapeString(Messages.T(loc, "flat_equity")) + `</text></svg>`
 	}
 
 	minVal := curve[0].Value
@@ -205,9 +216,9 @@ func renderEquitySVG(curve []metrics_provider.EquityPoint) string {
 	)
 }
 
-func renderDrawdownSVG(curve []metrics_provider.EquityPoint) string {
+func renderDrawdownSVG(loc i18n.Locale, curve []metrics_provider.EquityPoint) string {
 	if len(curve) < 2 {
-		return `<svg viewBox="0 0 600 150" width="100%" height="150"><line x1="50" y1="30" x2="550" y2="30" stroke="#ef4444" stroke-width="2"/><text x="300" y="75" fill="#9ca3af" text-anchor="middle" font-size="12">0% Drawdown</text></svg>`
+		return `<svg viewBox="0 0 600 150" width="100%" height="150"><line x1="50" y1="30" x2="550" y2="30" stroke="#ef4444" stroke-width="2"/><text x="300" y="75" fill="#9ca3af" text-anchor="middle" font-size="12">` + template.HTMLEscapeString(Messages.T(loc, "zero_drawdown")) + `</text></svg>`
 	}
 
 	drawdowns := make([]float64, len(curve))
@@ -269,11 +280,11 @@ func renderDrawdownSVG(curve []metrics_provider.EquityPoint) string {
 }
 
 const reportHTMLTemplate = `<!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Backtest Report - {{.StrategyName}} ({{.Symbol}})</title>
+	<title>{{tf "title" .StrategyName .Symbol}}</title>
 	<style>
 		body {
 			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -357,66 +368,66 @@ const reportHTMLTemplate = `<!DOCTYPE html>
 <body>
 	<div class="container">
 		<div class="header">
-			<h1>Backtest Report: {{.StrategyName}}</h1>
+			<h1>{{tf "heading" .StrategyName}}</h1>
 			<div class="meta">
-				Symbol: <strong>{{.Symbol}}</strong> | 
-				Range: <strong>{{.StartDate.Format "2006-01-02"}}</strong> to <strong>{{.EndDate.Format "2006-01-02"}}</strong>
+				{{t "symbol"}} <strong>{{.Symbol}}</strong> | 
+				{{t "range"}} <strong>{{.StartDate.Format "2006-01-02"}}</strong> {{t "range_to"}} <strong>{{.EndDate.Format "2006-01-02"}}</strong>
 			</div>
 		</div>
 
 		<div class="grid">
 			<div class="card">
-				<div class="label">Total Return</div>
+				<div class="label">{{t "total_return"}}</div>
 				<div class="value {{if ge .Metrics.TotalReturnPct 0.0}}positive{{else}}negative{{end}}">
 					{{printf "%.2f" .Metrics.TotalReturnPct}}%
 				</div>
 			</div>
 			<div class="card">
-				<div class="label">Sharpe Ratio</div>
+				<div class="label">{{t "sharpe"}}</div>
 				<div class="value">{{printf "%.2f" .Metrics.SharpeRatio}}</div>
 			</div>
 			<div class="card">
-				<div class="label">Max Drawdown</div>
+				<div class="label">{{t "max_drawdown"}}</div>
 				<div class="value negative">{{printf "%.2f" .Metrics.MaxDrawdownPct}}%</div>
 			</div>
 			<div class="card">
-				<div class="label">Win Rate</div>
+				<div class="label">{{t "win_rate"}}</div>
 				<div class="value">{{printf "%.1f" .Metrics.WinRatePct}}%</div>
 			</div>
 			<div class="card">
-				<div class="label">Profit Factor</div>
+				<div class="label">{{t "profit_factor"}}</div>
 				<div class="value">{{.ProfitFactorDisplay}}</div>
 			</div>
 			<div class="card">
-				<div class="label">Total Trades</div>
+				<div class="label">{{t "total_trades"}}</div>
 				<div class="value">{{.Metrics.TotalTrades}}</div>
 			</div>
 			<div class="card">
-				<div class="label">Avg Duration</div>
+				<div class="label">{{t "avg_duration"}}</div>
 				<div class="value">{{.FormattedDuration}}</div>
 			</div>
 		</div>
 
 		<div class="section">
-			<h2>Equity Curve</h2>
+			<h2>{{t "equity_curve"}}</h2>
 			{{.EquitySVG}}
 		</div>
 
 		<div class="section">
-			<h2>Drawdown Underwater Curve</h2>
+			<h2>{{t "drawdown_curve"}}</h2>
 			{{.DrawdownSVG}}
 		</div>
 
 		{{if .MonthlyPnL}}
 		<div class="section">
-			<h2>Monthly Performance</h2>
+			<h2>{{t "monthly"}}</h2>
 			<table>
 				<thead>
 					<tr>
-						<th>Month</th>
-						<th>Trades</th>
-						<th>Win Rate</th>
-						<th>Profit ($)</th>
+						<th>{{t "month"}}</th>
+						<th>{{t "trades"}}</th>
+						<th>{{t "win_rate"}}</th>
+						<th>{{t "profit_usd"}}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -434,19 +445,19 @@ const reportHTMLTemplate = `<!DOCTYPE html>
 		{{end}}
 
 		<div class="section">
-			<h2>Trade Log ({{len .Trades}} trades)</h2>
+			<h2>{{tf "trade_log" (len .Trades)}}</h2>
 			{{if .Trades}}
 			<table>
 				<thead>
 					<tr>
 						<th>#</th>
-						<th>Entry Time</th>
-						<th>Exit Time</th>
-						<th>Entry Price</th>
-						<th>Exit Price</th>
-						<th>Qty</th>
-						<th>Profit ($)</th>
-						<th>Reason</th>
+						<th>{{t "entry_time"}}</th>
+						<th>{{t "exit_time"}}</th>
+						<th>{{t "entry_price"}}</th>
+						<th>{{t "exit_price"}}</th>
+						<th>{{t "qty"}}</th>
+						<th>{{t "profit_usd"}}</th>
+						<th>{{t "reason"}}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -454,7 +465,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
 					<tr>
 						<td>{{add $i 1}}</td>
 						<td>{{$t.EntryTime.Format "2006-01-02 15:04"}}</td>
-						<td>{{if not $t.ExitTime.IsZero}}{{$t.ExitTime.Format "2006-01-02 15:04"}}{{else}}Open{{end}}</td>
+						<td>{{if not $t.ExitTime.IsZero}}{{$t.ExitTime.Format "2006-01-02 15:04"}}{{else}}{{t "open"}}{{end}}</td>
 						<td>{{printf "%.2f" $t.EntryPrice}}</td>
 						<td>{{printf "%.2f" $t.ExitPrice}}</td>
 						<td>{{printf "%.4f" $t.Quantity}}</td>
@@ -465,7 +476,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
 				</tbody>
 			</table>
 			{{else}}
-			<p style="color:#94a3b8;">No trades executed in this backtest run.</p>
+			<p style="color:#94a3b8;">{{t "no_trades"}}</p>
 			{{end}}
 		</div>
 	</div>

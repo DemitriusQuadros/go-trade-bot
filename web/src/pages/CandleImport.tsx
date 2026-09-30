@@ -23,11 +23,13 @@ import {
   useDeleteImportSchedule,
 } from '@/hooks/queries';
 import { useAuth } from '@/context/AuthContext';
-import { PERMISSION_STRINGS } from '@/lib/permissions';
 import { CandleImportRequest, CandleImportSource, ImportSchedule } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
+import { formatDateTime, formatNumber } from '@/lib/format';
+import { tr, type MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
 const TIMEFRAME_OPTIONS = [
   '1m', '3m', '5m', '15m', '30m',
@@ -56,12 +58,11 @@ function describeCronSpec(cron?: string | null): string {
     if (min === '0' && dom === '*' && mon === '*') {
       const hh = hour.padStart(2, '0');
       if (dow === '*') {
-        return `Daily at ${hh}:00 UTC`;
+        return tr('candles.dailyAt', { hh });
       }
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const dayNum = parseInt(dow, 10);
       if (!isNaN(dayNum) && dayNum >= 0 && dayNum <= 6) {
-        return `Weekly on ${days[dayNum]} at ${hh}:00 UTC`;
+        return tr('candles.weeklyOn', { day: tr(`cron.dow.d${dayNum}` as MessageKey), hh });
       }
     }
   }
@@ -69,6 +70,7 @@ function describeCronSpec(cron?: string | null): string {
 }
 
 export function CandleImport() {
+  const t = useT();
   const defaultDates = getDefaultDates();
 
   // One-off Import Form State
@@ -134,15 +136,15 @@ export function CandleImport() {
     setImportError(null);
 
     if (symbols.length === 0) {
-      setImportError('At least one symbol is required.');
+      setImportError(t('candles.errSymbol'));
       return;
     }
     if (selectedTimeframes.length === 0) {
-      setImportError('At least one timeframe is required.');
+      setImportError(t('candles.errTimeframe'));
       return;
     }
     if (new Date(fromDate) > new Date(toDate)) {
-      setImportError('Start date must be earlier than end date.');
+      setImportError(t('candles.errDates'));
       return;
     }
 
@@ -158,7 +160,7 @@ export function CandleImport() {
       const res = await startImportMutation.mutateAsync(req);
       setActiveJobId(res.job_id);
     } catch (err: any) {
-      setImportError(err.message || 'Failed to start candle import job.');
+      setImportError(err.message || t('candles.errStart'));
     }
   };
 
@@ -179,7 +181,7 @@ export function CandleImport() {
       setShowScheduleForm(false);
       setShowCreatedNotice(true);
     } catch (err: any) {
-      alert(err.message || 'Failed to create schedule');
+      alert(err.message || t('candles.errCreateSchedule'));
     }
   };
 
@@ -188,7 +190,7 @@ export function CandleImport() {
       await patchScheduleMutation.mutateAsync({ enabled: !sched.enabled });
       setRecentlyChangedIds((prev) => new Set(prev).add(sched.id));
     } catch (err: any) {
-      alert(err.message || 'Failed to update schedule status');
+      alert(err.message || t('candles.errUpdateSchedule'));
     }
   };
 
@@ -198,7 +200,7 @@ export function CandleImport() {
       await deleteScheduleMutation.mutateAsync(deleteTarget.id);
       setDeleteTarget(null);
     } catch (err: any) {
-      alert(err.message || 'Failed to delete schedule');
+      alert(err.message || t('candles.errDeleteSchedule'));
     }
   };
 
@@ -207,18 +209,18 @@ export function CandleImport() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          Historical Candle Data
+          {t('candles.title')}
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          Import historical OHLCV market candles for backtesting and configure automated recurring sync schedules.
+          {t('candles.subtitle')}
         </p>
       </div>
 
       {/* 1. New One-Off Import Card */}
       <Card>
         <CardHeader
-          title="Manual Historical Data Import"
-          subtitle="Fetch batch historical candlestick data from exchange archives directly into DB storage"
+          title={t('candles.manualTitle')}
+          subtitle={t('candles.manualSubtitle')}
         />
         <form onSubmit={handleStartImport} className="p-6 pt-0 space-y-5">
           {importError && (
@@ -231,8 +233,8 @@ export function CandleImport() {
           {/* Symbols tag input */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              Trading Symbols <span className="text-destructive">*</span>
-              <HelpTooltip>Enter trading pairs to import (e.g. BTCUSDT, ETHUSDT, SOLUSDT)</HelpTooltip>
+              {t('candles.symbols')} <span className="text-destructive">*</span>
+              <HelpTooltip>{t('candles.symbolsHelp')}</HelpTooltip>
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -245,7 +247,7 @@ export function CandleImport() {
                     handleAddSymbol();
                   }
                 }}
-                placeholder="Type symbol and click Add..."
+                placeholder={t('candles.symbolPlaceholder')}
                 className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
               />
               <button
@@ -253,7 +255,7 @@ export function CandleImport() {
                 onClick={handleAddSymbol}
                 className="px-3.5 py-2 rounded-lg bg-secondary hover:bg-secondary text-xs font-semibold text-foreground"
               >
-                Add
+                {t('common.add')}
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -266,6 +268,7 @@ export function CandleImport() {
                   <button
                     type="button"
                     onClick={() => handleRemoveSymbol(sym)}
+                    aria-label={t('candles.removeSymbol', { symbol: sym })}
                     className="hover:text-destructive p-0.5"
                   >
                     ×
@@ -278,8 +281,8 @@ export function CandleImport() {
           {/* Timeframes multi-select */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              Candle Timeframes <span className="text-destructive">*</span>
-              <HelpTooltip>Select all resolution intervals to download simultaneously</HelpTooltip>
+              {t('candles.timeframes')} <span className="text-destructive">*</span>
+              <HelpTooltip>{t('candles.timeframesHelp')}</HelpTooltip>
             </label>
             <div className="flex flex-wrap gap-3">
               {TIMEFRAME_OPTIONS.map((tf) => {
@@ -313,13 +316,8 @@ export function CandleImport() {
               on the backend for the full rationale. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              Data Source
-              <HelpTooltip>
-                Live REST hits Binance's kline API directly - correct for recent/incremental data, but
-                rate-limited and slow for a deep historical range. Archive Backfill bulk-downloads
-                Binance's own public monthly kline dumps instead - no rate limits, months of history in
-                seconds, at month granularity.
-              </HelpTooltip>
+              {t('candles.source')}
+              <HelpTooltip>{t('candles.sourceHelp')}</HelpTooltip>
             </label>
             <div className="flex gap-2">
               {(['rest', 'archive'] as CandleImportSource[]).map((s) => (
@@ -333,7 +331,7 @@ export function CandleImport() {
                       : 'bg-background border-border text-muted-foreground hover:border-border'
                   }`}
                 >
-                  {s === 'rest' ? 'Live (REST API)' : 'Archive Backfill (deep history)'}
+                  {s === 'rest' ? t('candles.sourceRest') : t('candles.sourceArchive')}
                 </button>
               ))}
             </div>
@@ -342,7 +340,7 @@ export function CandleImport() {
           {/* Date range inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-foreground">From Date</label>
+              <label className="text-xs font-semibold text-foreground">{t('candles.fromDate')}</label>
               <input
                 type="date"
                 required
@@ -352,7 +350,7 @@ export function CandleImport() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-foreground">To Date</label>
+              <label className="text-xs font-semibold text-foreground">{t('candles.toDate')}</label>
               <input
                 type="date"
                 required
@@ -364,15 +362,14 @@ export function CandleImport() {
           </div>
           {source === 'archive' && (
             <p className="text-[11px] text-muted-foreground -mt-2">
-              Archive backfill works at month granularity - the exact days above are rounded out to cover
-              full calendar months.
+              {t('candles.archiveNote')}
             </p>
           )}
 
           <div className="flex justify-end pt-2">
             {!canImport ? (
               <p className="text-xs text-muted-foreground" data-testid="candle-import-no-permission">
-                Your account can't start candle imports.
+                {t('candles.noPermission')}
               </p>
             ) : (
             <button
@@ -385,7 +382,7 @@ export function CandleImport() {
               ) : (
                 <Download className="w-4 h-4" />
               )}
-              <span>Start Import</span>
+              <span>{t('candles.start')}</span>
             </button>
             )}
           </div>
@@ -396,17 +393,17 @@ export function CandleImport() {
       {activeJobId && (
         <Card>
           <CardHeader
-            title="Import Job Progress"
-            subtitle={`Job ID: ${activeJobId}`}
+            title={t('candles.progressTitle')}
+            subtitle={t('candles.jobId', { id: activeJobId })}
           />
           <div className="p-6 pt-0 space-y-4">
             {(!jobData || jobData.status === 'pending' || jobData.status === 'running') && (
               <div className="p-6 rounded-xl bg-background/70 border border-border flex flex-col items-center justify-center gap-3 text-center" aria-busy="true">
                 <Loader2 className="w-8 h-8 text-foreground animate-spin" />
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground">Importing Candlesticks...</h4>
+                  <h4 className="text-sm font-semibold text-foreground">{t('candles.importing')}</h4>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Fetching exchange partitions, checking for gaps, and writing klines to database.
+                    {t('candles.importingHelp')}
                   </p>
                 </div>
               </div>
@@ -417,8 +414,10 @@ export function CandleImport() {
                 <div className="p-4 rounded-xl bg-success/15 border border-success/40 flex items-center gap-2.5 text-xs text-success">
                   <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
                   <span>
-                    Import complete ({jobData.result.per_pair.filter((p) => !p.error).length} of{' '}
-                    {jobData.result.per_pair.length} pairs succeeded).
+                    {t('candles.complete', {
+                      ok: jobData.result.per_pair.filter((p) => !p.error).length,
+                      total: jobData.result.per_pair.length,
+                    })}
                   </span>
                 </div>
 
@@ -429,11 +428,11 @@ export function CandleImport() {
                   <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-muted-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border [&_thead]:bg-card/60">
                     <thead>
                       <tr>
-                        <th>Symbol</th>
-                        <th>Timeframe</th>
-                        <th>Candles Imported</th>
-                        <th>Gaps Detected</th>
-                        <th>Status / Error</th>
+                        <th>{t('candles.colSymbol')}</th>
+                        <th>{t('candles.colTimeframe')}</th>
+                        <th>{t('candles.colImported')}</th>
+                        <th>{t('candles.colGaps')}</th>
+                        <th>{t('candles.colStatus')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -442,7 +441,7 @@ export function CandleImport() {
                           <td className="font-semibold text-foreground">{pair.symbol}</td>
                           <td className="font-mono text-xs text-foreground">{pair.timeframe}</td>
                           <td className="font-mono text-xs text-success">
-                            {pair.candles_imported.toLocaleString()}
+                            {formatNumber(pair.candles_imported, { digits: 0 })}
                           </td>
                           <td className="font-mono text-xs text-warning">{pair.gaps_detected}</td>
                           <td>
@@ -454,7 +453,7 @@ export function CandleImport() {
                             ) : (
                               <span className="text-xs text-success flex items-center gap-1">
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                Success
+                                {t('candles.success')}
                               </span>
                             )}
                           </td>
@@ -469,15 +468,15 @@ export function CandleImport() {
             {jobData?.status === 'failed' && (
               <div className="p-4 rounded-xl bg-destructive/15 border border-destructive/40 space-y-3 text-xs text-destructive">
                 <div className="flex items-center gap-2 font-semibold text-destructive">
-                  <AlertCircle className="w-4 h-4" /> Import Job Failed
+                  <AlertCircle className="w-4 h-4" /> {t('candles.failed')}
                 </div>
-                <p>{jobData.error || 'An unexpected error occurred during candle import.'}</p>
+                <p>{jobData.error || t('candles.failedDefault')}</p>
                 <button
                   type="button"
                   onClick={handleStartImport}
                   className="px-3 py-1.5 rounded bg-destructive/15 hover:bg-destructive/15 text-xs font-semibold text-white flex items-center gap-1.5"
                 >
-                  <RotateCw className="w-3.5 h-3.5" /> Retry Import
+                  <RotateCw className="w-3.5 h-3.5" /> {t('candles.retry')}
                 </button>
               </div>
             )}
@@ -489,9 +488,9 @@ export function CandleImport() {
       <Card>
         <div className="p-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold text-foreground">Scheduled Recurring Imports</h3>
+            <h3 className="text-lg font-bold text-foreground">{t('candles.schedulesTitle')}</h3>
             <p className="text-xs text-muted-foreground">
-              Automated cron jobs syncing historical candles periodically in the background worker
+              {t('candles.schedulesSubtitle')}
             </p>
           </div>
           {canSchedule && (
@@ -501,7 +500,7 @@ export function CandleImport() {
             className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary text-xs font-semibold text-white shadow flex items-center gap-1.5 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>New Schedule</span>
+            <span>{t('candles.newSchedule')}</span>
           </button>
           )}
         </div>
@@ -513,6 +512,7 @@ export function CandleImport() {
               <button
                 type="button"
                 onClick={() => setShowCreatedNotice(false)}
+                aria-label={t('candles.dismiss')}
                 className="hover:text-white p-0.5"
               >
                 ×
@@ -524,11 +524,11 @@ export function CandleImport() {
           {showScheduleForm && canSchedule && (
             <form onSubmit={handleCreateSchedule} className="p-4 rounded-xl bg-background/70 border border-border space-y-4">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                Create Recurring Sync Schedule
+                {t('candles.createTitle')}
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">Symbol</label>
+                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">{t('candles.colSymbol')}</label>
                   <input
                     type="text"
                     required
@@ -540,7 +540,7 @@ export function CandleImport() {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">Timeframe</label>
+                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">{t('candles.colTimeframe')}</label>
                   <select
                     value={schedTimeframe}
                     onChange={(e) => setSchedTimeframe(e.target.value)}
@@ -555,14 +555,14 @@ export function CandleImport() {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">Frequency</label>
+                  <label className="text-[10px] text-muted-foreground uppercase font-semibold">{t('candles.frequency')}</label>
                   <select
                     value={schedFreq}
                     onChange={(e) => setSchedFreq(e.target.value as 'daily' | 'weekly')}
                     className="px-2.5 py-1.5 rounded bg-card border border-border text-xs text-foreground"
                   >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
+                    <option value="daily">{t('candles.daily')}</option>
+                    <option value="weekly">{t('candles.weekly')}</option>
                   </select>
                 </div>
               </div>
@@ -570,7 +570,7 @@ export function CandleImport() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-muted-foreground uppercase font-semibold">
-                    Hour (UTC)
+                    {t('candles.hourUtc')}
                   </label>
                   <select
                     value={schedHour}
@@ -579,7 +579,7 @@ export function CandleImport() {
                   >
                     {Array.from({ length: 24 }).map((_, h) => (
                       <option key={h} value={h}>
-                        {h.toString().padStart(2, '0')}:00 UTC
+                        {t('candles.hourOption', { hh: h.toString().padStart(2, '0') })}
                       </option>
                     ))}
                   </select>
@@ -588,20 +588,20 @@ export function CandleImport() {
                 {schedFreq === 'weekly' && (
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-muted-foreground uppercase font-semibold">
-                      Day of Week
+                      {t('candles.dayOfWeek')}
                     </label>
                     <select
                       value={schedDow}
                       onChange={(e) => setSchedDow(parseInt(e.target.value, 10))}
                       className="px-2.5 py-1.5 rounded bg-card border border-border text-xs text-foreground"
                     >
-                      <option value={1}>Monday</option>
-                      <option value={2}>Tuesday</option>
-                      <option value={3}>Wednesday</option>
-                      <option value={4}>Thursday</option>
-                      <option value={5}>Friday</option>
-                      <option value={6}>Saturday</option>
-                      <option value={0}>Sunday</option>
+                      <option value={1}>{t('candles.day.d1')}</option>
+                      <option value={2}>{t('candles.day.d2')}</option>
+                      <option value={3}>{t('candles.day.d3')}</option>
+                      <option value={4}>{t('candles.day.d4')}</option>
+                      <option value={5}>{t('candles.day.d5')}</option>
+                      <option value={6}>{t('candles.day.d6')}</option>
+                      <option value={0}>{t('candles.day.d0')}</option>
                     </select>
                   </div>
                 )}
@@ -613,14 +613,14 @@ export function CandleImport() {
                   onClick={() => setShowScheduleForm(false)}
                   className="px-3 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={createScheduleMutation.isPending}
                   className="px-4 py-1.5 rounded bg-primary hover:bg-primary text-xs font-semibold text-white"
                 >
-                  Create Schedule
+                  {t('candles.createSchedule')}
                 </button>
               </div>
             </form>
@@ -629,7 +629,7 @@ export function CandleImport() {
           {/* Schedules Table */}
           {schedules.length === 0 ? (
             <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-              No scheduled imports configured.
+              {t('candles.noSchedules')}
             </div>
           ) : (
             // `.table-container`/`.table` were dead classes (see
@@ -639,12 +639,12 @@ export function CandleImport() {
               <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-muted-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border [&_thead]:bg-card/60">
                 <thead>
                   <tr>
-                    <th>Symbol</th>
-                    <th>Timeframe</th>
-                    <th>Schedule</th>
-                    <th>Enabled</th>
-                    <th>Last Run</th>
-                    <th>Actions</th>
+                    <th>{t('candles.colSymbol')}</th>
+                    <th>{t('candles.colTimeframe')}</th>
+                    <th>{t('candles.colSchedule')}</th>
+                    <th>{t('candles.colEnabled')}</th>
+                    <th>{t('candles.colLastRun')}</th>
+                    <th>{t('candles.colActions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -659,14 +659,14 @@ export function CandleImport() {
                         <td>
                           <label
                             className={`relative inline-flex items-center ${canSchedule ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-                            title={canSchedule ? undefined : PERMISSION_STRINGS.adminOnly}
+                            title={canSchedule ? undefined : t('users.adminOnly')}
                           >
                             <input
                               type="checkbox"
                               checked={sched.enabled}
                               onChange={() => handleToggleSchedule(sched)}
                               disabled={!canSchedule}
-                              aria-label={`Schedule ${sched.symbol} ${sched.timeframe} enabled`}
+                              aria-label={t('candles.enabledAria', { symbol: sched.symbol, timeframe: sched.timeframe })}
                               className="sr-only peer"
                             />
                             <div className="w-9 h-5 bg-secondary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -674,8 +674,8 @@ export function CandleImport() {
                         </td>
                         <td className="text-xs font-mono text-muted-foreground">
                           {sched.last_run_at
-                            ? new Date(sched.last_run_at).toLocaleString()
-                            : 'Never'}
+                            ? formatDateTime(sched.last_run_at, { seconds: true })
+                            : t('common.never')}
                         </td>
                         <td>
                           {canSchedule && (
@@ -683,7 +683,7 @@ export function CandleImport() {
                             type="button"
                             onClick={() => setDeleteTarget(sched)}
                             className="p-1 text-muted-foreground hover:text-destructive rounded hover:bg-destructive/15"
-                            title="Delete schedule"
+                            title={t('candles.deleteTitle')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -709,10 +709,10 @@ export function CandleImport() {
       {/* Delete Schedule Confirmation */}
       <ConfirmDialog
         isOpen={deleteTarget !== null}
-        title="Delete Scheduled Import"
-        message="Delete this scheduled import? Already-imported candles are unaffected, and this only stops future runs after the worker's next restart."
+        title={t('candles.deleteDialogTitle')}
+        message={t('candles.deleteMessage')}
         isDangerous={true}
-        confirmText="Delete Schedule"
+        confirmText={t('candles.deleteConfirm')}
         onConfirm={handleConfirmDeleteSchedule}
         onCancel={() => setDeleteTarget(null)}
       />
@@ -721,11 +721,11 @@ export function CandleImport() {
 }
 
 function ScheduleRestartNotice() {
+  const t = useT();
   return (
     <p className="text-xs text-warning flex items-center gap-1.5">
       <Info className="w-3.5 h-3.5 shrink-0" />
-      Takes effect after the worker's next restart — from the Settings screen, or on its own next
-      redeploy.
+      {t('candles.restartNotice')}
     </p>
   );
 }

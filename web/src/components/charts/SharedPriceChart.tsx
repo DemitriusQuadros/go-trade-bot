@@ -15,6 +15,8 @@ import {
 import { TraceRecord } from '@/api/types';
 import { getChartColors, withAlpha } from '@/lib/chartTheme';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { chartLocalization, formatNumber } from '@/lib/format';
+import { useLocale } from '@/i18n';
 
 interface SharedPriceChartProps {
   trace: TraceRecord[];
@@ -105,6 +107,7 @@ export function SharedPriceChart({
   const [legendRecord, setLegendRecord] = useState<TraceRecord | null>(null);
   const [showMarkerText, setShowMarkerText] = useState(true);
   const isDark = useIsDarkMode();
+  const { locale } = useLocale();
   const onScrubRef = useRef(onScrub);
   onScrubRef.current = onScrub;
 
@@ -167,6 +170,7 @@ export function SharedPriceChart({
     if (!containerRef.current) return;
     const c = getChartColors();
     const chart = createChart(containerRef.current, {
+      localization: chartLocalization(),
       layout: {
         background: { type: ColorType.Solid, color: c.background },
         textColor: c.muted,
@@ -324,6 +328,12 @@ export function SharedPriceChart({
       wickDownColor: c.destructive,
     });
   }, [isDark]);
+
+  // Effect 1c: axis + crosshair labels follow the UI locale (i18n-01 §4),
+  // applied in place for the same reason as the theme effect above.
+  useEffect(() => {
+    chartRef.current?.applyOptions({ localization: chartLocalization() });
+  }, [locale]);
 
   // Effect 2: push new data into EXISTING series via .setData(), keyed by
   // plot name for stable series identity - the actual fix for "switching
@@ -554,19 +564,19 @@ export function SharedPriceChart({
             <>
               <span className="text-muted-foreground">O</span>
               <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
-                {legendCandle.o.toFixed(2)}
+                {formatNumber(legendCandle.o, { digits: 2 })}
               </span>
               <span className="text-muted-foreground">H</span>
               <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
-                {legendCandle.h.toFixed(2)}
+                {formatNumber(legendCandle.h, { digits: 2 })}
               </span>
               <span className="text-muted-foreground">L</span>
               <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
-                {legendCandle.l.toFixed(2)}
+                {formatNumber(legendCandle.l, { digits: 2 })}
               </span>
               <span className="text-muted-foreground">C</span>
               <span className={legendCandle.c >= legendCandle.o ? 'text-foreground' : 'text-destructive'}>
-                {legendCandle.c.toFixed(2)}
+                {formatNumber(legendCandle.c, { digits: 2 })}
               </span>
             </>
           )}
@@ -578,7 +588,7 @@ export function SharedPriceChart({
               return (
                 <span key={name} style={{ color: colorForName.get(name) }}>
                   {name}
-                  {point ? `: ${point.value.toFixed(2)}` : ''}
+                  {point ? `: ${formatNumber(point.value, { digits: 2 })}` : ''}
                 </span>
               );
             })}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/i18n"
 )
 
 const retryDelay = 2 * time.Second
@@ -22,6 +23,10 @@ const retryDelay = 2 * time.Second
 type WebhookNotifier struct {
 	url    string
 	client *http.Client
+	// locales is Settings.DefaultLocale (i18n-02 §4); nil = en. It is only
+	// consulted on the delivery goroutine, so a slow settings read never
+	// blocks Send (i.e. the trading loop).
+	locales i18n.Source
 }
 
 // NewWebhookNotifier builds a WebhookNotifier. An empty WebhookURL is
@@ -50,22 +55,24 @@ func (n *WebhookNotifier) Send(ctx context.Context, event Event) error {
 		return nil // safe no-op, Spec 09 AC#4
 	}
 
-	body, err := json.Marshal(event)
-	if err != nil {
-		log.Printf("notifier: failed to marshal event %s: %v", event.Type, err)
-		return nil
-	}
-
-	go n.deliver(event.Type, body)
+	go n.deliver(event)
 	return nil
 }
 
-func (n *WebhookNotifier) deliver(eventType EventType, body []byte) {
+func (n *WebhookNotifier) deliver(event Event) {
+	eventType := event.Type
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("notifier: recovered panic delivering webhook event %s: %v", eventType, r)
 		}
 	}()
+
+	event = LocalizeEvent(event, sourceLocale(context.Background(), n.locales))
+	body, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("notifier: failed to marshal event %s: %v", eventType, err)
+		return
+	}
 
 	if n.post(body) {
 		return

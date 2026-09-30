@@ -11,6 +11,7 @@ import { ChatComposer } from '@/components/domain/agentchat/ChatComposer';
 import { ApplyTarget } from '@/components/domain/agentchat/types';
 import { ChatBudgetLine, ChatDisabledNotice } from '@/components/domain/agentchat/ChatAccess';
 import { useAuth } from '@/context/AuthContext';
+import { useT } from '@/i18n';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 720;
@@ -33,6 +34,7 @@ const AGENT_DOCK_WIDTH_KEY = 'gtb_agent_dock_width';
 // Workbench the context is that strategy and code cards can be applied to
 // the editor via EditorBridgeContext + ApplyScriptDialog.
 export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useT();
   const s = useChatSession();
   const navigate = useNavigate();
   const bridge = useEditorBridge();
@@ -90,8 +92,8 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
       <button
         type="button"
         onClick={() => onOpenChange(true)}
-        title="Open the agent chat (Ctrl+.)"
-        aria-label="Open the agent chat"
+        title={t('dock.openTitle')}
+        aria-label={t('dock.openAria')}
         data-testid="agent-dock-open"
         className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-primary shadow-lg shadow-black/50 border border-primary/50 flex items-center justify-center overflow-hidden transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
@@ -105,11 +107,11 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
     ? { strategyId: bridge.strategyId ?? s.strategyId, onApply: (source) => setPendingApply(source) }
     : undefined;
 
-  const chip = s.strategyId != null ? `#${s.strategyId}` : s.contextKey === 'new' ? 'new strategy' : 'General';
+  const chip = s.strategyId != null ? `#${s.strategyId}` : s.contextKey === 'new' ? t('dock.newStrategy') : t('dock.general');
 
   return (
     <aside
-      aria-label="Agent chat"
+      aria-label={t('dock.aria')}
       data-testid="agent-dock"
       className="shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] self-start border-l border-border bg-background flex"
       style={{ width }}
@@ -117,14 +119,14 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize agent chat"
+        aria-label={t('dock.resizeAria')}
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={MAX_WIDTH}
         aria-valuenow={width}
         tabIndex={0}
         onMouseDown={onHandleDown}
         onKeyDown={onHandleKey}
-        title="Drag to resize"
+        title={t('dock.dragResize')}
         className="w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-primary/40 focus-visible:bg-primary/40 active:bg-primary/60 transition-colors focus:outline-none"
       />
       <div className="flex-1 min-w-0 flex flex-col">
@@ -134,23 +136,23 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
             <select
               value={s.selectedAgent?.id ?? ''}
               onChange={(e) => s.selectAgent(Number(e.target.value))}
-              aria-label="Agent persona answering in this chat"
-              title="Which agent persona answers"
+              aria-label={t('dock.personaAria')}
+              title={t('dock.personaTitle')}
               className="min-w-0 max-w-[10rem] truncate bg-secondary border border-border text-[11px] rounded px-1.5 py-0.5 text-foreground focus:outline-none focus:border-primary"
             >
               {s.agents.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
-                  {a.paused ? ' (paused)' : ''}
+                  {a.paused ? t('dock.paused') : ''}
                 </option>
               ))}
             </select>
           ) : (
-            <span className="text-sm font-bold text-foreground">Agent</span>
+            <span className="text-sm font-bold text-foreground">{t('dock.agent')}</span>
           )}
           <span
             className="text-[10px] font-mono text-muted-foreground bg-card border border-border rounded px-1.5 py-0.5 whitespace-nowrap"
-            title="Conversation context - sent with every message"
+            title={t('dock.contextTitle')}
           >
             {chip}
           </span>
@@ -158,8 +160,8 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
             <button
               type="button"
               onClick={() => navigate(agentModeHref(s.strategyId, s.selectedAgent?.id))}
-              title="Expand to Agent mode (Ctrl+Shift+.)"
-              aria-label="Expand to Agent mode"
+              title={t('dock.expandTitle')}
+              aria-label={t('dock.expandAria')}
               data-testid="agent-dock-expand"
               className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-accent/60"
             >
@@ -168,16 +170,16 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
             <Link
               to="/activity?tab=agent"
               className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-accent/60"
-              title="Agent run history"
-              aria-label="Agent run history"
+              title={t('dock.history')}
+              aria-label={t('dock.history')}
             >
               <History className="w-4 h-4" />
             </Link>
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              title="Close (Ctrl+.)"
-              aria-label="Close the agent chat"
+              title={t('dock.closeTitle')}
+              aria-label={t('dock.closeAria')}
               className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-accent/60"
             >
               <X className="w-4 h-4" />
@@ -186,7 +188,7 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
         </div>
 
         <p className="px-3 pt-2 text-[10px] text-muted-foreground shrink-0">
-          Agents only change backtest/dryrun testing strategies; live changes need your approval.
+          {t('chat.safetyNote')}
         </p>
 
         {/* The new-strategy workbench stays on its (possibly half-typed)
@@ -197,12 +199,12 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
             role="status"
             className="mx-3 mt-2 shrink-0 flex items-center gap-2 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-[11px] text-foreground"
           >
-            <span className="min-w-0">The agent created strategy #{s.strategyId} from this chat.</span>
+            <span className="min-w-0">{t('dock.created', { id: s.strategyId })}</span>
             <Link
               to={`/strategies/${s.strategyId}/edit`}
               className="ml-auto shrink-0 font-semibold text-primary hover:underline"
             >
-              Open #{s.strategyId} in the editor
+              {t('dock.openInEditor', { id: s.strategyId })}
             </Link>
           </div>
         )}
@@ -215,8 +217,8 @@ export function AgentDock({ open, onOpenChange }: { open: boolean; onOpenChange:
               <MessageSquareText className="w-8 h-8 opacity-40" />
               <p className="text-xs">
                 {s.strategyId != null
-                  ? `Ask about strategy #${s.strategyId}: backtest it, explain its trades, or draft a change.`
-                  : 'Ask the agent to inspect strategies, run backtests, or draft a script.'}
+                  ? t('dock.emptyStrategy', { id: s.strategyId })
+                  : t('dock.emptyGeneral')}
               </p>
             </div>
           }

@@ -5,38 +5,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { UserAvatar } from '@/components/layout/UserMenu';
-import { PERMISSION_STRINGS } from '@/lib/permissions';
-import { formatUsd } from '@/lib/time';
+import { formatUsd } from '@/lib/format';
+import { useT } from '@/i18n';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
-// User-facing strings (kept together for the i18n pass).
-const STRINGS = {
-  title: 'Profile',
-  subtitle: 'Your account on this bot.',
-  account: 'Account',
-  accountSubtitle: 'How you appear to other users (notes, proposal decisions).',
-  username: 'Username',
-  displayName: 'Display name',
-  saveName: 'Save',
-  nameSaved: 'Display name saved',
-  nameRequired: 'Display name is required.',
-  role: 'Role',
-  capabilities: 'Capabilities',
-  agentSpend: "Today's agent spend",
-  agentSpendValue: (spent: string, budget: string) => `${spent} of ${budget}`,
-  noChat: 'Agent chat is off for your account.',
-  language: 'Language',
-  languagePlaceholder: 'Coming soon',
-  password: 'Change password',
-  passwordSubtitle: 'Changing your password signs you out everywhere else.',
-  currentPassword: 'Current password',
-  newPassword: 'New password',
-  confirmPassword: 'Confirm new password',
-  changePassword: 'Change password',
-  passwordChanged: 'Password changed - your other sessions were signed out.',
-  passwordMissing: 'Fill in all three password fields.',
-  passwordShort: 'The new password must be at least 10 characters.',
-  passwordMismatch: "The new passwords don't match.",
-};
 
 const LABEL = 'block text-xs font-semibold text-foreground mb-1.5';
 const MIN_PASSWORD = 10;
@@ -47,6 +19,7 @@ const BUTTON =
 export function Profile() {
   const { me, refresh } = useAuth();
   const { toast } = useToast();
+  const t = useT();
 
   const [displayName, setDisplayName] = useState(me?.display_name ?? '');
   const [savingName, setSavingName] = useState(false);
@@ -69,16 +42,16 @@ export function Profile() {
     e.preventDefault();
     setNameError(null);
     if (!displayName.trim()) {
-      setNameError(STRINGS.nameRequired);
+      setNameError(t('profile.nameRequired'));
       return;
     }
     setSavingName(true);
     try {
       await api.updateMe({ display_name: displayName.trim() });
       await refresh();
-      toast(STRINGS.nameSaved);
+      toast(t('profile.nameSaved'));
     } catch (err) {
-      setNameError(apiErrorMessage(err, 'Failed to save the display name'));
+      setNameError(apiErrorMessage(err, t('profile.nameSaveFailed')));
     } finally {
       setSavingName(false);
     }
@@ -87,18 +60,18 @@ export function Profile() {
   const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
-    if (!currentPassword || !newPassword || !confirmPassword) return setPasswordError(STRINGS.passwordMissing);
-    if (newPassword.length < MIN_PASSWORD) return setPasswordError(STRINGS.passwordShort);
-    if (newPassword !== confirmPassword) return setPasswordError(STRINGS.passwordMismatch);
+    if (!currentPassword || !newPassword || !confirmPassword) return setPasswordError(t('profile.passwordMissing'));
+    if (newPassword.length < MIN_PASSWORD) return setPasswordError(t('profile.passwordShort'));
+    if (newPassword !== confirmPassword) return setPasswordError(t('profile.passwordMismatch'));
     setSavingPassword(true);
     try {
       await api.updateMe({ current_password: currentPassword, new_password: newPassword });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      toast(STRINGS.passwordChanged);
+      toast(t('profile.passwordChanged'));
     } catch (err) {
-      setPasswordError(apiErrorMessage(err, 'Failed to change the password'));
+      setPasswordError(apiErrorMessage(err, t('profile.passwordFailed')));
     } finally {
       setSavingPassword(false);
     }
@@ -111,19 +84,19 @@ export function Profile() {
       <div className="flex items-center gap-3">
         <UserAvatar name={me.display_name || me.username} className="w-12 h-12 text-lg" />
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{STRINGS.title}</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">{STRINGS.subtitle}</p>
+          <h1 className="text-2xl font-bold text-foreground">{t('profile.title')}</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('profile.subtitle')}</p>
         </div>
       </div>
 
       <Card>
-        <CardHeader title={STRINGS.account} subtitle={STRINGS.accountSubtitle} />
+        <CardHeader title={t('profile.account')} subtitle={t('profile.accountSubtitle')} />
         <dl className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-x-4 gap-y-3 text-xs items-center">
-          <dt className="text-muted-foreground">{STRINGS.username}</dt>
+          <dt className="text-muted-foreground">{t('profile.username')}</dt>
           <dd className="font-mono text-foreground">{me.username}</dd>
 
           <dt className="text-muted-foreground">
-            <label htmlFor="profile-display-name">{STRINGS.displayName}</label>
+            <label htmlFor="profile-display-name">{t('profile.displayName')}</label>
           </dt>
           <dd>
             <form onSubmit={saveName} className="flex items-center gap-2">
@@ -136,44 +109,45 @@ export function Profile() {
               />
               <button type="submit" disabled={savingName || displayName.trim() === me.display_name} className={BUTTON}>
                 {savingName ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                {STRINGS.saveName}
+                {t('common.save')}
               </button>
             </form>
             {nameError && <p role="alert" className="mt-1 text-[11px] text-destructive">{nameError}</p>}
           </dd>
 
-          <dt className="text-muted-foreground">{STRINGS.role}</dt>
-          <dd className="text-foreground">{PERMISSION_STRINGS.roleLabels[me.role] ?? me.role}</dd>
+          <dt className="text-muted-foreground">{t('profile.role')}</dt>
+          <dd className="text-foreground">{t.enum('role', me.role)}</dd>
 
-          <dt className="text-muted-foreground">{STRINGS.capabilities}</dt>
+          <dt className="text-muted-foreground">{t('profile.capabilities')}</dt>
           <dd className="flex flex-wrap gap-1" data-testid="profile-capabilities">
             {caps.map((c) => (
               <span
                 key={c}
                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-secondary text-foreground border-border"
               >
-                {PERMISSION_STRINGS.capabilityLabels[c] ?? c}
+                {t.enum('capability', c)}
               </span>
             ))}
           </dd>
 
-          <dt className="text-muted-foreground">{STRINGS.agentSpend}</dt>
+          <dt className="text-muted-foreground">{t('profile.agentSpend')}</dt>
           <dd className="font-mono text-foreground">
             {me.daily_agent_budget_usd > 0
-              ? STRINGS.agentSpendValue(formatUsd(me.today_agent_cost_usd), formatUsd(me.daily_agent_budget_usd))
-              : STRINGS.noChat}
+              ? t('profile.agentSpendValue', { spent: formatUsd(me.today_agent_cost_usd), budget: formatUsd(me.daily_agent_budget_usd) })
+              : t('profile.noChat')}
           </dd>
 
-          {/* Placeholder - i18n-01 wires the language picker. */}
-          <dt className="text-muted-foreground">{STRINGS.language}</dt>
-          <dd className="text-muted-foreground" data-testid="profile-language">
-            {STRINGS.languagePlaceholder}
+          {/* i18n-01 §2: saved on the account via PATCH /auth/me {locale}. */}
+          <dt className="text-muted-foreground">{t('profile.language')}</dt>
+          <dd data-testid="profile-language">
+            <LanguageSwitcher testId="profile-language-switcher" />
+            <p className="mt-1 text-[11px] text-muted-foreground">{t('profile.languageHelp')}</p>
           </dd>
         </dl>
       </Card>
 
       <Card>
-        <CardHeader title={STRINGS.password} subtitle={STRINGS.passwordSubtitle} />
+        <CardHeader title={t('profile.password')} subtitle={t('profile.passwordSubtitle')} />
         <form onSubmit={changePassword} className="space-y-3 max-w-sm">
           {passwordError && (
             <div role="alert" className="p-2.5 rounded border border-destructive/40 bg-destructive/15 text-xs text-destructive">
@@ -181,7 +155,7 @@ export function Profile() {
             </div>
           )}
           <div>
-            <label htmlFor="profile-current-password" className={LABEL}>{STRINGS.currentPassword}</label>
+            <label htmlFor="profile-current-password" className={LABEL}>{t('profile.currentPassword')}</label>
             <input
               id="profile-current-password"
               type="password"
@@ -192,7 +166,7 @@ export function Profile() {
             />
           </div>
           <div>
-            <label htmlFor="profile-new-password" className={LABEL}>{STRINGS.newPassword}</label>
+            <label htmlFor="profile-new-password" className={LABEL}>{t('profile.newPassword')}</label>
             <input
               id="profile-new-password"
               type="password"
@@ -203,7 +177,7 @@ export function Profile() {
             />
           </div>
           <div>
-            <label htmlFor="profile-confirm-password" className={LABEL}>{STRINGS.confirmPassword}</label>
+            <label htmlFor="profile-confirm-password" className={LABEL}>{t('profile.confirmPassword')}</label>
             <input
               id="profile-confirm-password"
               type="password"
@@ -215,7 +189,7 @@ export function Profile() {
           </div>
           <button type="submit" disabled={savingPassword} className={BUTTON}>
             {savingPassword && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {STRINGS.changePassword}
+            {t('profile.changePassword')}
           </button>
         </form>
       </Card>

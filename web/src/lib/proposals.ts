@@ -6,16 +6,13 @@ import {
   ProposalEvidence,
   ProposalStatus,
 } from '@/api/types';
+import { hasKey, tr, type MessageKey } from '@/i18n';
+import { formatNumber } from '@/lib/format';
 
 // Helpers for the Phase B proposals UI (B-02). Pure functions only.
 
-export const PROPOSAL_KIND_LABEL: Record<string, string> = {
-  promote_challenger: 'Promote challenger',
-  gate_failed_change: 'Gate-failed change',
-};
-
 export function proposalKindLabel(kind: string): string {
-  return PROPOSAL_KIND_LABEL[kind] ?? kind;
+  return hasKey(`proposals.kind.${kind}`) ? tr(`proposals.kind.${kind}` as MessageKey) : kind;
 }
 
 // Inbox tabs (B-02 §2). History covers every terminal status.
@@ -108,12 +105,13 @@ export function formatMetric(v: number | null | undefined, digits = 2): string {
   if (v === Infinity) return '+∞';
   if (v === -Infinity) return '-∞';
   if (Number.isInteger(v)) return String(v);
-  return v.toFixed(digits);
+  return formatNumber(v, { digits });
 }
 
 // "max_drawdown_ratio" -> "Max drawdown ratio"
 export function humanizeCheckName(name: string | undefined): string {
-  if (!name) return 'Unnamed check';
+  if (!name) return tr('proposals.unnamedCheck');
+  if (hasKey(`proposals.check.${name}`)) return tr(`proposals.check.${name}` as MessageKey);
   const s = name.replace(/[_-]+/g, ' ').trim();
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

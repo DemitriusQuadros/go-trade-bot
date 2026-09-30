@@ -23,8 +23,11 @@ import {
   AlertCircle,
   CheckCircle,
 } from 'lucide-react';
+import { formatNumber, formatPct } from '@/lib/format';
+import { useT } from '@/i18n';
 
 export function Optimization() {
+      const t = useT();
   
   
 
@@ -182,7 +185,7 @@ export function Optimization() {
       });
       setActiveRunId(res.id);
     } catch (err: any) {
-      setError(apiErrorMessage(err, 'Failed to start optimization run'));
+      setError(apiErrorMessage(err, t('optimization.startFailed')));
     } finally {
       setLaunching(false);
     }
@@ -231,10 +234,10 @@ export function Optimization() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          Grid Parameter Optimization
+          {t('optimization.title')}
         </h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Exhaustive multi-dimensional hyperparameter sweep & Sharpe response heatmap
+          {t('optimization.subtitle')}
         </p>
       </div>
 
@@ -243,8 +246,8 @@ export function Optimization() {
         <div>
           <Card>
             <CardHeader
-              title="Launch Parameter Grid"
-              subtitle="Define search space ranges & testing period"
+              title={t('optimization.launchTitle')}
+              subtitle={t('optimization.launchSubtitle')}
             />
 
             {error && (
@@ -256,7 +259,7 @@ export function Optimization() {
 
             <form onSubmit={handleLaunch} className="space-y-4 text-xs">
               <div className="form-group mb-0">
-                <label className="form-label">Strategy</label>
+                <label className="form-label">{t('optimization.strategy')}</label>
                 <select
                   value={strategyId}
                   onChange={(e) => setStrategyId(Number(e.target.value))}
@@ -271,17 +274,18 @@ export function Optimization() {
                 {selectedStrategy && (
                   availableParams.length > 0 ? (
                     <p className="text-[11px] text-muted-foreground mt-1.5">
-                      Sweepable for this strategy: {availableParams.map((p, i) => (
-                        <React.Fragment key={p}>
-                          {i > 0 && ', '}
-                          <code className="text-foreground font-mono">{p}</code>
-                        </React.Fragment>
-                      ))}
+                      {t.rich('optimization.sweepable', {
+                        params: availableParams.map((p, i) => (
+                          <React.Fragment key={p}>
+                            {i > 0 && ', '}
+                            <code className="text-foreground font-mono">{p}</code>
+                          </React.Fragment>
+                        )),
+                      })}
                     </p>
                   ) : (
                     <p className="text-[11px] text-warning mt-1.5">
-                      No numeric config fields detected for this strategy - sweeping an arbitrary
-                      name will produce identical results for every combination.
+                      {t('optimization.noNumericFields')}
                     </p>
                   )
                 )}
@@ -289,7 +293,7 @@ export function Optimization() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group mb-0">
-                  <label className="form-label">Symbol</label>
+                  <label className="form-label">{t('optimization.symbol')}</label>
                   <input
                     type="text"
                     required
@@ -299,7 +303,7 @@ export function Optimization() {
                   />
                 </div>
                 <div className="form-group mb-0">
-                  <label className="form-label">Timeframe</label>
+                  <label className="form-label">{t('optimization.timeframe')}</label>
                   <select
                     value={timeframe}
                     onChange={(e) => setTimeframe(e.target.value)}
@@ -315,7 +319,7 @@ export function Optimization() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group mb-0">
-                  <label className="form-label">Start Date</label>
+                  <label className="form-label">{t('optimization.startDate')}</label>
                   <input
                     type="date"
                     required
@@ -325,7 +329,7 @@ export function Optimization() {
                   />
                 </div>
                 <div className="form-group mb-0">
-                  <label className="form-label">End Date</label>
+                  <label className="form-label">{t('optimization.endDate')}</label>
                   <input
                     type="date"
                     required
@@ -340,14 +344,14 @@ export function Optimization() {
               <div className="p-3 bg-card/20/60 rounded-lg border border-border/30 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    Parameter 1 (X-Axis)
-                    <HelpTooltip>First hyperparameter dimension to sweep across (min, max, step increments)</HelpTooltip>
+                    {t('optimization.param1')}
+                    <HelpTooltip>{t('optimization.param1Help')}</HelpTooltip>
                   </span>
                 </div>
                 <input
                   type="text"
                   required
-                  placeholder="Parameter name (e.g. grid_levels)"
+                  placeholder={t('optimization.param1Placeholder')}
                   value={param1Name}
                   onChange={(e) => setParam1Name(e.target.value)}
                   className="form-input text-xs font-mono mb-2"
@@ -355,7 +359,7 @@ export function Optimization() {
                 />
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="form-label text-[10px]">Min</label>
+                    <label className="form-label text-[10px]">{t('optimization.min')}</label>
                     <input
                       type="number"
                       step="any"
@@ -366,7 +370,7 @@ export function Optimization() {
                     />
                   </div>
                   <div>
-                    <label className="form-label text-[10px]">Max</label>
+                    <label className="form-label text-[10px]">{t('optimization.max')}</label>
                     <input
                       type="number"
                       step="any"
@@ -377,7 +381,7 @@ export function Optimization() {
                     />
                   </div>
                   <div>
-                    <label className="form-label text-[10px]">Step</label>
+                    <label className="form-label text-[10px]">{t('optimization.step')}</label>
                     <input
                       type="number"
                       step="any"
@@ -394,14 +398,14 @@ export function Optimization() {
               <div className="p-3 bg-card/20/60 rounded-lg border border-border/30 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-accent-foreground flex items-center gap-1.5">
-                    Parameter 2 (Y-Axis)
-                    <HelpTooltip>Second hyperparameter dimension to sweep across in grid combinations</HelpTooltip>
+                    {t('optimization.param2')}
+                    <HelpTooltip>{t('optimization.param2Help')}</HelpTooltip>
                   </span>
                 </div>
                 <input
                   type="text"
                   required
-                  placeholder="Parameter name (e.g. grid_spacing_pct)"
+                  placeholder={t('optimization.param2Placeholder')}
                   value={param2Name}
                   onChange={(e) => setParam2Name(e.target.value)}
                   className="form-input text-xs font-mono mb-2"
@@ -409,7 +413,7 @@ export function Optimization() {
                 />
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="form-label text-[10px]">Min</label>
+                    <label className="form-label text-[10px]">{t('optimization.min')}</label>
                     <input
                       type="number"
                       step="any"
@@ -420,7 +424,7 @@ export function Optimization() {
                     />
                   </div>
                   <div>
-                    <label className="form-label text-[10px]">Max</label>
+                    <label className="form-label text-[10px]">{t('optimization.max')}</label>
                     <input
                       type="number"
                       step="any"
@@ -431,7 +435,7 @@ export function Optimization() {
                     />
                   </div>
                   <div>
-                    <label className="form-label text-[10px]">Step</label>
+                    <label className="form-label text-[10px]">{t('optimization.step')}</label>
                     <input
                       type="number"
                       step="any"
@@ -446,7 +450,7 @@ export function Optimization() {
 
               {!canLaunch ? (
                 <p className="text-xs text-muted-foreground text-center" data-testid="optimization-no-permission">
-                  Your account can't start optimizations.
+                  {t('optimization.noPermission')}
                 </p>
               ) : (
               <button
@@ -457,10 +461,10 @@ export function Optimization() {
                 <Play className="w-4 h-4" />
                 <span>
                   {launching || (!!activeRunId && !isTerminal)
-                    ? 'Optimization in progress...'
+                    ? t('optimization.inProgress')
                     : isFailed
-                      ? 'Retry Parameter Sweep'
-                      : 'Start Parameter Sweep'}
+                      ? t('optimization.retry')
+                      : t('optimization.start')}
                 </span>
               </button>
               )}
@@ -482,7 +486,7 @@ export function Optimization() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-sm text-foreground">
-                    Optimization Run #{activeRunId}
+                    {t('optimization.runTitle', { id: activeRunId })}
                   </span>
                   <StatusBadge status={statusData?.status || 'running'} />
                 </div>
@@ -499,25 +503,25 @@ export function Optimization() {
 
               <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2">
                 <span>
-                  Total Combinations: {statusData?.total_combinations ?? '—'}
-                  {statusData ? ` (${statusData.progress}/${statusData.total_combinations} done)` : ''}
+                  {t('optimization.totalCombinations', { total: statusData?.total_combinations ?? '—' })}
+                  {statusData ? t('optimization.progressDone', { done: statusData.progress, total: statusData.total_combinations }) : ''}
                 </span>
                 {!isTerminal && (
                   <span className="flex items-center gap-1 text-foreground">
                     <Spinner size="sm" />
-                    <span>Evaluating backtest candidates sequentially...</span>
+                    <span>{t('optimization.evaluating')}</span>
                   </span>
                 )}
                 {isCompleted && (
                   <span className="flex items-center gap-1 text-success font-semibold">
                     <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Sweep Completed</span>
+                    <span>{t('optimization.completed')}</span>
                   </span>
                 )}
                 {isFailed && (
                   <span className="flex items-center gap-1 text-destructive font-semibold">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    <span>Sweep Failed</span>
+                    <span>{t('optimization.failed')}</span>
                   </span>
                 )}
               </div>
@@ -527,7 +531,7 @@ export function Optimization() {
                   <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <span>
                     {(statusData as any)?.error_message ||
-                      'The sweep failed. Check that the selected strategy is still registered (e.g. not a retired algorithm) and that its parameters are valid.'}
+                      t('optimization.failedHelp')}
                   </span>
                 </div>
               )}
@@ -542,10 +546,10 @@ export function Optimization() {
                 <div className="flex items-start justify-between">
                   <div>
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-secondary/40 text-foreground border-border/40 mb-1">
-                      Optimal Parameter Set
+                      {t('optimization.optimalSet')}
                     </span>
                     <h3 className="text-base font-bold text-foreground mt-1">
-                      Best Discovered Configuration
+                      {t('optimization.bestConfig')}
                     </h3>
                     <div className="flex items-center gap-4 mt-2 text-xs font-mono">
                       {Object.entries(results.best_config || {}).map(([k, v]) => (
@@ -556,9 +560,9 @@ export function Optimization() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[11px] text-muted-foreground block uppercase">Sharpe Ratio</span>
+                    <span className="text-[11px] text-muted-foreground block uppercase">{t('optimization.sharpeRatio')}</span>
                     <span className="text-xl font-bold font-mono text-success">
-                      {Number((results.best_metrics as any)?.sharpe || 0).toFixed(2)}
+                      {formatNumber(Number((results.best_metrics as any)?.sharpe || 0), { digits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -567,8 +571,8 @@ export function Optimization() {
               {/* 2D Heatmap */}
               <Card>
                 <CardHeader
-                  title="Sharpe Ratio Response Surface"
-                  subtitle={`2D parameter heatmap across ${param1Name} vs ${param2Name}`}
+                  title={t('optimization.surface')}
+                  subtitle={t('optimization.surfaceSubtitle', { x: param1Name, y: param2Name })}
                 />
                 <ParamHeatmap
                   xAxisLabel={param1Name}
@@ -585,8 +589,8 @@ export function Optimization() {
               {/* Candidates Table */}
               <Card>
                 <CardHeader
-                  title="Top Evaluated Combinations"
-                  subtitle="Sorted by risk-adjusted return (Sharpe Ratio)"
+                  title={t('optimization.topCombos')}
+                  subtitle={t('optimization.topCombosSubtitle')}
                 />
                 {/* `.table-container`/`.table` were dead classes (see
                     BacktestPane's trade log fix for the full story) - real
@@ -595,12 +599,12 @@ export function Optimization() {
                   <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_th]:sticky [&_th]:top-0 [&_th]:bg-card/90 [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40">
                     <thead>
                       <tr>
-                        <th>Rank</th>
-                        <th>Parameters</th>
-                        <th>Sharpe</th>
-                        <th>Max Drawdown</th>
-                        <th>Win Rate</th>
-                        <th>Total Return</th>
+                        <th>{t('optimization.colRank')}</th>
+                        <th>{t('optimization.colParams')}</th>
+                        <th>{t('optimization.colSharpe')}</th>
+                        <th>{t('optimization.colMaxDd')}</th>
+                        <th>{t('optimization.colWinRate')}</th>
+                        <th>{t('optimization.colTotalReturn')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -617,16 +621,16 @@ export function Optimization() {
                                 .join(', ')}
                             </td>
                             <td className="font-mono font-bold text-success">
-                              {cand.metrics?.sharpe?.toFixed(2) || '—'}
+                              {formatNumber(cand.metrics?.sharpe, { digits: 2 })}
                             </td>
                             <td className="font-mono text-xs text-muted-foreground">
-                              {cand.metrics?.max_drawdown_pct?.toFixed(1)}%
+                              {formatPct(cand.metrics?.max_drawdown_pct, 1)}
                             </td>
                             <td className="font-mono text-xs text-muted-foreground">
-                              {cand.metrics?.win_rate_pct?.toFixed(1)}%
+                              {formatPct(cand.metrics?.win_rate_pct, 1)}
                             </td>
                             <td className="font-mono text-xs font-semibold text-foreground">
-                              {cand.metrics?.total_return_pct?.toFixed(2)}%
+                              {formatPct(cand.metrics?.total_return_pct, 2)}
                             </td>
                           </tr>
                         ))}
@@ -640,10 +644,10 @@ export function Optimization() {
               <Card className="p-12 text-center text-muted-foreground">
                 <Grid className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
                 <h3 className="text-sm font-semibold text-foreground mb-1">
-                  No Optimization Results Selected
+                  {t('optimization.noResults')}
                 </h3>
                 <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  Configure search parameters and launch a sweep to visualize the 2D performance heatmap.
+                  {t('optimization.noResultsHelp')}
                 </p>
               </Card>
             )

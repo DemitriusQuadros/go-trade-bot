@@ -57,6 +57,7 @@ import { ScriptVersion,
   UserCreateRequest,
   UserUpdateRequest,
 } from './types';
+import { getLocale, tr, type MessageKey } from '@/i18n';
 
 // Migration hygiene (auth-02 §1): the shared-token login is gone - the session
 // now lives in the HttpOnly `gtb_session` cookie. Drop the old token once.
@@ -159,7 +160,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     if (apiErrorCode(err) === ACCESS_REQUIRED_CODE) {
       onAccessRequired?.();
     } else if (method !== 'GET' && method !== 'HEAD') {
-      onForbidden?.(apiErrorMessage(err, 'You don\'t have permission to do that.'));
+      onForbidden?.(apiErrorMessage(err, tr('errors.forbiddenDefault')));
     }
     throw err;
   }
@@ -280,7 +281,8 @@ export const api = {
     api.get<MonteCarloSummary>(`/backtest/${runId}/montecarlo`, opts),
   // iframe / new-tab URL. The session cookie rides along (same origin), so
   // no credential is ever put in the URL.
-  getReportUrl: (runId: number) => `${API_PREFIX}/backtest/${runId}/report`,
+  // i18n-02 contract (reconciled): backtest HTML report accepts ?lang=<locale> for its static labels.
+  getReportUrl: (runId: number) => `${API_PREFIX}/backtest/${runId}/report${buildQuery({ lang: getLocale() })}`,
 
   // Optimization
   startOptimization: (req: CreateOptimizationRequest) =>
@@ -382,8 +384,10 @@ export const api = {
     api.get<AgentReport>(`/agent-reports/${id}`, opts),
   // iframe src - authenticated by the same-origin session cookie. theme
   // makes the server-rendered report match the app's light/dark mode.
+  // lang picks the viewer's locale snapshot (labels only; model text stays as written).
+  // i18n-02 contract (reconciled): ?lang=en|es|pt-BR, falling back to RenderedHTML server-side for old reports.
   getAgentReportHtmlUrl: (id: number, theme?: 'dark' | 'light') =>
-    `${API_PREFIX}/agent-reports/${id}/html${buildQuery({ theme })}`,
+    `${API_PREFIX}/agent-reports/${id}/html${buildQuery({ theme, lang: getLocale() })}`,
 
   // Webhook targets (agent notifications)
   listWebhookTargets: (opts?: { signal?: AbortSignal }) =>
@@ -512,8 +516,26 @@ export function apiErrorCode(err: unknown): string | null {
 // apiErrorMessage extracts the human-readable message from a failed call.
 // Handlers answer errors as {"error": code, "message": text} (A-02 §5);
 // older ones answer plain text. Falls back to the Error's own message.
-export function apiErrorMessage(err: unknown, fallback = 'Request failed'): string {
+// Backend error codes with a translated message (i18n-01 §3). The backend's
+// own `message` stays English; for these codes the UI shows its own text,
+// for anything else the backend message as is.
+const TRANSLATED_ERROR_CODES = new Set([
+  'invalid_credentials',
+  'rate_limited',
+  'user_budget_exceeded',
+  'forbidden',
+  'access_required',
+  'chain_cycle',
+  'superseded',
+  'invalid_trigger',
+  'agent_unavailable',
+]);
+
+export function apiErrorMessage(err: unknown, fallback?: string): string {
+  const fb = fallback ?? tr('errors.requestFailed');
   if (err instanceof ApiError) {
+    const code = apiErrorCode(err);
+    if (code && TRANSLATED_ERROR_CODES.has(code)) return tr(`errors.${code}` as MessageKey);
     const body = err.body?.trim();
     if (body) {
       try {
@@ -524,9 +546,9 @@ export function apiErrorMessage(err: unknown, fallback = 'Request failed'): stri
         return body;
       }
     }
-    return `${fallback} (HTTP ${err.status})`;
+    return tr('errors.httpStatus', { message: fb, status: err.status });
   }
-  if (err instanceof NetworkError) return 'Could not reach the server. Check that the API is running.';
+  if (err instanceof NetworkError) return tr('errors.network');
   if (err instanceof Error && err.message) return err.message;
-  return fallback;
+  return fb;
 }

@@ -24,6 +24,7 @@ import (
 	strategyusecase "go-trade-bot/app/usecase/strategy"
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
 
@@ -98,6 +99,7 @@ var AgentModule = fx.Module("agent",
 			db *gorm.DB,
 			bt *backtestusecase.BacktestUseCase,
 			runner *strategyscript.Runner,
+			locales i18n.Source,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
@@ -120,6 +122,7 @@ var AgentModule = fx.Module("agent",
 			uc.Guard = agentusecase.NewDefaultGuard(settings, platform, n)
 			uc.Lock = strategyLock
 			uc.APIBaseURL = cfg.APIBaseURL
+			uc.Locales = locales // i18n-02: default locale for runs and report snapshots
 			// Phase B-01: gated deploys, challengers, proposals (chat).
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
 			return uc

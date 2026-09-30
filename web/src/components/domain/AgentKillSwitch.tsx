@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Power, PowerOff } from 'lucide-react';
 import { useAgentsPausedState, useSetAgentsPaused } from '@/hooks/queries';
 import { useAuth } from '@/context/AuthContext';
-import { PERMISSION_STRINGS } from '@/lib/permissions';
 import { apiErrorMessage } from '@/api/client';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/context/ToastContext';
+import { useT } from '@/i18n';
 
 // Global agents kill switch (A-03 §2), rendered in the sidebar footer.
 // Reflects `agents_paused` from GET /settings, so it survives a reload.
@@ -13,6 +13,7 @@ import { useToast } from '@/context/ToastContext';
 // lets every non-paused agent's cron schedule start firing again.
 // Admin only (auth-02 §4): everyone else sees the state read-only.
 export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
+  const t = useT();
   const { can } = useAuth();
   const isAdmin = can('admin');
   const { paused: pausedState, isLoading } = useAgentsPausedState(isAdmin);
@@ -26,12 +27,12 @@ export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
   if (!isAdmin) {
     // State unknown (the read-only endpoint isn't available) -> render nothing.
     if (pausedState === undefined) return null;
-    const roLabel = paused ? 'Agents: paused' : 'Agents: running';
+    const roLabel = paused ? t('agents.killPaused') : t('agents.killRunning');
     return (
       <div
         role="status"
         aria-label={roLabel}
-        title={expanded ? PERMISSION_STRINGS.adminOnly : `${roLabel}. ${PERMISSION_STRINGS.adminOnly}`}
+        title={expanded ? t('users.adminOnly') : t('agents.killAdminOnly', { label: roLabel, adminOnly: t('users.adminOnly') })}
         data-testid="kill-switch-readonly"
         className={`w-full flex items-center gap-3 px-2 py-2 rounded-md border text-xs overflow-hidden ${
           paused ? 'bg-warning/15 border-warning/40 text-warning' : 'border-transparent text-muted-foreground'
@@ -56,8 +57,8 @@ export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
     setPaused.mutate(
       next,
       {
-        onSuccess: () => toast(next ? 'All agents paused' : 'Agents resumed', next ? 'info' : 'success'),
-        onError: (err) => toast(apiErrorMessage(err, 'Failed to update the agents kill switch'), 'error'),
+        onSuccess: () => toast(next ? t('agents.killAllPaused') : t('agents.killResumed'), next ? 'info' : 'success'),
+        onError: (err) => toast(apiErrorMessage(err, t('agents.killFailed')), 'error'),
       },
     );
   };
@@ -71,7 +72,7 @@ export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
     }
   };
 
-  const label = paused ? 'Agents: paused' : 'Agents: running';
+  const label = paused ? t('agents.killPaused') : t('agents.killRunning');
 
   return (
     <>
@@ -79,7 +80,7 @@ export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
         type="button"
         role="switch"
         aria-checked={!paused}
-        aria-label={`${label}. ${paused ? 'Resume agents' : 'Pause all agents'}`}
+        aria-label={paused ? t('agents.killResumeAction', { label }) : t('agents.killPauseAction', { label })}
         title={expanded ? undefined : label}
         onClick={handleClick}
         disabled={disabled}
@@ -104,9 +105,9 @@ export function AgentKillSwitch({ expanded }: { expanded: boolean }) {
 
       <ConfirmDialog
         isOpen={confirmResume}
-        title="Resume all agents?"
-        message="Scheduled agents will start running again on their next cron tick, and manual runs and persona chats will be accepted. Agents that are individually paused stay paused."
-        confirmText="Resume agents"
+        title={t('agents.resumeAllTitle')}
+        message={t('agents.resumeAllMessage')}
+        confirmText={t('agents.resumeAgents')}
         onConfirm={() => {
           setConfirmResume(false);
           apply(false);

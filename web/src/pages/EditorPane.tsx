@@ -16,6 +16,7 @@ import {
   WorkbenchContext,
 } from './WorkbenchShell';
 import { Save, Rocket, CheckCircle2, AlertCircle, Code2, RotateCcw, RefreshCw } from 'lucide-react';
+import { useT } from '@/i18n';
 
 const LIVE_REFRESH_MS = 5000;
 
@@ -31,6 +32,7 @@ const DEFAULT_WINDOW_CANDLES = 100;
 const MAX_WINDOW_CANDLES = 2000;
 
 export function EditorPane() {
+  const t = useT();
   const navigate = useNavigate();
   const ctx = useOutletContext<WorkbenchContext>();
   const { draft, setDraft, setEditorTrace, setActiveTraceSource, appendConsoleEntry, readOnly } = ctx;
@@ -123,8 +125,8 @@ export function EditorPane() {
       .catch((err) => {
         ctx.setLoadingMoreHistory(false);
         if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
-        setPreviewError(apiErrorMessage(err, 'Preview request failed'));
-        appendConsoleEntry({ source: 'editor', kind: 'error', message: apiErrorMessage(err, 'Preview request failed') });
+        setPreviewError(apiErrorMessage(err, t('workbench.previewFailed')));
+        appendConsoleEntry({ source: 'editor', kind: 'error', message: apiErrorMessage(err, t('workbench.previewFailed')) });
       });
   };
 
@@ -228,11 +230,11 @@ export function EditorPane() {
     setActionMessage(null);
     if (readOnlyRef.current) return null;
     if (!draft.name.trim()) {
-      setActionMessage({ type: 'error', text: 'Strategy name is required' });
+      setActionMessage({ type: 'error', text: t('workbench.nameRequired') });
       return null;
     }
     if (draft.symbols.length === 0) {
-      setActionMessage({ type: 'error', text: 'At least one monitored symbol is required' });
+      setActionMessage({ type: 'error', text: t('workbench.symbolRequired') });
       return null;
     }
 
@@ -253,7 +255,7 @@ export function EditorPane() {
           script_source: draft.source,
         };
         await updateMutation.mutateAsync(updateReq);
-        setActionMessage({ type: 'success', text: `Strategy #${draft.strategyId} saved successfully!` });
+        setActionMessage({ type: 'success', text: t('workbench.saved', { id: draft.strategyId }) });
         return draft.strategyId;
       } else {
         const createReq: StrategyCreateRequest = {
@@ -269,13 +271,13 @@ export function EditorPane() {
           script_source: draft.source,
         };
         const created = await createMutation.mutateAsync(createReq);
-        setActionMessage({ type: 'success', text: `Strategy created successfully with ID #${created.id}!` });
+        setActionMessage({ type: 'success', text: t('workbench.created', { id: created.id }) });
         // create -> edit transition: re-derive strategyId from the new URL.
         navigate(`/strategies/${created.id}/edit`);
         return created.id;
       }
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to save strategy') });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, t('workbench.saveFailed')) });
       return null;
     }
   };
@@ -332,8 +334,8 @@ export function EditorPane() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
             <Code2 className="w-3.5 h-3.5 text-foreground shrink-0" />
-            <span className="text-[11px] text-muted-foreground" title="Auto-runs 600ms after you stop typing">
-              Auto-runs on edit
+            <span className="text-[11px] text-muted-foreground" title={t('workbench.autoRunTitle')}>
+              {t('workbench.autoRun')}
             </span>
           </div>
           <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">
@@ -342,7 +344,7 @@ export function EditorPane() {
               checked={liveRefresh}
               onChange={(e) => setLiveRefresh(e.target.checked)}
             />
-            <span>Live refresh ({LIVE_REFRESH_MS / 1000}s)</span>
+            <span>{t('workbench.liveRefresh', { seconds: LIVE_REFRESH_MS / 1000 })}</span>
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -351,10 +353,10 @@ export function EditorPane() {
             onClick={handleRunFullBacktest}
             disabled={createMutation.isPending || updateMutation.isPending}
             className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
-            title="Save as draft and launch full historical backtest"
+            title={t('workbench.runBacktestTitle')}
           >
             <Rocket className="w-3.5 h-3.5 text-accent-foreground" />
-            <span>{readOnly ? 'Open Backtest' : 'Run Full Backtest'}</span>
+            <span>{readOnly ? t('workbench.openBacktest') : t('workbench.runBacktest')}</span>
           </button>
           )}
           {readOnly ? null : isEdit ? (
@@ -365,7 +367,7 @@ export function EditorPane() {
               className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{updateMutation.isPending ? 'Saving...' : 'Save Changes'}</span>
+              <span>{updateMutation.isPending ? t('common.saving') : t('workbench.saveChanges')}</span>
             </button>
           ) : (
             <>
@@ -376,7 +378,7 @@ export function EditorPane() {
                 className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>Save as Draft</span>
+                <span>{t('workbench.saveDraft')}</span>
               </button>
               {/* Productive status is admin only (auth-01 §3). */}
               {isAdmin && (
@@ -386,7 +388,7 @@ export function EditorPane() {
                 className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Save & Enable</span>
+                <span>{t('workbench.saveEnable')}</span>
               </button>
               )}
             </>
@@ -418,7 +420,7 @@ export function EditorPane() {
             <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
             <div className="space-y-0.5">
               <span className="font-bold block text-destructive uppercase tracking-wide text-[11px]">
-                Script Execution Error
+                {t('workbench.scriptError')}
               </span>
               <pre className="whitespace-pre-wrap font-mono text-[11px] text-destructive">{previewError}</pre>
             </div>
@@ -435,7 +437,7 @@ export function EditorPane() {
           actually maximizes the editor below it (flex-1 reclaims the
           space), independent of WorkbenchShell's own Script/Split/Chart
           view mode which controls horizontal space instead. */}
-      <CollapsibleSection id="workbench.editor.config" title="Strategy Configuration" defaultOpen className="shrink-0">
+      <CollapsibleSection id="workbench.editor.config" title={t('workbench.configSection')} defaultOpen className="shrink-0">
         <StrategyMetadataForm
           draft={draft}
           setDraft={setDraft}
@@ -450,8 +452,8 @@ export function EditorPane() {
 
       <CollapsibleSection
         id="workbench.editor.luaSource"
-        title="Lua Source Code"
-        subtitle="(sandboxed, 500ms timeout)"
+        title={t('workbench.luaSection')}
+        subtitle={t('workbench.luaSubtitle')}
         defaultOpen
         fill
         className="flex-1 min-h-0"
@@ -461,20 +463,20 @@ export function EditorPane() {
             <button
               onClick={handleReRunNow}
               className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-              title="Re-run now (skip the debounce wait)"
+              title={t('workbench.rerunTitle')}
             >
               <RefreshCw className="w-3 h-3" />
-              <span>Re-run now</span>
+              <span>{t('workbench.rerun')}</span>
             </button>
             )}
             {!readOnly && (
             <button
               onClick={() => setDraft((prev) => ({ ...prev, source: DEFAULT_LUA_TEMPLATE }))}
               className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-              title="Reset to template"
+              title={t('workbench.resetTitle')}
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Reset</span>
+              <span>{t('common.reset')}</span>
             </button>
             )}
           </>

@@ -12,12 +12,16 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DropdownMenu } from '@/components/ui/DropdownMenu';
 import { useToast } from '@/context/ToastContext';
+import { useT } from '@/i18n';
+
+// Format hint, not text.
+const TELEGRAM_TOKEN_HINT = '123456:ABC-DEF...';
 
 const KINDS: { value: WebhookTargetKind; label: string; urlHint: string }[] = [
   { value: 'discord', label: 'Discord', urlHint: 'https://discord.com/api/webhooks/...' },
   { value: 'slack', label: 'Slack', urlHint: 'https://hooks.slack.com/services/...' },
   { value: 'telegram', label: 'Telegram', urlHint: '' },
-  { value: 'generic', label: 'Generic JSON', urlHint: 'https://example.com/hooks/agents' },
+  { value: 'generic', label: '',  urlHint: 'https://example.com/hooks/agents' },
 ];
 
 const TH = 'px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground';
@@ -27,6 +31,7 @@ const TH = 'px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wid
 // they are only ever displayed masked, and an untouched masked value sent
 // back on save means "keep the stored one" (A-02 §5).
 export function WebhookTargetsSection() {
+  const t = useT();
   const { data: targets = [], isLoading, error } = useWebhookTargets();
   const deleteTarget = useDeleteWebhookTarget();
   const testTarget = useTestWebhookTarget();
@@ -37,42 +42,42 @@ export function WebhookTargetsSection() {
   const [testingId, setTestingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const runTest = (t: WebhookTarget) => {
-    setTestingId(t.id);
-    testTarget.mutate(t.id, {
+  const runTest = (wt: WebhookTarget) => {
+    setTestingId(wt.id);
+    testTarget.mutate(wt.id, {
       onSuccess: (res) => {
-        if (res?.ok) toast(`Test message sent to ${t.name}`);
-        else toast(`Test to ${t.name} failed: ${res?.error || 'unknown error'}`, 'error');
+        if (res?.ok) toast(t('webhooks.testSent', { name: wt.name }));
+        else toast(t('webhooks.testFailed', { name: wt.name, error: res?.error || t('webhooks.unknownError') }), 'error');
       },
-      onError: (err) => toast(`Test to ${t.name} failed: ${apiErrorMessage(err)}`, 'error'),
+      onError: (err) => toast(t('webhooks.testFailed', { name: wt.name, error: apiErrorMessage(err) }), 'error'),
       onSettled: () => setTestingId(null),
     });
   };
 
   const confirmDelete = () => {
-    const t = deleting;
+    const wt = deleting;
     setDeleting(null);
-    if (!t) return;
+    if (!wt) return;
     setActionError(null);
-    deleteTarget.mutate(t.id, {
-      onSuccess: () => toast(`${t.name} deleted`),
+    deleteTarget.mutate(wt.id, {
+      onSuccess: () => toast(t('webhooks.deleted', { name: wt.name })),
       // 409 when agents still reference it - the message names them.
-      onError: (err) => setActionError(apiErrorMessage(err, `Couldn't delete ${t.name}`)),
+      onError: (err) => setActionError(apiErrorMessage(err, t('webhooks.deleteFailed', { name: wt.name }))),
     });
   };
 
   return (
     <Card id="agent-notifications" className="scroll-mt-20">
       <CardHeader
-        title="Agent Notifications"
-        subtitle="Webhook targets agents can notify - messages carry a link to the report, never an action"
+        title={t('webhooks.title')}
+        subtitle={t('webhooks.subtitle')}
         action={
           <button
             type="button"
             onClick={() => setEditing('new')}
             className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
-            <Plus className="w-3.5 h-3.5" /> Add target
+            <Plus className="w-3.5 h-3.5" /> {t('webhooks.addTarget')}
           </button>
         }
       />
@@ -80,65 +85,65 @@ export function WebhookTargetsSection() {
       {actionError && (
         <div role="alert" className="mb-3 p-3 rounded-lg border text-xs flex items-center justify-between bg-destructive/15 border-destructive/40 text-foreground">
           <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} aria-label="Dismiss" className="p-0.5 text-muted-foreground hover:text-foreground">
+          <button onClick={() => setActionError(null)} aria-label={t('common.dismiss')} className="p-0.5 text-muted-foreground hover:text-foreground">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {isLoading ? (
-        <div className="p-6 text-center text-xs text-muted-foreground">Loading targets...</div>
+        <div className="p-6 text-center text-xs text-muted-foreground">{t('webhooks.loading')}</div>
       ) : error ? (
-        <div className="p-6 text-center text-xs text-destructive">Couldn't load webhook targets: {apiErrorMessage(error)}</div>
+        <div className="p-6 text-center text-xs text-destructive">{t('webhooks.loadFailed', { error: apiErrorMessage(error) })}</div>
       ) : targets.length === 0 ? (
         <div className="p-6 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg">
-          No targets yet. Add a Discord, Slack, Telegram or generic webhook, then select it on an agent.
+          {t('webhooks.empty')}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-border bg-secondary/40">
-                <th className={TH}>Name</th>
-                <th className={TH}>Kind</th>
-                <th className={TH}>Destination</th>
-                <th className={TH}>Enabled</th>
+                <th className={TH}>{t('webhooks.colName')}</th>
+                <th className={TH}>{t('webhooks.colKind')}</th>
+                <th className={TH}>{t('webhooks.colDestination')}</th>
+                <th className={TH}>{t('webhooks.colEnabled')}</th>
                 <th className="w-24 px-2 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
-              {targets.map((t) => (
-                <tr key={t.id} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-2.5 text-xs font-semibold text-foreground">{t.name}</td>
-                  <td className="px-4 py-2.5 text-[11px] font-mono uppercase text-muted-foreground">{t.kind}</td>
+              {targets.map((wt) => (
+                <tr key={wt.id} className="border-b border-border last:border-b-0">
+                  <td className="px-4 py-2.5 text-xs font-semibold text-foreground">{wt.name}</td>
+                  <td className="px-4 py-2.5 text-[11px] font-mono uppercase text-muted-foreground">{wt.kind}</td>
                   <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground max-w-xs truncate">
-                    {t.kind === 'telegram' ? `chat ${t.chat_id || '—'} · token ${t.secret || '—'}` : t.url || '—'}
+                    {wt.kind === 'telegram' ? t('webhooks.telegramDest', { chat: wt.chat_id || '—', token: wt.secret || '—' }) : wt.url || '—'}
                   </td>
                   <td className="px-4 py-2.5">
                     <span
                       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border ${
-                        t.enabled ? 'bg-success/15 text-success border-success/40' : 'bg-secondary text-muted-foreground border-border'
+                        wt.enabled ? 'bg-success/15 text-success border-success/40' : 'bg-secondary text-muted-foreground border-border'
                       }`}
                     >
-                      {t.enabled ? 'on' : 'off'}
+                      {wt.enabled ? t('webhooks.on') : t('webhooks.off')}
                     </span>
                   </td>
                   <td className="px-2 py-2.5 text-right whitespace-nowrap">
                     <button
                       type="button"
-                      onClick={() => runTest(t)}
-                      disabled={testingId === t.id}
+                      onClick={() => runTest(wt)}
+                      disabled={testingId === wt.id}
                       className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-[11px] px-2 py-1 inline-flex items-center gap-1 mr-1 disabled:opacity-50"
-                      title="Send an info test message"
+                      title={t('webhooks.testTitle')}
                     >
-                      {testingId === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                      Send test
+                      {testingId === wt.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                      {t('webhooks.sendTest')}
                     </button>
                     <DropdownMenu
-                      label={`Actions for ${t.name}`}
+                      label={t('strategies.actionsFor', { name: wt.name })}
                       items={[
-                        { label: 'Edit', icon: <Edit3 />, onClick: () => setEditing(t) },
-                        { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleting(t), destructive: true, separatorBefore: true },
+                        { label: t('common.edit'), icon: <Edit3 />, onClick: () => setEditing(wt) },
+                        { label: t('common.delete'), icon: <Trash2 />, onClick: () => setDeleting(wt), destructive: true, separatorBefore: true },
                       ]}
                     />
                   </td>
@@ -153,9 +158,9 @@ export function WebhookTargetsSection() {
 
       <ConfirmDialog
         isOpen={deleting != null}
-        title="Delete webhook target"
-        message={`Delete "${deleting?.name ?? ''}"? Agents that still notify through it must be edited first.`}
-        confirmText="Delete target"
+        title={t('webhooks.deleteTitle')}
+        message={t('webhooks.deleteMessage', { name: deleting?.name ?? '' })}
+        confirmText={t('webhooks.deleteConfirm')}
         isDangerous
         onConfirm={confirmDelete}
         onCancel={() => setDeleting(null)}
@@ -165,6 +170,7 @@ export function WebhookTargetsSection() {
 }
 
 function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null; onClose: () => void }) {
+  const t = useT();
   const isEdit = target != null;
   const save = useSaveWebhookTarget();
   const { toast } = useToast();
@@ -195,17 +201,17 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
     e.preventDefault();
     setError(null);
     if (!name.trim()) {
-      setError('Name is required.');
+      setError(t('webhooks.nameRequired'));
       return;
     }
     const url = newUrl ?? target?.url ?? '';
     const secret = newSecret ?? target?.secret ?? '';
     if (!isTelegram && !url.trim()) {
-      setError('Webhook URL is required.');
+      setError(t('webhooks.urlRequired'));
       return;
     }
     if (isTelegram && (!secret.trim() || !chatId.trim())) {
-      setError('Telegram needs both a bot token and a chat ID.');
+      setError(t('webhooks.telegramRequired'));
       return;
     }
     const req: WebhookTargetRequest = {
@@ -223,7 +229,7 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
           toast(`${saved?.name ?? req.name} saved`);
           onClose();
         },
-        onError: (err) => setError(apiErrorMessage(err, 'Failed to save the target')),
+        onError: (err) => setError(apiErrorMessage(err, t('webhooks.saveFailed'))),
       },
     );
   };
@@ -240,23 +246,23 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
       <form onSubmit={submit} className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl space-y-4">
         <div className="flex items-start justify-between">
           <h3 id="webhook-dialog-title" className="text-base font-semibold text-foreground">
-            {isEdit ? `Edit ${target!.name}` : 'Add webhook target'}
+            {isEdit ? t('webhooks.editTitle', { name: target!.name }) : t('webhooks.addTitle')}
           </h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground p-1">
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-muted-foreground hover:text-foreground p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="wt-name" className="text-xs font-semibold text-foreground">Name</label>
-          <input id="wt-name" ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} className="form-input text-sm" placeholder="e.g. Ops Discord" />
+          <label htmlFor="wt-name" className="text-xs font-semibold text-foreground">{t('webhooks.name')}</label>
+          <input id="wt-name" ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} className="form-input text-sm" placeholder={t('webhooks.namePlaceholder')} />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="wt-kind" className="text-xs font-semibold text-foreground">Kind</label>
+          <label htmlFor="wt-kind" className="text-xs font-semibold text-foreground">{t('webhooks.kind')}</label>
           <select id="wt-kind" value={kind} onChange={(e) => setKind(e.target.value as WebhookTargetKind)} className="form-select text-sm">
             {KINDS.map((k) => (
-              <option key={k.value} value={k.value}>{k.label}</option>
+              <option key={k.value} value={k.value}>{k.label || t('webhooks.generic')}</option>
             ))}
           </select>
         </div>
@@ -264,7 +270,7 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
         {!isTelegram && (
           <SecretInput
             id="wt-url"
-            label="Webhook URL"
+            label={t('webhooks.url')}
             masked={isEdit && target!.kind !== 'telegram' ? target!.url : ''}
             value={newUrl}
             onChange={setNewUrl}
@@ -277,15 +283,15 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
           <>
             <SecretInput
               id="wt-secret"
-              label="Bot token"
+              label={t('webhooks.botToken')}
               masked={isEdit && target!.kind === 'telegram' ? target!.secret : ''}
               value={newSecret}
               onChange={setNewSecret}
-              placeholder="123456:ABC-DEF..."
+              placeholder={TELEGRAM_TOKEN_HINT}
               inputType="password"
             />
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="wt-chat" className="text-xs font-semibold text-foreground">Chat ID</label>
+              <label htmlFor="wt-chat" className="text-xs font-semibold text-foreground">{t('webhooks.chatId')}</label>
               <input id="wt-chat" value={chatId} onChange={(e) => setChatId(e.target.value)} className="form-input text-sm font-mono" placeholder="-1001234567890" />
             </div>
           </>
@@ -298,7 +304,7 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
             onChange={(e) => setEnabled(e.target.checked)}
             className="w-4 h-4 rounded border-border focus:ring-ring focus:ring-offset-background"
           />
-          <span className="text-xs font-semibold text-foreground">Enabled</span>
+          <span className="text-xs font-semibold text-foreground">{t('webhooks.enabled')}</span>
         </label>
 
         {error && (
@@ -309,7 +315,7 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
 
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} className="bg-secondary hover:bg-accent text-foreground rounded border border-border px-4 py-2 text-sm">
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -317,7 +323,7 @@ function WebhookTargetDialog({ target, onClose }: { target: WebhookTarget | null
             className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary px-4 py-2 text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50"
           >
             {save.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Save' : 'Add target'}
+            {isEdit ? t('common.save') : t('webhooks.addTarget')}
           </button>
         </div>
       </form>
@@ -345,6 +351,7 @@ function SecretInput({
   placeholder: string;
   inputType: 'url' | 'password';
 }) {
+  const t = useT();
   const hasStored = !!masked;
   return (
     <div className="flex flex-col gap-1.5">
@@ -359,7 +366,7 @@ function SecretInput({
             onClick={() => onChange('')}
             className="px-2 py-1 rounded text-xs font-medium text-foreground hover:bg-accent/60 border border-border/60 flex items-center gap-1 shrink-0"
           >
-            <Edit3 className="w-3 h-3" /> Change
+            <Edit3 className="w-3 h-3" /> {t('webhooks.change')}
           </button>
         </div>
       ) : (
@@ -377,8 +384,8 @@ function SecretInput({
             <button
               type="button"
               onClick={() => onChange(null)}
-              title="Keep the stored value"
-              aria-label={`Keep the stored ${label}`}
+              title={t('webhooks.keepStoredTitle')}
+              aria-label={t('webhooks.keepStoredAria', { label })}
               className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" />

@@ -3,6 +3,9 @@ import { createChart, ColorType, CrosshairMode, LineSeries, UTCTimestamp } from 
 import { EquityPoint } from '@/api/types';
 import { getChartColors } from '@/lib/chartTheme';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { chartLocalization } from '@/lib/format';
+import { useLocale } from '@/i18n';
+import { useT } from '@/i18n';
 
 // Two equity curves on one lightweight-charts chart - the deploy gate's
 // baseline (current code) vs candidate (new code) walk-forwards. Same setup
@@ -29,8 +32,10 @@ interface EquityComparisonChartProps {
 }
 
 export function EquityComparisonChart({ baseline, candidate, height = 160, summary }: EquityComparisonChartProps) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
+  const { locale } = useLocale();
   const enough = (baseline?.length ?? 0) >= 2 || (candidate?.length ?? 0) >= 2;
 
   useEffect(() => {
@@ -38,6 +43,7 @@ export function EquityComparisonChart({ baseline, candidate, height = 160, summa
     if (!el || !enough) return;
     const c = getChartColors();
     const chart = createChart(el, {
+      localization: chartLocalization(),
       layout: { background: { type: ColorType.Solid, color: c.background }, textColor: c.muted, fontFamily: 'monospace' },
       grid: { vertLines: { color: c.border }, horzLines: { color: c.border } },
       crosshair: {
@@ -50,8 +56,8 @@ export function EquityComparisonChart({ baseline, candidate, height = 160, summa
       width: el.clientWidth,
       height,
     });
-    const base = chart.addSeries(LineSeries, { color: c.muted, lineWidth: 2, lineStyle: 2, title: 'Baseline' });
-    const cand = chart.addSeries(LineSeries, { color: c.primary, lineWidth: 2, title: 'Candidate' });
+    const base = chart.addSeries(LineSeries, { color: c.muted, lineWidth: 2, lineStyle: 2, title: t('charts.baseline') });
+    const cand = chart.addSeries(LineSeries, { color: c.primary, lineWidth: 2, title: t('charts.candidate') });
     base.setData(toSeriesData(baseline ?? []));
     cand.setData(toSeriesData(candidate ?? []));
     chart.timeScale().fitContent();
@@ -63,12 +69,12 @@ export function EquityComparisonChart({ baseline, candidate, height = 160, summa
       observer?.disconnect();
       chart.remove();
     };
-  }, [baseline, candidate, height, isDark, enough]);
+  }, [baseline, candidate, height, isDark, enough, locale, t]);
 
   if (!enough) {
     return (
       <div className="flex items-center justify-center p-4 text-xs text-muted-foreground bg-background rounded border border-border/60 font-mono">
-        Not enough data points to chart the gate runs.
+        {t('charts.noGateData')}
       </div>
     );
   }

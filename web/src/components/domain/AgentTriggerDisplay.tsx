@@ -6,7 +6,7 @@ import { useMarketSymbols } from '@/hooks/queries';
 import { apiErrorMessage } from '@/api/client';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { describeCron } from '@/lib/cron';
-import { formatRelative } from '@/lib/time';
+import { formatDateTime, formatPrice, formatRelative } from '@/lib/format';
 import {
   chainOnLabel,
   describeMarketDetail,
@@ -15,6 +15,7 @@ import {
   triggerDetailLines,
   triggerSummary,
 } from '@/lib/triggers';
+import { useT } from '@/i18n';
 
 // Read-only trigger displays for the agents platform (C-02 §3-§5): the
 // agents table's compact summary, the runs table's trigger badge + detail
@@ -25,6 +26,7 @@ import {
 // "⏱ every 6h · 3 events · 2 market · ⛓ 1" with lucide icons; the native
 // title lists every trigger (a HelpTooltip would steal the row's click).
 export function AgentTriggerSummaryCell({ agent, agentName }: { agent: Agent; agentName: (id: number) => string }) {
+  const t = useT();
   const sum = triggerSummary(agent);
   const cron = normalizeTriggers(agent.triggers).cron;
   const parts: React.ReactNode[] = [];
@@ -32,7 +34,7 @@ export function AgentTriggerSummaryCell({ agent, agentName }: { agent: Agent; ag
     parts.push(
       <span key="cron" className="inline-flex items-center gap-1">
         <Clock className="w-3 h-3 text-muted-foreground" aria-hidden />
-        {sum.cron === 1 && cron[0] ? describeCron(cron[0]) : `${sum.cron} schedules`}
+        {sum.cron === 1 && cron[0] ? describeCron(cron[0]) : t('agents.schedulesCount', { count: sum.cron })}
       </span>,
     );
   }
@@ -40,7 +42,7 @@ export function AgentTriggerSummaryCell({ agent, agentName }: { agent: Agent; ag
     parts.push(
       <span key="events" className="inline-flex items-center gap-1">
         <Zap className="w-3 h-3 text-muted-foreground" aria-hidden />
-        {sum.events} event{sum.events === 1 ? '' : 's'}
+        {t('agents.eventsCount', { count: sum.events })}
       </span>,
     );
   }
@@ -48,7 +50,7 @@ export function AgentTriggerSummaryCell({ agent, agentName }: { agent: Agent; ag
     parts.push(
       <span key="market" className="inline-flex items-center gap-1">
         <Activity className="w-3 h-3 text-muted-foreground" aria-hidden />
-        {sum.market} market
+        {t('agents.marketCount', { count: sum.market })}
       </span>,
     );
   }
@@ -57,11 +59,11 @@ export function AgentTriggerSummaryCell({ agent, agentName }: { agent: Agent; ag
       <span key="chain" className="inline-flex items-center gap-1">
         <Link2 className="w-3 h-3 text-muted-foreground" aria-hidden />
         {sum.chain_from}
-        <span className="sr-only"> chained from</span>
+        <span className="sr-only">{t('agents.chainedFrom')}</span>
       </span>,
     );
   }
-  if (parts.length === 0) return <span className="text-muted-foreground">Manual only</span>;
+  if (parts.length === 0) return <span className="text-muted-foreground">{t('agents.manualOnly')}</span>;
   const title = triggerDetailLines(agent, agentName).join('\n');
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5" title={title || undefined}>
@@ -97,12 +99,13 @@ const TRIGGER_ICON: Record<string, React.ComponentType<{ className?: string }>> 
 };
 
 export function RunTriggerBadge({ trigger }: { trigger: string }) {
+  const t = useT();
   const tone = TRIGGER_TONE[trigger] ?? 'bg-secondary text-muted-foreground border-border';
   const Icon = TRIGGER_ICON[trigger];
   return (
     <span className={`${BADGE_BASE} ${tone}`}>
       {Icon && <Icon className="w-3 h-3" />}
-      {trigger.replace('_', ' ')}
+      {t.enum('trigger', trigger) || trigger.replace('_', ' ')}
     </span>
   );
 }
@@ -110,6 +113,7 @@ export function RunTriggerBadge({ trigger }: { trigger: string }) {
 // One-line detail under the badge. Links stopPropagation so clicking them
 // doesn't also toggle the row's expansion.
 export function RunTriggerDetail({ run, agentName }: { run: AgentRun; agentName: (id: number) => string }) {
+  const t = useT();
   const info = runTriggerInfo(run);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   switch (info.trigger) {
@@ -120,20 +124,23 @@ export function RunTriggerDetail({ run, agentName }: { run: AgentRun; agentName:
         </span>
       ) : null;
     case 'manual':
-      return info.detail.requested_by ? <span>by {info.detail.requested_by}</span> : null;
+      return info.detail.requested_by ? <span>{t('agents.requestedBy', { name: info.detail.requested_by })}</span> : null;
     case 'event': {
       const d = info.detail;
       if (!d.event) return null;
       return (
-        <span title={d.occurred_at ? new Date(d.occurred_at).toLocaleString() : undefined}>
-          <span className="font-mono">{d.event}</span>
-          {d.strategy_id != null && (
-            <>
-              {' on '}
-              <Link to={`/strategies/${d.strategy_id}/edit`} onClick={stop} className="font-mono hover:text-primary hover:underline">
-                #{d.strategy_id}
-              </Link>
-            </>
+        <span title={d.occurred_at ? formatDateTime(d.occurred_at, { seconds: true }) : undefined}>
+          {d.strategy_id != null ? (
+            t.rich('agents.eventOn', {
+              event: <span className="font-mono">{d.event}</span>,
+              strategy: (
+                <Link to={`/strategies/${d.strategy_id}/edit`} onClick={stop} className="font-mono hover:text-primary hover:underline">
+                  #{d.strategy_id}
+                </Link>
+              ),
+            })
+          ) : (
+            <span className="font-mono">{d.event}</span>
           )}
           {d.symbol && <span className="text-muted-foreground"> ({d.symbol})</span>}
         </span>
@@ -141,7 +148,7 @@ export function RunTriggerDetail({ run, agentName }: { run: AgentRun; agentName:
     }
     case 'market':
       return info.detail.symbol ? (
-        <span className="font-mono" title={info.detail.at ? new Date(info.detail.at).toLocaleString() : undefined}>
+        <span className="font-mono" title={info.detail.at ? formatDateTime(info.detail.at, { seconds: true }) : undefined}>
           {describeMarketDetail(info.detail)}
         </span>
       ) : null;
@@ -152,17 +159,20 @@ export function RunTriggerDetail({ run, agentName }: { run: AgentRun; agentName:
         <span>
           {d.source_agent_id != null ? (
             <>
-              from{' '}
-              <Link to={`/agents/${d.source_agent_id}/runs`} onClick={stop} className="hover:text-primary hover:underline">
-                {agentName(d.source_agent_id)}
-                {d.source_run_id != null ? ` run #${d.source_run_id}` : ''}
-              </Link>
+              {t.rich('agents.chainFrom', {
+                agent: (
+                  <Link to={`/agents/${d.source_agent_id}/runs`} onClick={stop} className="hover:text-primary hover:underline">
+                    {agentName(d.source_agent_id)}
+                    {d.source_run_id != null ? t('agents.chainRun', { id: d.source_run_id }) : ''}
+                  </Link>
+                ),
+              })}
               {d.on && <span className="text-muted-foreground"> ({chainOnLabel(d.on)})</span>}
             </>
           ) : (
-            <span className="text-muted-foreground">via trigger_agent</span>
+            <span className="text-muted-foreground">{t('agents.viaTriggerAgent')}</span>
           )}
-          {depth > 0 && <span className="ml-1.5 font-mono text-muted-foreground">depth {depth}</span>}
+          {depth > 0 && <span className="ml-1.5 font-mono text-muted-foreground">{t('agents.depth', { depth })}</span>}
         </span>
       );
     }
@@ -176,6 +186,7 @@ export function RunTriggerDetail({ run, agentName }: { run: AgentRun; agentName:
 const RUNTIME_STALE_MS = 5 * 60 * 1000;
 
 export function MarketWatchCard() {
+  const t = useT();
   const { data, isLoading, error } = useMarketSymbols();
   const seenAt = data?.runtime_seen_at ?? null;
   const seenMs = seenAt ? new Date(seenAt).getTime() : NaN;
@@ -185,35 +196,35 @@ export function MarketWatchCard() {
   return (
     <CollapsibleSection
       id="agents.marketWatch"
-      title="Market watch"
+      title={t('agents.marketWatch')}
       subtitle={
-        data ? `${symbols.length} symbol${symbols.length === 1 ? '' : 's'} watched · runtime seen ${formatRelative(seenAt)}` : undefined
+        data ? t('agents.marketWatchSubtitle', { count: symbols.length, seen: formatRelative(seenAt) }) : undefined
       }
     >
       <div className="space-y-3">
         {stale && (
           <div role="status" className="p-2.5 rounded-lg border border-warning/40 bg-warning/15 text-xs text-foreground flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
-            <span>Agent runtime not running: market and event triggers won't fire.</span>
+            <span>{t('agents.runtimeDown')}</span>
           </div>
         )}
         {isLoading ? (
-          <p className="text-xs text-muted-foreground">Loading market watch status...</p>
+          <p className="text-xs text-muted-foreground">{t('agents.marketLoading')}</p>
         ) : error ? (
-          <p className="text-xs text-destructive">Couldn't load market watch status: {apiErrorMessage(error)}</p>
+          <p className="text-xs text-destructive">{t('agents.marketLoadFailed', { error: apiErrorMessage(error) })}</p>
         ) : symbols.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No symbols are being watched. Add a market watch to an agent's triggers to start one.
+            {t('agents.marketEmpty')}
           </p>
         ) : (
           <div className="overflow-x-auto rounded border border-border/60">
             <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[10px] [&_th]:uppercase [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:px-3 [&_td]:py-1.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40">
               <thead className="bg-secondary/40">
                 <tr>
-                  <th>Symbol</th>
-                  <th className="text-right">Watchers</th>
-                  <th className="text-right">Last price</th>
-                  <th>Last candle</th>
+                  <th>{t('agents.colSymbol')}</th>
+                  <th className="text-right">{t('agents.colWatchers')}</th>
+                  <th className="text-right">{t('agents.colLastPrice')}</th>
+                  <th>{t('agents.colLastCandle')}</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
@@ -222,9 +233,9 @@ export function MarketWatchCard() {
                     <td className="text-foreground">{s.symbol}</td>
                     <td className="text-right text-foreground">{s.watchers}</td>
                     <td className="text-right text-foreground">
-                      {s.last_price != null ? s.last_price.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—'}
+                      {s.last_price != null ? formatPrice(s.last_price) : '—'}
                     </td>
-                    <td className="text-muted-foreground" title={s.last_candle_at ? new Date(s.last_candle_at).toLocaleString() : undefined}>
+                    <td className="text-muted-foreground" title={s.last_candle_at ? formatDateTime(s.last_candle_at, { seconds: true }) : undefined}>
                       {formatRelative(s.last_candle_at)}
                     </td>
                   </tr>

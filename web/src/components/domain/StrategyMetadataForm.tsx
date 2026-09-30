@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScriptEditorState } from '@/pages/WorkbenchShell';
 import { StrategyStatus } from '@/api/types';
-import { PERMISSION_STRINGS } from '@/lib/permissions';
+import { useT } from '@/i18n';
 
 interface StrategyMetadataFormProps {
   draft: ScriptEditorState;
@@ -18,10 +18,7 @@ interface StrategyMetadataFormProps {
 }
 
 // Non-admin status choices (auth-01 §3 draft guard).
-const DRAFT_STATUSES: { value: StrategyStatus; label: string }[] = [
-  { value: 'testing', label: 'Testing' },
-  { value: 'disabled', label: 'Disabled' },
-];
+const DRAFT_STATUSES: StrategyStatus[] = ['testing', 'disabled'];
 
 // Strategy metadata (name/description/cycle/risk/symbols) - deliberately its
 // own component, separate from LuaScriptEditor, so the two can be laid out,
@@ -37,6 +34,7 @@ export function StrategyMetadataForm({
   readOnly = false,
   draftOnlyModeStatus = false,
 }: StrategyMetadataFormProps) {
+  const t = useT();
   return (
     // A disabled fieldset disables every control inside it natively.
     <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 disabled:opacity-80">
@@ -45,21 +43,21 @@ export function StrategyMetadataForm({
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label htmlFor="strategy-mode" className="block text-[11px] text-muted-foreground uppercase font-semibold">
-                Mode
+                {t('workbench.mode')}
               </label>
               <select
                 id="strategy-mode"
                 value="backtest"
                 disabled
-                title={PERMISSION_STRINGS.adminOnly}
+                title={t('users.adminOnly')}
                 className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <option value="backtest">Backtest</option>
+                <option value="backtest">{t.enum('modeOption', 'backtest')}</option>
               </select>
             </div>
             <div className="space-y-1">
               <label htmlFor="strategy-status" className="block text-[11px] text-muted-foreground uppercase font-semibold">
-                Status
+                {t('workbench.status')}
               </label>
               <select
                 id="strategy-status"
@@ -68,8 +66,8 @@ export function StrategyMetadataForm({
                 className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
               >
                 {DRAFT_STATUSES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
+                  <option key={o} value={o}>
+                    {t.enum('statusOption', o)}
                   </option>
                 ))}
               </select>
@@ -77,27 +75,27 @@ export function StrategyMetadataForm({
           </div>
         )}
         <div className="space-y-1">
-          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Strategy Name *</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.strategyName')}</label>
           <input
             type="text"
             value={draft.name}
             onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
-            placeholder="e.g. BTC Trend Follower"
+            placeholder={t('workbench.namePlaceholder')}
             className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Description</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.description')}</label>
           <input
             type="text"
             value={draft.description}
             onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
-            placeholder="Brief rationale or indicator note"
+            placeholder={t('workbench.descriptionPlaceholder')}
             className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Execution Cycle</label>
+          <label className="block text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.cycle')}</label>
           <select
             value={draft.cycleMinutes}
             onChange={(e) =>
@@ -107,14 +105,14 @@ export function StrategyMetadataForm({
           >
             {[1, 5, 15, 30, 60].map((c) => (
               <option key={c} value={c}>
-                Every {c} minute{c > 1 ? 's' : ''}
+                {t('workbench.everyMinutes', { count: c })}
               </option>
             ))}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <label className="block text-[11px] text-muted-foreground uppercase font-semibold">Stop Loss %</label>
+            <label className="block text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.stopLossPct')}</label>
             <input
               type="number"
               step="0.1"
@@ -122,13 +120,13 @@ export function StrategyMetadataForm({
               onChange={(e) =>
                 setDraft((prev) => ({ ...prev, stopLossPct: e.target.value ? Number(e.target.value) : null }))
               }
-              placeholder="e.g. 2.5"
+              placeholder={t('workbench.stopLossPlaceholder')}
               className="w-full bg-background border border-border rounded px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
             />
           </div>
           <div className="space-y-1">
             <label className="block text-[11px] text-muted-foreground uppercase font-semibold">
-              Size ({draft.positionSizing.type === 'pct_capital' ? '%' : '$'})
+              {t('workbench.size', { unit: draft.positionSizing.type === 'pct_capital' ? '%' : '$' })}
             </label>
             <input
               type="number"
@@ -148,14 +146,14 @@ export function StrategyMetadataForm({
       </div>
 
       <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-[11px] text-muted-foreground uppercase font-semibold">Monitored Symbols:</span>
+        <span className="text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.monitoredSymbols')}</span>
         {draft.symbols.map((sym) => (
           <span
             key={sym}
             className="inline-flex items-center gap-1 px-2 py-0.5 bg-card/40 border border-border/40 text-foreground rounded text-xs"
           >
             <span>{sym}</span>
-            <button onClick={() => onRemoveSymbol(sym)} className="text-muted-foreground hover:text-destructive font-bold ml-0.5">
+            <button onClick={() => onRemoveSymbol(sym)} aria-label={t('workbench.removeSymbol', { symbol: sym })} className="text-muted-foreground hover:text-destructive font-bold ml-0.5">
               ×
             </button>
           </span>
@@ -171,18 +169,18 @@ export function StrategyMetadataForm({
                 onAddSymbol();
               }
             }}
-            placeholder="+ Add symbol (ETHUSDT)"
+            placeholder={t('workbench.addSymbolPlaceholder')}
             className="bg-background border border-border rounded px-2 py-0.5 text-xs text-foreground uppercase focus:outline-none focus:border-primary w-44"
           />
           <button
             onClick={onAddSymbol}
             className="px-2 py-0.5 bg-card border border-border text-foreground rounded text-xs hover:bg-secondary"
           >
-            Add
+            {t('common.add')}
           </button>
         </div>
 
-        <span className="ml-auto text-[11px] text-muted-foreground uppercase font-semibold">Preview Symbol:</span>
+        <span className="ml-auto text-[11px] text-muted-foreground uppercase font-semibold">{t('workbench.previewSymbol')}</span>
         <select
           value={draft.previewSymbol}
           onChange={(e) => setDraft((prev) => ({ ...prev, previewSymbol: e.target.value }))}

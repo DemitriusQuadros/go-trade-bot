@@ -189,8 +189,10 @@ func (a *Applier) Apply(ctx context.Context, id uint) (ApplyResult, error) {
 	}
 
 	label := "Proposal"
+	labelText := notifier.T("proposal.label.proposal")
 	if p.Kind == entities.ProposalPromoteChallenger {
 		label = "Promotion"
+		labelText = notifier.T("proposal.label.promotion")
 	}
 	content := fmt.Sprintf("%s #%d applied: this strategy's code was replaced after operator approval (mode %s and status %s unchanged).", label, p.ID, target.Mode, target.Status)
 	if res.StateCleared {
@@ -205,8 +207,8 @@ func (a *Applier) Apply(ctx context.Context, id uint) (ApplyResult, error) {
 			a.memory(ctx, *p.ChallengerStrategyID, fmt.Sprintf("Disabled: promoted into strategy #%d by proposal #%d.", target.ID, p.ID))
 		}
 	}
-	a.notify(ctx, p, target, "info", fmt.Sprintf("%s #%d applied: %s", label, p.ID, target.Name),
-		fmt.Sprintf("The approved change to %q is now live in its code (mode %s, status %s unchanged).", target.Name, target.Mode, target.Status))
+	a.notify(ctx, p, target, "info", notifier.T("proposal.applied.title", labelText, p.ID, target.Name),
+		notifier.T("proposal.applied.message", target.Name, target.Mode, target.Status))
 	return ApplyResult{Outcome: OutcomeApplied}, nil
 }
 
@@ -227,8 +229,8 @@ func (a *Applier) supersede(ctx context.Context, p entities.StrategyChangePropos
 		proposalrepo.Transition{FailureReason: &reason}); err != nil {
 		return ApplyResult{}, err
 	}
-	a.notify(ctx, p, target, "warning", fmt.Sprintf("Proposal #%d superseded", p.ID),
-		fmt.Sprintf("Proposal #%d for %q was not applied: %s.", p.ID, target.Name, reason))
+	a.notify(ctx, p, target, "warning", notifier.T("proposal.superseded.title", p.ID),
+		notifier.T("proposal.superseded.message", p.ID, target.Name))
 	return ApplyResult{Outcome: OutcomeSuperseded, Reason: reason}, nil
 }
 
@@ -238,7 +240,7 @@ func (a *Applier) fail(ctx context.Context, p entities.StrategyChangeProposal, r
 		return ApplyResult{}, err
 	}
 	a.notify(ctx, p, entities.Strategy{ID: p.TargetStrategyID, Name: fmt.Sprintf("strategy #%d", p.TargetStrategyID)}, "warning",
-		fmt.Sprintf("Proposal #%d failed", p.ID), fmt.Sprintf("Proposal #%d was not applied: %s.", p.ID, reason))
+		notifier.T("proposal.failed.title", p.ID), notifier.T("proposal.failed.message", p.ID, reason))
 	return ApplyResult{Outcome: OutcomeFailed, Reason: reason}, nil
 }
 
@@ -251,7 +253,7 @@ func (a *Applier) memory(ctx context.Context, strategyID uint, content string) {
 	}
 }
 
-func (a *Applier) notify(ctx context.Context, p entities.StrategyChangeProposal, target entities.Strategy, severity, title, message string) {
+func (a *Applier) notify(ctx context.Context, p entities.StrategyChangeProposal, target entities.Strategy, severity string, title, message *notifier.Text) {
 	if a.Notifier == nil || a.Platform == nil {
 		return
 	}
@@ -269,9 +271,9 @@ func (a *Applier) notify(ctx context.Context, p entities.StrategyChangeProposal,
 		ids = append(ids, *p.ChallengerStrategyID)
 	}
 	for _, e := range a.Notifier.SendToTargets(ctx, targets, notifier.AgentMessage{
-		AgentName: agent.Name, Severity: severity, Title: title, Message: message,
+		AgentName: agent.Name, Severity: severity,
 		Link: a.url(p.ID), StrategyIDs: ids, Timestamp: a.now().UTC(),
-	}) {
+	}.WithText(title, message)) {
 		log.Printf("apply_proposal %d notification: %v", p.ID, e)
 	}
 }

@@ -7,13 +7,15 @@ import { useAgentReports, useAgents, useStrategies } from '@/hooks/queries';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { SeverityBadge } from '@/components/domain/AgentBadges';
-import { formatRelative } from '@/lib/time';
+import { formatDateTime, formatRelative } from '@/lib/format';
+import { useT } from '@/i18n';
 
 const SEVERITIES: ReportSeverity[] = ['critical', 'warning', 'info'];
 
 // Agent reports inbox (A-03 §6) - /agents/reports. Filters live in the URL
 // (?agent_id=&strategy_id=&severity=) so a filtered view can be linked to.
 export function AgentReports() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const agentId = params.get('agent_id') ? Number(params.get('agent_id')) : undefined;
   const strategyId = params.get('strategy_id') ? Number(params.get('strategy_id')) : undefined;
@@ -48,19 +50,18 @@ export function AgentReports() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <FileText className="w-6 h-6" />
-            Agent Reports
+            {t('reports.title')}
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Findings your agents wrote up. Figures in a report are pulled from the database when it was written - never
-            typed by the model.
+            {t('reports.subtitle')}
           </p>
         </div>
       </div>
 
       <Card>
         <div className="flex flex-wrap items-center gap-3">
-          <FilterSelect label="Agent" value={agentId != null ? String(agentId) : 'all'} onChange={(v) => setFilter('agent_id', v)}>
-            <option value="all">All agents</option>
+          <FilterSelect label={t('reports.filterAgent')} value={agentId != null ? String(agentId) : 'all'} onChange={(v) => setFilter('agent_id', v)}>
+            <option value="all">{t('reports.allAgents')}</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
@@ -68,30 +69,30 @@ export function AgentReports() {
             ))}
           </FilterSelect>
           <FilterSelect
-            label="Strategy"
+            label={t('reports.filterStrategy')}
             value={strategyId != null ? String(strategyId) : 'all'}
             onChange={(v) => setFilter('strategy_id', v)}
           >
-            <option value="all">All strategies</option>
+            <option value="all">{t('reports.allStrategies')}</option>
             {strategies.map((s) => (
               <option key={s.id} value={s.id}>
                 #{s.id} — {s.name}
               </option>
             ))}
           </FilterSelect>
-          <FilterSelect label="Severity" value={severity ?? 'all'} onChange={(v) => setFilter('severity', v)}>
-            <option value="all">All severities</option>
+          <FilterSelect label={t('reports.filterSeverity')} value={severity ?? 'all'} onChange={(v) => setFilter('severity', v)}>
+            <option value="all">{t('reports.allSeverities')}</option>
             {SEVERITIES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {t.enum('severity', s)}
               </option>
             ))}
           </FilterSelect>
           <button
             onClick={() => refetch()}
             className="ml-auto bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs p-1.5"
-            title="Refresh"
-            aria-label="Refresh reports"
+            title={t('common.refresh')}
+            aria-label={t('reports.refresh')}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
@@ -99,24 +100,26 @@ export function AgentReports() {
       </Card>
 
       <Card>
-        <CardHeader title="Reports" subtitle={`${reports.length} report${reports.length === 1 ? '' : 's'} shown`} />
+        <CardHeader title={t('reports.listTitle')} subtitle={t('reports.shown', { count: reports.length })} />
 
         {isLoading ? (
-          <LoadingScreen message="Loading reports..." />
+          <LoadingScreen message={t('reports.loading')} />
         ) : error ? (
           <div className="p-8 text-center text-xs text-destructive bg-destructive/10 rounded-lg">
-            Couldn't load reports: {apiErrorMessage(error)}
+            {t('reports.loadFailed', { error: apiErrorMessage(error) })}
           </div>
         ) : reports.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-2">
-            <p>No reports{agentId || strategyId || severity ? ' match these filters' : ' yet'}.</p>
+            <p>{agentId || strategyId || severity ? t('reports.emptyFiltered') : t('reports.empty')}</p>
             {!(agentId || strategyId || severity) && (
               <p>
-                Agents write a report when a scheduled run finds something noteworthy.{' '}
-                <Link to="/agents" className="text-primary hover:underline">
-                  Configure an agent
-                </Link>
-                .
+                {t.rich('reports.emptyHelp', {
+                  link: (
+                    <Link to="/agents" className="text-primary hover:underline">
+                      {t('reports.configureAgent')}
+                    </Link>
+                  ),
+                })}
               </p>
             )}
           </div>
@@ -133,7 +136,7 @@ export function AgentReports() {
                     <span className="font-semibold text-sm text-foreground truncate">{r.title}</span>
                     <span
                       className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap"
-                      title={new Date(r.created_at).toLocaleString()}
+                      title={formatDateTime(r.created_at, { seconds: true })}
                     >
                       {formatRelative(r.created_at)}
                     </span>
@@ -161,7 +164,7 @@ export function AgentReports() {
               disabled={isFetchingNextPage}
               className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs py-1.5 px-4 disabled:opacity-50"
             >
-              {isFetchingNextPage ? 'Loading...' : 'Load more'}
+              {isFetchingNextPage ? t('common.loading') : t('agents.loadMore')}
             </button>
           </div>
         )}

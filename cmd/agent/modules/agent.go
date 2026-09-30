@@ -23,6 +23,7 @@ import (
 	agentworker "go-trade-bot/app/workers/agent"
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/lock"
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
@@ -62,7 +63,16 @@ var AgentModule = fx.Module("agent",
 			}
 			return p
 		},
-		func() *notifier.MultiTargetNotifier { return notifier.NewMultiTargetNotifier() },
+		// i18n-02: Settings.DefaultLocale (cached 60 s) for unattended runs,
+		// report snapshots and notification words.
+		func(settings settings_repo.Repository) i18n.Source {
+			return settings_repo.NewDefaultLocaleSource(settings)
+		},
+		func(src i18n.Source) *notifier.MultiTargetNotifier {
+			n := notifier.NewMultiTargetNotifier()
+			n.SetLocaleSource(src)
+			return n
+		},
 		func(db *gorm.DB) agentusecase.ReportRenderer {
 			return agentreport.NewHTMLRenderer(agentplatform.NewReportDataSource(db))
 		},
@@ -89,6 +99,7 @@ var AgentModule = fx.Module("agent",
 			bt *backtestusecase.BacktestUseCase,
 			runner *strategyscript.Runner,
 			chain *agentworker.ChainLauncher,
+			locales i18n.Source,
 		) *agentusecase.AgentUseCase {
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
@@ -101,6 +112,7 @@ var AgentModule = fx.Module("agent",
 			uc.Guard = agentusecase.NewDefaultGuard(settings, platform, n)
 			uc.Lock = strategyLock
 			uc.APIBaseURL = cfg.APIBaseURL
+			uc.Locales = locales
 			// C-01 §4: trigger_agent (permission chain) enqueues through the
 			// same guarded launcher the declarative ChainFrom path uses.
 			uc.Chain = chain

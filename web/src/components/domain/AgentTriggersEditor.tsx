@@ -14,6 +14,7 @@ import {
   describeMarketRule,
   newRuleId,
 } from '@/lib/triggers';
+import { tr, useT } from '@/i18n';
 
 // Phase C trigger builder (C-02 §2): strategy events, market watches and
 // chained-from-agent triggers, rendered inside the editor's Schedule card.
@@ -163,33 +164,33 @@ export function validateTriggers(d: TriggersDraft): TriggerErrors {
     const e = d.events[cat.type];
     if (!e?.enabled) continue;
     const cd = toNum(e.cooldown);
-    if (e.cooldown.trim() && (cd == null || cd < 0)) put(errs.events, cat.type, 'Cooldown must be 0 or more minutes.');
+    if (e.cooldown.trim() && (cd == null || cd < 0)) put(errs.events, cat.type, tr('triggersEditor.errCooldown'));
     if (cat.needsThreshold) {
       const th = toNum(e.threshold);
-      if (th == null || th <= 0) put(errs.events, cat.type, 'Threshold must be greater than 0%.');
+      if (th == null || th <= 0) put(errs.events, cat.type, tr('triggersEditor.errThresholdPct'));
     }
     if (cat.needsWindow) {
       const w = toNum(e.window);
-      if (cat.needsWindow === 'required' && (w == null || w <= 0)) put(errs.events, cat.type, 'Window (hours) is required.');
-      else if (e.window.trim() && (w == null || w <= 0)) put(errs.events, cat.type, 'Window must be greater than 0 hours.');
+      if (cat.needsWindow === 'required' && (w == null || w <= 0)) put(errs.events, cat.type, tr('triggersEditor.errWindowRequired'));
+      else if (e.window.trim() && (w == null || w <= 0)) put(errs.events, cat.type, tr('triggersEditor.errWindowHours'));
     }
   }
   for (const m of d.market) {
-    if (!m.symbol.trim()) put(errs.market, m.id, 'Symbol is required.');
+    if (!m.symbol.trim()) put(errs.market, m.id, tr('triggersEditor.errSymbol'));
     const w = toNum(m.window);
-    if (w == null || w < 1 || w > MARKET_MAX_WINDOW) put(errs.market, m.id, `Window must be 1-${MARKET_MAX_WINDOW} minutes.`);
+    if (w == null || w < 1 || w > MARKET_MAX_WINDOW) put(errs.market, m.id, tr('triggersEditor.errWindowMinutes', { max: MARKET_MAX_WINDOW }));
     const th = toNum(m.threshold);
     if (th == null || th <= 0)
-      put(errs.market, m.id, m.kind === 'volatility_spike' ? 'Multiplier must be greater than 0.' : 'Threshold must be greater than 0%.');
+      put(errs.market, m.id, m.kind === 'volatility_spike' ? tr('triggersEditor.errMultiplier') : tr('triggersEditor.errThresholdPct'));
     const cd = toNum(m.cooldown);
     if (m.cooldown.trim() && (cd == null || cd < MARKET_MIN_COOLDOWN))
-      put(errs.market, m.id, `Cooldown must be at least ${MARKET_MIN_COOLDOWN} minutes.`);
+      put(errs.market, m.id, tr('triggersEditor.errMarketCooldown', { min: MARKET_MIN_COOLDOWN }));
   }
   const seen = new Set<string>();
   for (const c of d.chain) {
-    if (!c.agent_id) put(errs.chain, c.key, 'Pick a source agent.');
+    if (!c.agent_id) put(errs.chain, c.key, tr('triggersEditor.errPickAgent'));
     const k = `${c.agent_id}:${c.on}`;
-    if (c.agent_id && seen.has(k)) put(errs.chain, c.key, 'Duplicate of another chain row.');
+    if (c.agent_id && seen.has(k)) put(errs.chain, c.key, tr('triggersEditor.errDuplicateChain'));
     seen.add(k);
   }
   return errs;
@@ -216,6 +217,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
   { draft, onChange, errors, chainError, currentAgentId, agents, symbolSuggestions },
   chainRef,
 ) {
+  const t = useT();
   const setEvent = (type: string, patch: Partial<EventDraft>) =>
     onChange({ ...draft, events: { ...draft.events, [type]: { ...draft.events[type], ...patch } } });
   const setRule = (id: string, patch: Partial<MarketDraft>) =>
@@ -249,9 +251,9 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
       {/* Strategy events */}
       <section aria-labelledby="trig-events" className="pt-3 border-t border-border space-y-2">
         <h3 id="trig-events" className={SUB_TITLE}>
-          <Zap className="w-3.5 h-3.5 text-muted-foreground" /> Strategy events
+          <Zap className="w-3.5 h-3.5 text-muted-foreground" /> {t('triggersEditor.events')}
         </h3>
-        <p className={HELP}>Events only fire for strategies this agent is attached to.</p>
+        <p className={HELP}>{t('triggersEditor.eventsHelp')}</p>
         <div className="rounded-lg border border-border divide-y divide-border">
           {EVENT_CATALOG.map((cat) => {
             const e = draft.events[cat.type];
@@ -270,32 +272,32 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     <span className="text-xs text-foreground">{cat.label}</span>
                     <span className="text-[10px] font-mono text-muted-foreground">{cat.type}</span>
                   </label>
-                  <HelpTooltip label={`About ${cat.type}`}>{cat.help}</HelpTooltip>
+                  <HelpTooltip label={t('triggersEditor.about', { name: cat.type })}>{cat.help}</HelpTooltip>
                   {e.enabled && (
                     <div className="flex flex-wrap items-center gap-3 ml-auto">
                       {cat.needsThreshold && (
                         <NumField
                           id={`${idBase}-threshold`}
-                          label="Threshold %"
+                          label={t('triggersEditor.thresholdPct')}
                           value={e.threshold}
                           onChange={(v) => setEvent(cat.type, { threshold: v })}
-                          placeholder="e.g. 5"
+                          placeholder={t('triggersEditor.eg', { value: 5 })}
                           step="0.1"
                         />
                       )}
                       {cat.needsWindow && (
                         <NumField
                           id={`${idBase}-window`}
-                          label={cat.needsWindow === 'required' ? 'Window (h)*' : 'Window (h)'}
+                          label={cat.needsWindow === 'required' ? t('triggersEditor.windowHRequired') : t('triggersEditor.windowH')}
                           value={e.window}
                           onChange={(v) => setEvent(cat.type, { window: v })}
-                          placeholder={cat.defaultWindowHours ? String(cat.defaultWindowHours) : 'required'}
+                          placeholder={cat.defaultWindowHours ? String(cat.defaultWindowHours) : t('triggersEditor.required')}
                           step="1"
                         />
                       )}
                       <NumField
                         id={`${idBase}-cooldown`}
-                        label="Cooldown (min)"
+                        label={t('triggersEditor.cooldownMin')}
                         value={e.cooldown}
                         onChange={(v) => setEvent(cat.type, { cooldown: v })}
                         placeholder={String(cat.defaultCooldown)}
@@ -315,8 +317,9 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
         </div>
         {draft.unknownEvents.length > 0 && (
           <p className={HELP}>
-            Also kept as-is (not editable here):{' '}
-            <span className="font-mono">{draft.unknownEvents.map((e) => e.type).join(', ')}</span>
+            {t.rich('triggersEditor.unknownEvents', {
+              list: <span className="font-mono">{draft.unknownEvents.map((e) => e.type).join(', ')}</span>,
+            })}
           </p>
         )}
       </section>
@@ -325,14 +328,13 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
       <section aria-labelledby="trig-market" className="pt-3 border-t border-border space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h3 id="trig-market" className={SUB_TITLE}>
-            <Activity className="w-3.5 h-3.5 text-muted-foreground" /> Market watches
-            <HelpTooltip label="About market watches">
-              Watches closed 1-minute candles. A symbol none of this agent's strategies trade is allowed (e.g. a macro
-              BTC watch). Cooldown is at least {MARKET_MIN_COOLDOWN} minutes.
+            <Activity className="w-3.5 h-3.5 text-muted-foreground" /> {t('triggersEditor.market')}
+            <HelpTooltip label={t('triggersEditor.aboutMarket')}>
+              {t('triggersEditor.marketHelp', { min: MARKET_MIN_COOLDOWN })}
             </HelpTooltip>
           </h3>
           <button type="button" onClick={addRule} className={SMALL_BTN}>
-            <Plus className="w-3.5 h-3.5" /> Add watch
+            <Plus className="w-3.5 h-3.5" /> {t('triggersEditor.addWatch')}
           </button>
         </div>
         <datalist id={datalistId}>
@@ -341,7 +343,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
           ))}
         </datalist>
         {draft.market.length === 0 ? (
-          <p className={HELP}>No market watches.</p>
+          <p className={HELP}>{t('triggersEditor.noMarket')}</p>
         ) : (
           <ul className="space-y-2">
             {draft.market.map((m, i) => {
@@ -354,7 +356,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`${idBase}-symbol`} className={HELP}>
-                        Symbol
+                        {t('triggersEditor.symbol')}
                       </label>
                       <input
                         id={`${idBase}-symbol`}
@@ -368,7 +370,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     </div>
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`${idBase}-kind`} className={HELP}>
-                        Kind
+                        {t('triggersEditor.kind')}
                       </label>
                       <select
                         id={`${idBase}-kind`}
@@ -386,7 +388,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     </div>
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`${idBase}-window`} className={HELP}>
-                        Window (min)
+                        {t('triggersEditor.windowMin')}
                       </label>
                       <div className="flex items-center gap-1">
                         <input
@@ -418,16 +420,16 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     </div>
                     <NumField
                       id={`${idBase}-threshold`}
-                      label={isVol ? 'Multiplier ×' : 'Threshold %'}
+                      label={isVol ? t('triggersEditor.multiplier') : t('triggersEditor.thresholdPct')}
                       value={m.threshold}
                       onChange={(v) => setRule(m.id, { threshold: v })}
-                      placeholder={isVol ? 'e.g. 2' : 'e.g. 3'}
+                      placeholder={t('triggersEditor.eg', { value: isVol ? 2 : 3 })}
                       step="0.1"
                       stacked
                     />
                     <NumField
                       id={`${idBase}-cooldown`}
-                      label="Cooldown (min)"
+                      label={t('triggersEditor.cooldownMin')}
                       value={m.cooldown}
                       onChange={(v) => setRule(m.id, { cooldown: v })}
                       placeholder={String(MARKET_DEFAULT_COOLDOWN)}
@@ -438,7 +440,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     <button
                       type="button"
                       onClick={() => onChange({ ...draft, market: draft.market.filter((x) => x.id !== m.id) })}
-                      aria-label={`Remove market watch ${m.symbol || i + 1}`}
+                      aria-label={t('triggersEditor.removeWatch', { name: m.symbol || i + 1 })}
                       className={`${REMOVE_BTN} ml-auto`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -470,15 +472,14 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
       <section ref={chainRef} aria-labelledby="trig-chain" className="pt-3 border-t border-border space-y-2 scroll-mt-4">
         <div className="flex items-center justify-between gap-2">
           <h3 id="trig-chain" className={SUB_TITLE}>
-            <Link2 className="w-3.5 h-3.5 text-muted-foreground" /> Chained from agents
+            <Link2 className="w-3.5 h-3.5 text-muted-foreground" /> {t('triggersEditor.chain')}
           </h3>
           <button type="button" onClick={addChain} disabled={sourceAgents.length === 0} className={SMALL_BTN}>
-            <Plus className="w-3.5 h-3.5" /> Add chain
+            <Plus className="w-3.5 h-3.5" /> {t('triggersEditor.addChain')}
           </button>
         </div>
         <p className={HELP}>
-          Chains stop after {MAX_CHAIN_DEPTH} hops and never revisit an agent. The chained run reads the source run's
-          reports.
+          {t('triggersEditor.chainHelp', { max: MAX_CHAIN_DEPTH })}
         </p>
         {chainError && (
           <div role="alert" className="p-2 rounded border border-destructive/40 bg-destructive/15 text-[11px] text-foreground flex items-start gap-2">
@@ -487,7 +488,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
           </div>
         )}
         {draft.chain.length === 0 ? (
-          <p className={HELP}>{sourceAgents.length === 0 ? 'No other agents to chain from yet.' : 'Not chained from any agent.'}</p>
+          <p className={HELP}>{sourceAgents.length === 0 ? t('triggersEditor.noSourceAgents') : t('triggersEditor.notChained')}</p>
         ) : (
           <ul className="space-y-2">
             {draft.chain.map((c, i) => {
@@ -496,27 +497,27 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
               return (
                 <li key={c.key} className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-foreground">
-                    <span className="text-muted-foreground">Run after</span>
+                    <span className="text-muted-foreground">{t('triggersEditor.runAfter')}</span>
                     <select
                       value={c.agent_id}
                       onChange={(e) => setChain(c.key, { agent_id: Number(e.target.value) })}
-                      aria-label={`Source agent for chain ${i + 1}`}
+                      aria-label={t('triggersEditor.sourceAgentAria', { n: i + 1 })}
                       className="form-select text-xs py-1.5 max-w-[14rem]"
                     >
                       <option value={0} disabled>
-                        Select an agent...
+                        {t('triggersEditor.selectAgent')}
                       </option>
                       {sourceAgents.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.name} (#{a.id})
                         </option>
                       ))}
-                      {!known && <option value={c.agent_id}>Agent #{c.agent_id} (missing)</option>}
+                      {!known && <option value={c.agent_id}>{t('triggersEditor.missingAgent', { id: c.agent_id })}</option>}
                     </select>
                     <select
                       value={c.on}
                       onChange={(e) => setChain(c.key, { on: e.target.value })}
-                      aria-label={`Chain condition ${i + 1}`}
+                      aria-label={t('triggersEditor.chainConditionAria', { n: i + 1 })}
                       className="form-select text-xs py-1.5"
                     >
                       {CHAIN_ON_OPTIONS.map((o) => (
@@ -529,7 +530,7 @@ export const AgentTriggersEditor = forwardRef<HTMLElement, AgentTriggersEditorPr
                     <button
                       type="button"
                       onClick={() => onChange({ ...draft, chain: draft.chain.filter((x) => x.key !== c.key) })}
-                      aria-label={`Remove chain ${i + 1}`}
+                      aria-label={t('triggersEditor.removeChainAria', { n: i + 1 })}
                       className={`${REMOVE_BTN} ml-auto`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />

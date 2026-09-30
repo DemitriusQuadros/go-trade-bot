@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Loader2, Send } from 'lucide-react';
 import { ChatDensity } from './types';
+import { useT } from '@/i18n';
 
 export interface ChatComposerHandle {
   focus: () => void;
@@ -19,7 +20,8 @@ export const ChatComposer = forwardRef<
     density: ChatDensity;
     placeholder?: string;
   }
->(function ChatComposer({ value, onChange, onSubmit, disabled, density, placeholder = 'Ask the agent…' }, ref) {
+>(function ChatComposer({ value, onChange, onSubmit, disabled, density, placeholder }, ref) {
+  const t = useT();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(ref, () => ({ focus: () => textareaRef.current?.focus() }), []);
   const compact = density === 'compact';
@@ -57,9 +59,9 @@ export const ChatComposer = forwardRef<
           }
         }}
         rows={compact ? 1 : 2}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t('chat.composerPlaceholder')}
         disabled={disabled}
-        aria-label="Message to the agent"
+        aria-label={t('chat.composerAria')}
         data-testid="chat-composer-input"
         className={`form-input flex-1 resize-none leading-relaxed disabled:opacity-60 ${compact ? 'text-xs py-1.5' : 'text-sm py-2'}`}
         style={{ maxHeight }}
@@ -67,7 +69,7 @@ export const ChatComposer = forwardRef<
       <button
         type="submit"
         disabled={disabled || !value.trim()}
-        aria-label="Send message"
+        aria-label={t('chat.send')}
         data-testid="chat-send-btn"
         className={`bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded flex items-center justify-center shrink-0 ${
           compact ? 'h-8 w-9' : 'h-10 w-11'

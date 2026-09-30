@@ -1,4 +1,6 @@
 import React from 'react';
+import { formatNumber } from '@/lib/format';
+import { useT } from '@/i18n';
 
 interface ParamHeatmapProps {
   xAxisLabel: string;
@@ -21,13 +23,14 @@ export function ParamHeatmap({
   bestY,
   bestX,
   higherIsBetter = true,
-  formatValue = (n: number) => n.toFixed(2),
+  formatValue = (n: number) => formatNumber(n, { digits: 2 }),
 }: ParamHeatmapProps) {
+  const t = useT();
   const flat = cellValues.flat().filter((v): v is number => v !== null && !isNaN(v));
   if (flat.length === 0) {
     return (
       <div className="p-8 text-center text-xs text-muted-foreground bg-card/50 rounded-lg border border-border">
-        No parameter combinations to display in heatmap.
+        {t('charts.noHeatmap')}
       </div>
     );
   }
@@ -47,11 +50,11 @@ export function ParamHeatmap({
     const score = higherIsBetter ? norm : 1 - norm;
 
     if (score < 0.5) {
-      const t = Math.round((score / 0.5) * 100);
-      return `color-mix(in srgb, hsl(var(--destructive)) ${100 - t}%, hsl(var(--border)) ${t}%)`;
+      const w = Math.round((score / 0.5) * 100);
+      return `color-mix(in srgb, hsl(var(--destructive)) ${100 - w}%, hsl(var(--border)) ${w}%)`;
     }
-    const t = Math.round(((score - 0.5) / 0.5) * 100);
-    return `color-mix(in srgb, hsl(var(--border)) ${100 - t}%, hsl(var(--success)) ${t}%)`;
+    const w = Math.round(((score - 0.5) / 0.5) * 100);
+    return `color-mix(in srgb, hsl(var(--border)) ${100 - w}%, hsl(var(--success)) ${w}%)`;
   };
 
   return (
@@ -107,10 +110,10 @@ export function ParamHeatmap({
                     className={`h-12 flex flex-col items-center justify-center rounded text-xs font-mono transition-all hover:scale-105 hover:z-10 cursor-default ${
                       isBest ? 'ring-2 ring-ring ring-offset-2 ring-offset-background font-bold text-success-foreground' : 'text-foreground'
                     }`}
-                    title={`Y: ${yVal}, X: ${xAxisValues[xi]} => ${val !== null ? formatValue(val) : 'N/A'}${isBest ? ' (BEST)' : ''}`}
+                    title={t(isBest ? 'charts.heatCellBest' : 'charts.heatCell', { y: yVal, x: xAxisValues[xi], value: val !== null ? formatValue(val) : t('charts.na') })}
                   >
                     {val !== null ? formatValue(val) : '—'}
-                    {isBest && <span className="text-[9px] uppercase tracking-tighter text-foreground">best</span>}
+                    {isBest && <span className="text-[9px] uppercase tracking-tighter text-foreground">{t('charts.best')}</span>}
                   </div>
                 );
               })}

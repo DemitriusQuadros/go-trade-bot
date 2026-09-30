@@ -207,6 +207,29 @@ func TestUpdateMe_PasswordChangeSignsOutOtherSessions(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// i18n-02 §1 / test 4: PATCH /auth/me validates against internal/i18n.
+func TestUpdateMe_Locale(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.mkUser(t, "ana", authz.RoleFriend)
+	a, _ := f.uc.Login(ctx, "ana", "correct-horse-1", "ip", "")
+	pa, err := f.uc.ResolveSession(ctx, a.Token)
+	require.NoError(t, err)
+
+	for _, bad := range []string{"fr", "pt", "en-US", "xx"} {
+		v := bad
+		_, err = f.uc.UpdateMe(ctx, pa, auth.UpdateMeRequest{Locale: &v})
+		c, _ := code(t, err)
+		assert.Equal(t, http.StatusBadRequest, c, bad)
+	}
+	for in, want := range map[string]string{"es": "es", "pt-br": "pt-BR", "en": "en", "": ""} {
+		v := in
+		me, err := f.uc.UpdateMe(ctx, pa, auth.UpdateMeRequest{Locale: &v})
+		require.NoError(t, err, in)
+		assert.Equal(t, want, me.Locale, in)
+	}
+}
+
 func TestChatBudget(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

@@ -20,7 +20,8 @@ import {
 import { RunAgentDialog } from '@/components/domain/RunAgentDialog';
 import { AgentTriggerSummaryCell, MarketWatchCard } from '@/components/domain/AgentTriggerDisplay';
 import { useToast } from '@/context/ToastContext';
-import { formatRelative } from '@/lib/time';
+import { formatDateTime, formatRelative } from '@/lib/format';
+import { useT } from '@/i18n';
 
 const TH = 'px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap';
 
@@ -33,6 +34,7 @@ function runtimeStatus(agent: Agent, globallyPaused: boolean): AgentRuntimeStatu
 // Agents list (A-03 §3): every configured persona, its runtime state and
 // today's spend against its budget.
 export function Agents() {
+  const t = useT();
   const navigate = useNavigate();
   const { data: agents = [], isLoading, isFetching, refetch, error } = useAgents();
   // Create / edit / delete / pause / run-now are admin only (auth-02 §4).
@@ -45,15 +47,15 @@ export function Agents() {
   const [runTarget, setRunTarget] = useState<Agent | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? `Agent #${id}`;
+  const agentName = (id: number) => agents.find((a) => a.id === id)?.name ?? t('agents.agentNumber', { id });
 
   const togglePause = (agent: Agent) => {
     const next = !agent.paused;
     pauseAgent.mutate(
       { id: agent.id, paused: next },
       {
-        onSuccess: () => toast(`${agent.name} ${next ? 'paused' : 'resumed'}`, next ? 'info' : 'success'),
-        onError: (err) => setActionError(apiErrorMessage(err, 'Failed to update the agent')),
+        onSuccess: () => toast(t(next ? 'agents.paused' : 'agents.resumed', { name: agent.name }), next ? 'info' : 'success'),
+        onError: (err) => setActionError(apiErrorMessage(err, t('agents.updateFailed'))),
       },
     );
   };
@@ -63,21 +65,20 @@ export function Agents() {
     setDeleteTarget(null);
     if (!target) return;
     deleteAgent.mutate(target.id, {
-      onSuccess: () => toast(`${target.name} deleted`),
-      onError: (err) => setActionError(apiErrorMessage(err, 'Failed to delete the agent')),
+      onSuccess: () => toast(t('agents.deleted', { name: target.name })),
+      onError: (err) => setActionError(apiErrorMessage(err, t('agents.deleteFailed'))),
     });
   };
 
-  if (isLoading) return <LoadingScreen message="Loading agents..." />;
+  if (isLoading) return <LoadingScreen message={t('agents.loading')} />;
 
   return (
     <div className="container-custom space-y-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">Agents</h1>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">{t('agents.title')}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            AI personas that watch your strategies on a schedule - each with its own goal, permissions, strategies
-            and daily budget. Agents never place orders and never modify live strategies.
+            {t('agents.subtitle')}
           </p>
         </div>
         {isAdmin && (
@@ -86,7 +87,7 @@ export function Agents() {
           className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
         >
           <Plus className="w-4 h-4" />
-          <span>New Agent</span>
+          <span>{t('agents.newAgent')}</span>
         </button>
         )}
       </div>
@@ -95,7 +96,7 @@ export function Agents() {
         <div className="p-3 rounded-lg border border-warning/40 bg-warning/15 text-xs text-foreground flex items-center gap-2">
           <PowerOff className="w-4 h-4 text-warning shrink-0" />
           <span>
-            The global kill switch is on - no agent runs start until it's turned back on (admins: sidebar footer).
+            {t('agents.killSwitchOn')}
           </span>
         </div>
       )}
@@ -106,7 +107,7 @@ export function Agents() {
           className="p-3 rounded-lg border text-xs flex items-center justify-between bg-destructive/15 border-destructive/40 text-foreground"
         >
           <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} aria-label="Dismiss" className="p-0.5 text-muted-foreground hover:text-foreground">
+          <button onClick={() => setActionError(null)} aria-label={t('common.dismiss')} className="p-0.5 text-muted-foreground hover:text-foreground">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -116,14 +117,14 @@ export function Agents() {
         <div className="flex items-center justify-between gap-2 mb-4">
           <CardHeader
             className="mb-0"
-            title="Configured Agents"
-            subtitle={`${agents.length} agent${agents.length === 1 ? '' : 's'} - schedules run in UTC`}
+            title={t('agents.listTitle')}
+            subtitle={t('agents.listSubtitle', { count: agents.length })}
           />
           <button
             onClick={() => refetch()}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs p-1.5"
-            title="Refresh"
-            aria-label="Refresh agents"
+            title={t('common.refresh')}
+            aria-label={t('agents.refreshAgents')}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
@@ -136,13 +137,13 @@ export function Agents() {
         ) : agents.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-3">
             <Bot className="w-8 h-8 mx-auto opacity-40" />
-            <p>No agents configured yet.</p>
+            <p>{t('agents.empty')}</p>
             {isAdmin && (
             <button
               onClick={() => navigate('/agents/new')}
               className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-3 py-1.5 font-bold"
             >
-              + New Agent
+              {t('agents.newAgentPlus')}
             </button>
             )}
           </div>
@@ -151,14 +152,14 @@ export function Agents() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-border bg-secondary/40">
-                  <th className={TH}>Agent</th>
-                  <th className={TH}>Status</th>
-                  <th className={TH}>Permissions</th>
-                  <th className={TH}>Strategies</th>
-                  <th className={TH}>Triggers</th>
-                  <th className={TH}>Next run</th>
-                  <th className={TH}>Last run</th>
-                  <th className={`${TH} text-right`}>Today</th>
+                  <th className={TH}>{t('agents.colAgent')}</th>
+                  <th className={TH}>{t('agents.colStatus')}</th>
+                  <th className={TH}>{t('agents.colPermissions')}</th>
+                  <th className={TH}>{t('agents.colStrategies')}</th>
+                  <th className={TH}>{t('agents.colTriggers')}</th>
+                  <th className={TH}>{t('agents.colNextRun')}</th>
+                  <th className={TH}>{t('agents.colLastRun')}</th>
+                  <th className={`${TH} text-right`}>{t('agents.colToday')}</th>
                   <th className="w-10 px-2 py-2.5"></th>
                 </tr>
               </thead>
@@ -167,27 +168,27 @@ export function Agents() {
                   const status = runtimeStatus(agent, globallyPaused);
                   const items: DropdownMenuItem[] = !isAdmin
                     ? [
-                        { label: 'View', icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
-                        { label: 'View runs', icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
+                        { label: t('common.view'), icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
+                        { label: t('agents.viewRuns'), icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
                       ]
                     : [
-                    { label: 'Edit', icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
+                    { label: t('common.edit'), icon: <Pencil />, onClick: () => navigate(`/agents/${agent.id}`) },
                     {
-                      label: 'Run now',
+                      label: t('agents.runNow'),
                       icon: <Play />,
                       onClick: () => setRunTarget(agent),
                       disabled: globallyPaused || agent.paused,
                     },
                     {
-                      label: agent.paused ? 'Resume' : 'Pause',
+                      label: agent.paused ? t('agents.resume') : t('agents.pause'),
                       icon: agent.paused ? <Play /> : <Pause />,
                       onClick: () => togglePause(agent),
                     },
-                    { label: 'View runs', icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
+                    { label: t('agents.viewRuns'), icon: <History />, onClick: () => navigate(`/agents/${agent.id}/runs`) },
                   ];
                   if (isAdmin && !agent.is_default) {
                     items.push({
-                      label: 'Delete',
+                      label: t('common.delete'),
                       icon: <Trash2 />,
                       onClick: () => setDeleteTarget(agent),
                       destructive: true,
@@ -207,7 +208,7 @@ export function Agents() {
                         </div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 font-mono">
                           #{agent.id}
-                          {agent.provider ? ` · ${agent.provider}${agent.model ? `/${agent.model}` : ''}` : ' · default model'}
+                          {agent.provider ? ` · ${agent.provider}${agent.model ? `/${agent.model}` : ''}` : t('agents.defaultModel')}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top">
@@ -224,7 +225,7 @@ export function Agents() {
                       </td>
                       <td className="px-4 py-3 align-top text-xs text-muted-foreground whitespace-nowrap">
                         {agent.next_run_at && status === 'active' ? (
-                          <span title={new Date(agent.next_run_at).toUTCString()}>{formatRelative(agent.next_run_at)}</span>
+                          <span title={formatDateTime(agent.next_run_at, { utc: true }) + ' UTC'}>{formatRelative(agent.next_run_at)}</span>
                         ) : (
                           '—'
                         )}
@@ -233,19 +234,19 @@ export function Agents() {
                         {agent.last_run ? (
                           <div className="flex items-center gap-1.5">
                             <RunStatusChip status={agent.last_run.status} />
-                            <span className="text-muted-foreground" title={new Date(agent.last_run.started_at).toLocaleString()}>
+                            <span className="text-muted-foreground" title={formatDateTime(agent.last_run.started_at)}>
                               {formatRelative(agent.last_run.started_at)}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">Never</span>
+                          <span className="text-muted-foreground">{t('common.never')}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         <BudgetCell spent={agent.today_cost_usd} budget={agent.daily_budget_usd} />
                       </td>
                       <td className="px-2 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu label={`Actions for ${agent.name}`} items={items} />
+                        <DropdownMenu label={t('strategies.actionsFor', { name: agent.name })} items={items} />
                       </td>
                     </tr>
                   );
@@ -262,9 +263,9 @@ export function Agents() {
 
       <ConfirmDialog
         isOpen={deleteTarget != null}
-        title="Delete agent"
-        message={`Delete "${deleteTarget?.name ?? ''}"? Its schedule stops immediately. Past runs, reports and the notes it wrote to strategy memory are kept.`}
-        confirmText="Delete agent"
+        title={t('agents.deleteTitle')}
+        message={t('agents.deleteMessage', { name: deleteTarget?.name ?? '' })}
+        confirmText={t('agents.deleteTitle')}
         isDangerous
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}

@@ -2,6 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, CrosshairMode, AreaSeries } from 'lightweight-charts';
 import { getChartColors, withAlpha } from '@/lib/chartTheme';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { chartLocalization } from '@/lib/format';
+import { useLocale } from '@/i18n';
+import { useT } from '@/i18n';
 
 export interface DrawdownPoint {
   time: string;
@@ -19,14 +22,17 @@ export function DrawdownChart({
   summary,
   height = 200,
 }: DrawdownChartProps) {
+  const t = useT();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
+  const { locale } = useLocale();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length < 2) return;
     const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
+      localization: chartLocalization(),
       layout: {
         background: { type: ColorType.Solid, color: c.background },
         textColor: c.muted,
@@ -90,12 +96,12 @@ export function DrawdownChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [points, height, isDark]);
+  }, [points, height, isDark, locale]);
 
   if (!points || points.length < 2) {
     return (
       <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
-        Not enough data points to chart drawdown.
+        {t('charts.noDrawdownData')}
       </div>
     );
   }

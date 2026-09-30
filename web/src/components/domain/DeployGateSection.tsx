@@ -6,6 +6,8 @@ import { useDeployGateConfig, useUpdateDeployGateConfig } from '@/hooks/queries'
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useToast } from '@/context/ToastContext';
 import { formatDecimal, parseDecimal, parseInteger } from '@/lib/decimal';
+import { tr as i18nTr, type MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
 // "Deploy gate" section on /settings (B-02 §6): the thresholds the Go
 // deploy gate (B-01 §3) applies before any agent auto-deploy, and records
@@ -27,64 +29,97 @@ interface FieldSpec {
 const FIELDS: FieldSpec[] = [
   {
     key: 'min_sharpe_delta',
-    label: 'Min Sharpe delta',
-    help: "Candidate Sharpe ratio must be at least the current version's plus this. 0 = no worse than today.",
+    get label() {
+      return i18nTr('deployGate.field.min_sharpe_delta.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.min_sharpe_delta.help');
+    },
     integer: false,
     validate: () => null,
   },
   {
     key: 'max_drawdown_ratio',
-    label: 'Max drawdown ratio',
-    help: "Candidate max drawdown may be at most this multiple of the current version's (1.10 = up to 10% deeper).",
+    get label() {
+      return i18nTr('deployGate.field.max_drawdown_ratio.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.max_drawdown_ratio.help');
+    },
     integer: false,
-    validate: (n) => (n > 0 ? null : 'Must be greater than 0.'),
+    validate: (n) => (n > 0 ? null : i18nTr('deployGate.errPositive')),
   },
   {
     key: 'min_profit_factor',
-    label: 'Min profit factor',
-    help: 'Candidate gross profit divided by gross loss must be at least this. 1.0 = break-even.',
+    get label() {
+      return i18nTr('deployGate.field.min_profit_factor.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.min_profit_factor.help');
+    },
     integer: false,
-    validate: (n) => (n > 0 ? null : 'Must be greater than 0.'),
+    validate: (n) => (n > 0 ? null : i18nTr('deployGate.errPositive')),
   },
   {
     key: 'min_trades',
-    label: 'Min trades',
-    help: 'Fewest out-of-sample trades the candidate must make for its numbers to count at all.',
+    get label() {
+      return i18nTr('deployGate.field.min_trades.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.min_trades.help');
+    },
     integer: true,
-    validate: (n) => (n >= 1 ? null : 'Must be at least 1.'),
+    validate: (n) => (n >= 1 ? null : i18nTr('deployGate.errAtLeastOne')),
   },
   {
     key: 'lookback_months',
-    label: 'Lookback (months)',
-    help: 'How much recent history both versions are walk-forward tested over, ending now.',
+    get label() {
+      return i18nTr('deployGate.field.lookback_months.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.lookback_months.help');
+    },
     integer: true,
-    validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
+    validate: (n) => (n >= 1 ? null : i18nTr('deployGate.errAtLeastMonth')),
   },
   {
     key: 'train_months',
-    label: 'Train window (months)',
-    help: 'Length of each walk-forward in-sample window.',
+    get label() {
+      return i18nTr('deployGate.field.train_months.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.train_months.help');
+    },
     integer: true,
-    validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
+    validate: (n) => (n >= 1 ? null : i18nTr('deployGate.errAtLeastMonth')),
   },
   {
     key: 'test_months',
-    label: 'Test window (months)',
-    help: 'Length of each out-of-sample window - the metrics above are measured on these.',
+    get label() {
+      return i18nTr('deployGate.field.test_months.label');
+    },
+    get help() {
+      return i18nTr('deployGate.field.test_months.help');
+    },
     integer: true,
-    validate: (n) => (n >= 1 ? null : 'Must be at least 1 month.'),
+    validate: (n) => (n >= 1 ? null : i18nTr('deployGate.errAtLeastMonth')),
   },
 ];
 
-const TIMEFRAMES: { value: string; label: string }[] = [
-  { value: '', label: "Strategy's own (from its cycle)" },
-  { value: '1m', label: '1 Minute (1m)' },
-  { value: '5m', label: '5 Minutes (5m)' },
-  { value: '15m', label: '15 Minutes (15m)' },
-  { value: '1h', label: '1 Hour (1h)' },
-  { value: '4h', label: '4 Hours (4h)' },
-  { value: '1d', label: '1 Day (1d)' },
-];
+const TIMEFRAMES: { value: string; readonly label: string }[] = [
+  { value: '', key: 'deployGate.tfStrategy' },
+  { value: '1m', key: 'backtest.tf1m' },
+  { value: '5m', key: 'backtest.tf5m' },
+  { value: '15m', key: 'backtest.tf15m' },
+  { value: '1h', key: 'backtest.tf1h' },
+  { value: '4h', key: 'backtest.tf4h' },
+  { value: '1d', key: 'backtest.tf1d' },
+].map(({ value, key }) => ({
+  value,
+  get label() {
+    return i18nTr(key as MessageKey);
+  },
+}));
 
 function toForm(c: DeployGateConfig): FormState {
   return {
@@ -112,9 +147,9 @@ function validateForm(f: FormState): { errors: Partial<Record<NumericKey, string
     const n = field.integer ? parseInteger(raw) : parseDecimal(raw);
     if (n === null) {
       if (field.integer && parseDecimal(raw) !== null) {
-        errors[field.key] = 'Must be a whole number.';
+        errors[field.key] = i18nTr('deployGate.errWhole');
       } else {
-        errors[field.key] = field.integer ? 'Enter a whole number.' : 'Enter a number, e.g. 1.1 or 1,1.';
+        errors[field.key] = field.integer ? i18nTr('deployGate.errEnterWhole') : i18nTr('deployGate.errEnterNumber');
       }
       continue;
     }
@@ -129,6 +164,7 @@ function validateForm(f: FormState): { errors: Partial<Record<NumericKey, string
 }
 
 export function DeployGateSection() {
+  const t = useT();
   const { data: config, isLoading, error: loadError } = useDeployGateConfig();
   const update = useUpdateDeployGateConfig();
   const { toast } = useToast();
@@ -156,7 +192,7 @@ export function DeployGateSection() {
     const tr = parseInteger(form.train_months);
     const te = parseInteger(form.test_months);
     if (lb !== null && tr !== null && te !== null && lb > 0 && tr > 0 && te > 0 && tr + te > lb) {
-      return `Train + test (${tr + te} months) is longer than the lookback (${lb} months) - a complete walk-forward window may not fit, and the gate fails when there isn't enough history.`;
+      return t('deployGate.windowWarning', { sum: tr + te, lookback: lb });
     }
     return null;
   }, [form]);
@@ -174,10 +210,10 @@ export function DeployGateSection() {
         setForm(f);
         setBaseline(f);
         setShowErrors(false);
-        toast('Deploy gate saved');
+        toast(t('deployGate.saved'));
       },
       // 400 (server-side validation) comes back as {"error","message"}.
-      onError: (err) => setSaveError(apiErrorMessage(err, "Couldn't save the deploy gate")),
+      onError: (err) => setSaveError(apiErrorMessage(err, t('deployGate.saveFailed'))),
     });
   };
 
@@ -186,26 +222,24 @@ export function DeployGateSection() {
   return (
     <Card id="deploy-gate" className="scroll-mt-20">
       <CardHeader
-        title="Deploy Gate"
-        subtitle="Hard checks, computed in Go, that an agent's code change must pass before it can auto-deploy to a non-live strategy"
+        title={t('deployGate.title')}
+        subtitle={t('deployGate.subtitle')}
         action={<ShieldCheck className="w-5 h-5 text-muted-foreground" />}
       />
 
       {isLoading || (!form && !loadError) ? (
         <div className="text-xs text-muted-foreground flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading deploy gate...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('deployGate.loading')}
         </div>
       ) : loadError || !form ? (
         <div className="p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          Couldn't load the deploy gate: {apiErrorMessage(loadError)}
+          {t('deployGate.loadFailed', { error: apiErrorMessage(loadError) })}
         </div>
       ) : (
         <form onSubmit={handleSave} noValidate className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Each check compares the candidate code against the strategy's current code, both walk-forward tested over
-            the same window. A change that fails any check is never deployed - it's filed as a proposal for you
-            instead. Agents can read these values but can't change them.
+            {t('deployGate.intro')}
           </p>
 
           {saveError && (
@@ -247,7 +281,7 @@ export function DeployGateSection() {
             })}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="deploy-gate-timeframe" className="text-xs font-semibold text-foreground">
-                Timeframe
+                {t('deployGate.timeframe')}
               </label>
               <select
                 id="deploy-gate-timeframe"
@@ -258,17 +292,17 @@ export function DeployGateSection() {
               >
                 {/* Keep an unknown stored value selectable rather than
                     silently rewriting it on the next save. */}
-                {!TIMEFRAMES.some((t) => t.value === form.timeframe) && (
+                {!TIMEFRAMES.some((tf) => tf.value === form.timeframe) && (
                   <option value={form.timeframe}>{form.timeframe}</option>
                 )}
-                {TIMEFRAMES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
+                {TIMEFRAMES.map((tf) => (
+                  <option key={tf.value} value={tf.value}>
+                    {tf.label}
                   </option>
                 ))}
               </select>
               <p id="deploy-gate-timeframe-help" className="text-[11px] text-muted-foreground">
-                Candle resolution for the gate's backtests.
+                {t('deployGate.timeframeHelp')}
               </p>
             </div>
           </div>
@@ -291,7 +325,7 @@ export function DeployGateSection() {
               disabled={!dirty || update.isPending}
               className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5 disabled:opacity-50"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Discard
+              <RotateCcw className="w-3.5 h-3.5" /> {t('deployGate.discard')}
             </button>
             <button
               type="submit"
@@ -299,7 +333,7 @@ export function DeployGateSection() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold disabled:opacity-50"
             >
               {update.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {update.isPending ? 'Saving...' : 'Save deploy gate'}
+              {update.isPending ? t('common.saving') : t('deployGate.save')}
             </button>
           </div>
         </form>

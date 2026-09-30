@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"go-trade-bot/app/entities"
@@ -17,6 +17,7 @@ import (
 	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
+	"go-trade-bot/internal/i18n"
 
 	"github.com/gorilla/mux"
 )
@@ -184,13 +185,15 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // inline styles and data: images.
 const ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:"
 
-// htmlOpenTag is how internal/report/agentreport's template opens the
-// document; ?theme= injects a class onto it.
-const htmlOpenTag = `<html lang="en">`
+// htmlOpenTag matches how internal/report/agentreport's template opens the
+// document (<html lang="en|es|pt-BR">); ?theme= injects a class onto it.
+var htmlOpenTag = regexp.MustCompile(`<html lang="([A-Za-z-]{1,16})">`)
 
-// HTML is GET /agent-reports/{id}/html[?theme=dark|light] - the stored,
-// server-rendered report. Works with ?token= (the auth middleware accepts
-// it) for iframes. Without ?theme the report follows prefers-color-scheme.
+// HTML is GET /agent-reports/{id}/html[?theme=dark|light][&lang=en|es|pt-BR]
+// - the stored, server-rendered report. ?lang= serves that locale's
+// write-time snapshot (i18n-02 §3), falling back to RenderedHTML (reports
+// written before i18n-02, or an unknown lang). Without ?theme the report
+// follows prefers-color-scheme.
 func (h *Handler) HTML(w http.ResponseWriter, r *http.Request) {
 	theme := r.URL.Query().Get("theme")
 	if theme != "" && theme != "dark" && theme != "light" {
@@ -202,10 +205,16 @@ func (h *Handler) HTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := rep.RenderedHTML
+	if loc, ok := i18n.Parse(r.URL.Query().Get("lang")); ok {
+		body = rep.HTMLForLocale(string(loc))
+	}
 	if theme != "" {
-		// theme is one of two constants - never request text - so this
-		// cannot inject markup.
-		body = strings.Replace(body, htmlOpenTag, `<html lang="en" class="`+theme+`">`, 1)
+		// theme is one of two constants and lang is captured from our own
+		// template's tag - never request text - so this cannot inject markup.
+		if m := htmlOpenTag.FindStringSubmatchIndex(body); m != nil {
+			lang := body[m[2]:m[3]]
+			body = body[:m[0]] + `<html lang="` + lang + `" class="` + theme + `">` + body[m[1]:]
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", ContentSecurityPolicy)

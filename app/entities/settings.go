@@ -38,7 +38,12 @@ type Settings struct {
 	// runs halt before their next model call. Never read by any trading
 	// path - it only gates app/usecase/agent.
 	AgentsPaused bool
-	UpdatedAt    time.Time
+	// DefaultLocale ("en" | "es" | "pt-BR", i18n-02 §1) is the language of
+	// shared, unattended output: cron/event/market/chain agent runs, their
+	// reports and webhook notifications. "" reads as "en". Written by the
+	// admin-only PUT /settings.
+	DefaultLocale string `gorm:"size:8;default:en"`
+	UpdatedAt     time.Time
 }
 
 // ToConfiguration builds a *configuration.Configuration carrying just the

@@ -5,14 +5,16 @@ import { apiErrorMessage } from '@/api/client';
 import { useAddStrategyMemoryNote, useStrategyMemory } from '@/hooks/queries';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { MemoryKindBadge } from '@/components/domain/AgentBadges';
-import { formatRelative } from '@/lib/time';
+import { formatDateTime, formatRelative } from '@/lib/format';
 import { useAuth } from '@/context/AuthContext';
+import { useT } from '@/i18n';
 
 // "Agent notes" (A-03 §9): the strategy's shared memory - journal entries,
 // findings and report references written by every agent, plus operator
 // notes - newest first, with "Load more" paging via before_id. Operator
 // notes added here are part of what agents read on their next run.
 export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
+  const t = useT();
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useStrategyMemory(strategyId);
   const addNote = useAddStrategyMemoryNote(strategyId);
   const [draft, setDraft] = useState('');
@@ -29,14 +31,14 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
     setAddError(null);
     addNote.mutate(content, {
       onSuccess: () => setDraft(''),
-      onError: (err) => setAddError(apiErrorMessage(err, 'Failed to add the note')),
+      onError: (err) => setAddError(apiErrorMessage(err, t('agents.noteAddFailed'))),
     });
   };
 
   return (
     <CollapsibleSection
       id="workbench.agentNotes"
-      title="Agent Notes"
+      title={t('agents.notesTitle')}
       subtitle={entries.length ? `(${entries.length}${hasNextPage ? '+' : ''})` : undefined}
       defaultOpen={false}
     >
@@ -46,8 +48,8 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add a note for agents working on this strategy..."
-          aria-label="New agent note"
+          placeholder={t('agents.notePlaceholder')}
+          aria-label={t('agents.noteAria')}
           maxLength={4000}
           className="form-input text-xs py-1.5 flex-1"
         />
@@ -57,7 +59,7 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
           className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-50 shrink-0"
         >
           {addNote.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          Add note
+          {t('agents.addNote')}
         </button>
       </form>
       )}
@@ -69,22 +71,22 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
 
       {isLoading ? (
         <div className="text-xs text-muted-foreground flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading notes...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('agents.loadingNotes')}
         </div>
       ) : error ? (
-        <div className="text-xs text-destructive">Couldn't load notes: {apiErrorMessage(error)}</div>
+        <div className="text-xs text-destructive">{t('agents.notesLoadFailed', { error: apiErrorMessage(error) })}</div>
       ) : entries.length === 0 ? (
         <div className="text-xs text-muted-foreground">
-          No notes yet. Agents record findings here as they evaluate this strategy.
+          {t('agents.notesEmpty')}
         </div>
       ) : (
         <ul className="space-y-1.5">
           {entries.map((m) => (
             <li key={m.id} className="rounded border border-border/60 bg-background/40 px-2.5 py-1.5">
               <div className="flex items-center gap-2 text-[11px]">
-                <span className="font-semibold text-foreground">{m.author_name || 'operator'}</span>
+                <span className="font-semibold text-foreground">{m.author_name || t('agents.operator')}</span>
                 <MemoryKindBadge kind={m.kind} />
-                <span className="ml-auto text-muted-foreground whitespace-nowrap" title={new Date(m.created_at).toLocaleString()}>
+                <span className="ml-auto text-muted-foreground whitespace-nowrap" title={formatDateTime(m.created_at, { seconds: true })}>
                   {formatRelative(m.created_at)}
                 </span>
               </div>
@@ -94,7 +96,7 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
                   to={`/agents/reports/${m.ref_id}`}
                   className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                 >
-                  Open report #{m.ref_id} <ArrowUpRight className="w-3 h-3" />
+                  {t('agents.openReport', { id: m.ref_id })} <ArrowUpRight className="w-3 h-3" />
                 </Link>
               )}
             </li>
@@ -110,7 +112,7 @@ export function AgentNotesPanel({ strategyId }: { strategyId: number }) {
             disabled={isFetchingNextPage}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs py-1 px-3 disabled:opacity-50"
           >
-            {isFetchingNextPage ? 'Loading...' : 'Load more'}
+            {isFetchingNextPage ? t('common.loading') : t('agents.loadMore')}
           </button>
         </div>
       )}

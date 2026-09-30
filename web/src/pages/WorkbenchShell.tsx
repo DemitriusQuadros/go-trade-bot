@@ -37,6 +37,8 @@ import {
   Copy,
   Loader2,
 } from 'lucide-react';
+import { formatTime } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // Editor tab content vs. the chart: which gets the screen. 'split' is the
 // original side-by-side layout; 'script'/'chart' each give one of them the
@@ -249,17 +251,9 @@ const DEFAULT_DRAFT: ScriptEditorState = {
   previewSymbol: 'BTCUSDT',
 };
 
-// Workbench strings (kept together for the i18n pass).
-const WB_STRINGS = {
-  readOnlyDraftable:
-    'Read-only — only admins can change dryrun/live strategies. Clone it as a backtest draft to experiment.',
-  readOnlyNoEdit: "Read-only — your account can't edit strategies.",
-  clone: 'Clone as draft',
-  cloning: 'Cloning...',
-  cloned: (id: number) => `Draft #${id} created - you can edit and backtest it.`,
-};
 
 export function WorkbenchShell({ mode }: WorkbenchShellProps) {
+  const t = useT();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const strategyId = id ? Number(id) : null;
@@ -399,7 +393,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
     const entry: ConsoleEntry = {
       ...e,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: formatTime(new Date()),
     };
     setConsoleLog((prev) => [...prev, entry].slice(-CONSOLE_LOG_CAP));
   }, []);
@@ -469,7 +463,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   useRegisterEditorBridge(editorBridge);
 
   if (isEdit && isStrategyLoading) {
-    return <LoadingScreen message={`Loading strategy #${strategyId}...`} />;
+    return <LoadingScreen message={t('workbench.loading', { id: strategyId })} />;
   }
 
   const handleClone = () => {
@@ -486,10 +480,10 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       },
       {
         onSuccess: (created) => {
-          toast(WB_STRINGS.cloned(created.id));
+          toast(t('workbench.cloned', { id: created.id }));
           navigate(`/strategies/${created.id}/edit`);
         },
-        onError: (err) => toast(apiErrorMessage(err, 'Failed to clone the strategy'), 'error'),
+        onError: (err) => toast(apiErrorMessage(err, t('workbench.cloneFailed')), 'error'),
       },
     );
   };
@@ -515,13 +509,13 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       <div className="flex flex-wrap items-center gap-3 border-b border-border pb-3 shrink-0">
         <button
           onClick={() => navigate(-1)}
-          title="Back"
+          title={t('common.back')}
           className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-card/30 rounded shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-bold text-foreground shrink-0 whitespace-nowrap">
-          {isEdit ? `Strategy Workbench #${strategyId}` : 'New Script Strategy'}
+          {isEdit ? t('workbench.titleEdit', { id: strategyId }) : t('workbench.titleNew')}
         </h1>
 
         <nav className="flex items-center gap-1 ml-4 text-xs shrink-0">
@@ -535,7 +529,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             }
           >
             <Code2 className="w-3.5 h-3.5" />
-            <span>Editor</span>
+            <span>{t('workbench.tabEditor')}</span>
           </NavLink>
           <NavLink
             to={`${tabBase}/repl`}
@@ -551,10 +545,10 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           {backtestDisabled ? (
             <span
               className="px-3 py-1.5 rounded flex items-center gap-1.5 text-muted-foreground cursor-not-allowed"
-              title="Save this strategy before running a full backtest"
+              title={t('workbench.backtestNeedsSave')}
             >
               <History className="w-3.5 h-3.5" />
-              <span>Backtest</span>
+              <span>{t('workbench.tabBacktest')}</span>
             </span>
           ) : (
             <NavLink
@@ -566,7 +560,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               }
             >
               <History className="w-3.5 h-3.5" />
-              <span>Backtest</span>
+              <span>{t('workbench.tabBacktest')}</span>
             </NavLink>
           )}
         </nav>
@@ -581,7 +575,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           <div className="flex items-center bg-background border border-border/40 rounded overflow-hidden">
             <button
               onClick={() => setContentView('script')}
-              title="Full-screen script (Editor/REPL/Backtest content fills the width)"
+              title={t('workbench.viewScript')}
               className={`p-1.5 ${
                 contentView === 'script' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
@@ -590,7 +584,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             </button>
             <button
               onClick={() => setContentView('split')}
-              title="Split view"
+              title={t('workbench.viewSplit')}
               className={`p-1.5 border-l border-r border-border/40 ${
                 contentView === 'split' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
@@ -599,7 +593,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             </button>
             <button
               onClick={() => setContentView('chart')}
-              title="Full-screen chart"
+              title={t('workbench.viewChart')}
               className={`p-1.5 ${
                 contentView === 'chart' ? 'bg-secondary text-white' : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
               }`}
@@ -609,7 +603,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           </div>
           <button
             onClick={() => setConsolePanelOpen((o) => !o)}
-            title={consolePanelOpen ? 'Hide console' : 'Show console'}
+            title={consolePanelOpen ? t('workbench.hideConsole') : t('workbench.showConsole')}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-card/30 rounded"
           >
             {consolePanelOpen ? <PanelBottomClose className="w-4 h-4" /> : <PanelBottomOpen className="w-4 h-4" />}
@@ -624,7 +618,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           className="mt-3 shrink-0 px-3 py-2 rounded-lg border border-warning/40 bg-warning/10 text-xs text-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-sans"
         >
           <Lock className="w-4 h-4 text-warning shrink-0" />
-          <span>{can('edit_drafts') ? WB_STRINGS.readOnlyDraftable : WB_STRINGS.readOnlyNoEdit}</span>
+          <span>{can('edit_drafts') ? t('workbench.readOnlyDraftable') : t('workbench.readOnlyNoEdit')}</span>
           {can('edit_drafts') && (
             <button
               type="button"
@@ -634,7 +628,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               className="ml-auto bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1 font-semibold disabled:opacity-50 whitespace-nowrap"
             >
               {cloneMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
-              {cloneMutation.isPending ? WB_STRINGS.cloning : WB_STRINGS.clone}
+              {cloneMutation.isPending ? t('workbench.cloning') : t('workbench.clone')}
             </button>
           )}
         </div>
@@ -647,18 +641,20 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
         >
           <GitBranch className="w-4 h-4 text-primary shrink-0" />
           <span>
-            Challenger of{' '}
-            <Link to={`/strategies/${championId}/edit`} className="font-semibold hover:text-primary hover:underline">
-              {champion?.name ?? `strategy #${championId}`}
-            </Link>{' '}
-            ({existingStrategy?.mode ?? 'dryrun'}). Changes here never touch the live strategy until a promotion is
-            approved.
+            {t.rich('workbench.challengerBanner', {
+              champion: (
+                <Link to={`/strategies/${championId}/edit`} className="font-semibold hover:text-primary hover:underline">
+                  {champion?.name ?? t('workbench.strategyNumber', { id: championId })}
+                </Link>
+              ),
+              mode: existingStrategy?.mode ?? 'dryrun',
+            })}
           </span>
           <Link
             to={`/agents/proposals?strategy_id=${championId}`}
             className="ml-auto text-primary hover:underline whitespace-nowrap"
           >
-            View proposals
+            {t('workbench.viewProposals')}
           </Link>
         </div>
       )}
@@ -666,8 +662,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       <div className="flex-1 min-h-0 flex flex-col gap-2 mt-4">
         {splitSqueezed && (
           <p role="note" className="shrink-0 text-[11px] text-muted-foreground font-sans">
-            Not enough width for the split view - the chart is hidden. Close the agent panel (Ctrl+.) or switch to
-            the chart view to see it.
+            {t('workbench.splitSqueezed')}
           </p>
         )}
         <div ref={setSplitRowEl} className="flex-1 min-h-0 flex">
@@ -702,7 +697,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           {layoutView === 'split' && (
             <div
               onMouseDown={handleDividerDown}
-              title="Drag to resize"
+              title={t('workbench.dragResize')}
               className="w-1.5 shrink-0 mx-1 cursor-col-resize rounded bg-secondary/20 hover:bg-primary/50 active:bg-primary/60 transition-colors"
             />
           )}
@@ -714,16 +709,16 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               mode (ResizeObserver-driven). */}
           <div className={layoutView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
             <div className="px-1 text-[11px] text-muted-foreground uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
-              <span>Shared Price Chart ({activeTraceSource})</span>
+              <span>{t('workbench.sharedChart', { source: activeTraceSource })}</span>
               {loadingMoreHistory && (
                 <span className="normal-case text-foreground font-normal tracking-normal flex items-center gap-1">
                   <RefreshCw className="w-3 h-3 animate-spin" />
-                  Loading more history...
+                  {t('workbench.loadingHistory')}
                 </span>
               )}
               {!loadingMoreHistory && !hasMoreHistory && activeTraceSource !== 'backtest' && (
                 <span className="normal-case text-muted-foreground font-normal tracking-normal">
-                  (full available history loaded)
+                  {t('workbench.fullHistory')}
                 </span>
               )}
             </div>
@@ -744,7 +739,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               />
             </div>
             <div className="shrink-0 max-h-40 overflow-y-auto">
-              <CollapsibleSection id="workbench.tickDetail" title="Tick Detail" defaultOpen>
+              <CollapsibleSection id="workbench.tickDetail" title={t('workbench.tickDetail')} defaultOpen>
                 <TraceAnnotationPanel record={selectedTraceRecord} />
               </CollapsibleSection>
             </div>
@@ -758,7 +753,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             that top-bar one. */}
         {consolePanelOpen && (
           <div className="shrink-0 max-h-48 overflow-y-auto">
-            <CollapsibleSection id="workbench.console" title="Console" defaultOpen>
+            <CollapsibleSection id="workbench.console" title={t('workbench.console')} defaultOpen>
               <ConsolePanel entries={consoleLog} />
             </CollapsibleSection>
           </div>

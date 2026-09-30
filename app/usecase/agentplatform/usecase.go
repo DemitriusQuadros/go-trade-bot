@@ -637,10 +637,8 @@ func (u *UseCase) TestWebhookTarget(ctx context.Context, id uint) error {
 	return u.sender.SendSync(ctx, t, notifier.AgentMessage{
 		AgentName: "go-trade-bot",
 		Severity:  string(entities.SeverityInfo),
-		Title:     "Test notification",
-		Message:   fmt.Sprintf("This is a test message for webhook target %q.", t.Name),
 		Timestamp: u.now().UTC(),
-	})
+	}.WithText(notifier.T("test.title"), notifier.T("test.message", t.Name)))
 }
 
 // --- Strategy memory ---------------------------------------------------------

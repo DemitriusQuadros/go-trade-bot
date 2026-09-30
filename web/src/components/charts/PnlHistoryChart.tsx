@@ -2,6 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, HistogramSeries } from 'lightweight-charts';
 import { getChartColors } from '@/lib/chartTheme';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { chartLocalization } from '@/lib/format';
+import { useLocale } from '@/i18n';
+import { useT } from '@/i18n';
 
 export interface PnlHistoryPoint {
   periodStart: string;
@@ -20,14 +23,17 @@ export function PnlHistoryChart({
   summary,
   height = 220,
 }: PnlHistoryChartProps) {
+  const t = useT();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
+  const { locale } = useLocale();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length === 0) return;
     const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
+      localization: chartLocalization(),
       layout: {
         background: { type: ColorType.Solid, color: c.background },
         textColor: c.muted,
@@ -72,12 +78,12 @@ export function PnlHistoryChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [points, height, isDark]);
+  }, [points, height, isDark, locale]);
 
   if (!points || points.length === 0) {
     return (
       <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
-        No performance history recorded yet.
+        {t('charts.noPnlHistory')}
       </div>
     );
   }

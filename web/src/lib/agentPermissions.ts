@@ -1,4 +1,5 @@
 import { AgentPermission } from '@/api/types';
+import { tr, type MessageKey } from '@/i18n';
 
 // The permission catalogue shown in the agent editor and as table badges.
 // `phase` marks entries the API accepts but that grant nothing yet - they
@@ -6,35 +7,20 @@ import { AgentPermission } from '@/api/types';
 // create_strategy and propose_live.)
 export const AGENT_PERMISSIONS: {
   key: AgentPermission;
-  label: string;
-  description: string;
+  readonly label: string;
+  readonly description: string;
   phase?: string;
-}[] = [
-  { key: 'read', label: 'Read', description: 'Inspect strategies, backtests, positions and performance.' },
-  { key: 'backtest', label: 'Backtest', description: 'Run backtests.' },
-  { key: 'optimize', label: 'Optimize', description: 'Run parameter optimizations.' },
-  {
-    key: 'edit_testing',
-    label: 'Edit testing',
-    description: 'edit and auto-deploy non-live strategies, only if the deploy gate passes',
+}[] = (
+  ['read', 'backtest', 'optimize', 'edit_testing', 'notify', 'create_strategy', 'propose_live', 'chain'] as AgentPermission[]
+).map((key) => ({
+  key,
+  get label() {
+    return tr(`agentPerms.${key}.label` as MessageKey);
   },
-  { key: 'notify', label: 'Notify', description: 'Send webhook notifications to the selected targets.' },
-  {
-    key: 'create_strategy',
-    label: 'Create strategy',
-    description: 'create new strategies (always testing/dryrun, max 3/day)',
+  get description() {
+    return tr(`agentPerms.${key}.description` as MessageKey);
   },
-  {
-    key: 'propose_live',
-    label: 'Propose live',
-    description: 'propose promotions of challenger code into live strategies (you approve every one)',
-  },
-  {
-    key: 'chain',
-    label: 'Chain',
-    description: 'trigger other agents with a message (max 3 per run)',
-  },
-];
+}));
 
 export function permissionLabel(key: string): string {
   return AGENT_PERMISSIONS.find((p) => p.key === key)?.label ?? key;

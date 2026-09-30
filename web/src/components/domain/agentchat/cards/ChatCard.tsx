@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { useT } from '@/i18n';
 
 export type ChatDensity = 'compact' | 'comfortable';
 
@@ -92,13 +93,14 @@ export function CardSkeleton({ label }: { label: string }) {
 
 // One-line fallback when a card's entity can't be loaded (404, error).
 export function CardFallback({ text, to, linkLabel }: { text: string; to?: string; linkLabel?: string }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground min-w-0">
       <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" />
       <span className="truncate">{text}</span>
       {to && (
         <Link to={to} className="ml-auto shrink-0 text-primary hover:underline">
-          {linkLabel ?? 'Open'}
+          {linkLabel ?? t('cards.open')}
         </Link>
       )}
     </div>

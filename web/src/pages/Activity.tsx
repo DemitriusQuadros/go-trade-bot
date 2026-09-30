@@ -18,6 +18,9 @@ import {
   X,
   Bot,
 } from 'lucide-react';
+import { formatDateTime, formatNumber, formatPct, formatUsd } from '@/lib/format';
+import type { MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
 // Was three separate top-level pages (Positions, Execution Log, Agent
 // History) - all three are filtered views over the same underlying object,
@@ -26,13 +29,14 @@ import {
 // object" instead of paging between unrelated-looking top-level routes.
 type ActivityTab = 'positions' | 'fills' | 'agent';
 
-const TABS: { key: ActivityTab; label: string }[] = [
-  { key: 'positions', label: 'Positions' },
-  { key: 'fills', label: 'Order Fills' },
-  { key: 'agent', label: 'Agent Log' },
+const TABS: { key: ActivityTab; label: MessageKey }[] = [
+  { key: 'positions', label: 'activity.tabPositions' },
+  { key: 'fills', label: 'activity.tabFills' },
+  { key: 'agent', label: 'activity.tabAgent' },
 ];
 
 export function Activity() {
+  const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get('tab') as ActivityTab) || 'positions';
 
@@ -46,23 +50,22 @@ export function Activity() {
     <div className="container-custom space-y-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Activity</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t('activity.title')}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Everything that's happened to your strategies - live positions, confirmed order fills, and what the
-            AI agents have done.
+            {t('activity.subtitle')}
           </p>
         </div>
 
         <div className="flex items-center gap-2 bg-card/20 p-1 rounded-lg border border-border/30">
-          {TABS.map((t) => (
+          {TABS.map((tb) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              key={tb.key}
+              onClick={() => setTab(tb.key)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                tab === t.key ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+                tab === tb.key ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {t.label}
+              {t(tb.label)}
             </button>
           ))}
         </div>
@@ -77,6 +80,7 @@ export function Activity() {
 
 // --- Positions ---------------------------------------------------------
 function PositionsTab() {
+  const t = useT();
   const [statusTab, setStatusTab] = useState<'open' | 'closed'>('open');
   const { data: signals = [], refetch: refetchSignals, isLoading: isSignalsLoading } = useSignals(statusTab as any);
   const { data: strategies = [] } = useStrategies();
@@ -104,7 +108,7 @@ function PositionsTab() {
       const currentPrice =
         livePos?.current_price ||
         ssePrices[sig.symbol]?.price ||
-        tickers.find((t) => t.Symbol === sig.symbol)?.Price ||
+        tickers.find((tk) => tk.Symbol === sig.symbol)?.Price ||
         entryPrice;
 
       let pnl = 0;
@@ -158,7 +162,7 @@ function PositionsTab() {
                 statusTab === 'open' ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Open
+              {t('activity.open')}
             </button>
             <button
               onClick={() => setStatusTab('closed')}
@@ -166,7 +170,7 @@ function PositionsTab() {
                 statusTab === 'closed' ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Closed
+              {t('activity.closed')}
             </button>
           </div>
 
@@ -175,7 +179,7 @@ function PositionsTab() {
               <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search symbol, strategy..."
+                placeholder={t('activity.searchPositions')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input pl-9 text-xs"
@@ -186,16 +190,16 @@ function PositionsTab() {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <span className="text-[11px] text-muted-foreground block">
-                Total {statusTab === 'open' ? 'Unrealized' : 'Realized'} P&amp;L
+                {statusTab === 'open' ? t('activity.totalUnrealized') : t('activity.totalRealized')}
               </span>
               <span className={`font-mono text-sm font-bold ${totalPnL >= 0 ? 'text-success' : 'text-destructive'}`}>
-                {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
+                {formatUsd(totalPnL, { signed: true, digits: 2 })}
               </span>
             </div>
             <button
               onClick={() => refetchSignals()}
               className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs p-1.5"
-              title="Refresh positions"
+              title={t('activity.refreshPositions')}
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -205,31 +209,31 @@ function PositionsTab() {
 
       <Card>
         <CardHeader
-          title={statusTab === 'open' ? 'Live Open Positions' : 'Closed Signal Audit'}
-          subtitle={`Showing ${filteredPositions.length} positions`}
+          title={statusTab === 'open' ? t('activity.liveOpen') : t('activity.closedAudit')}
+          subtitle={t('activity.showingPositions', { count: filteredPositions.length })}
         />
 
         {isSignalsLoading && !signals ? (
-          <LoadingScreen message="Loading position records..." />
+          <LoadingScreen message={t('activity.loadingPositions')} />
         ) : filteredPositions.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-            No {statusTab} positions found.
+            {statusTab === 'open' ? t('activity.noOpen') : t('activity.noClosed')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded border border-border/60">
             <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40 [&_thead]:bg-card/40">
               <thead>
                 <tr>
-                  <th>Signal ID</th>
-                  <th>Symbol</th>
-                  <th>Strategy</th>
-                  <th>Entry Price</th>
-                  {statusTab === 'open' ? <th>Current Price</th> : <th>Exit Price</th>}
-                  <th>Stop Loss</th>
-                  <th>Quantity</th>
-                  <th>Invested</th>
-                  <th>{statusTab === 'open' ? 'Unrealized P&L' : 'Realized P&L'}</th>
-                  <th>Opened At</th>
+                  <th>{t('activity.colSignalId')}</th>
+                  <th>{t('activity.colSymbol')}</th>
+                  <th>{t('activity.colStrategy')}</th>
+                  <th>{t('activity.colEntryPrice')}</th>
+                  {statusTab === 'open' ? <th>{t('activity.colCurrentPrice')}</th> : <th>{t('activity.colExitPrice')}</th>}
+                  <th>{t('activity.colStopLoss')}</th>
+                  <th>{t('activity.colQuantity')}</th>
+                  <th>{t('activity.colInvested')}</th>
+                  <th>{statusTab === 'open' ? t('activity.colUnrealized') : t('activity.colRealized')}</th>
+                  <th>{t('activity.colOpenedAt')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -243,20 +247,20 @@ function PositionsTab() {
                       <td>
                         <span className="font-medium text-foreground">{pos.strategyName}</span>
                       </td>
-                      <td className="font-mono">${pos.entryPrice.toFixed(2)}</td>
-                      <td className="font-mono">${pos.currentPrice.toFixed(2)}</td>
+                      <td className="font-mono">${formatNumber(pos.entryPrice, { digits: 2 })}</td>
+                      <td className="font-mono">${formatNumber(pos.currentPrice, { digits: 2 })}</td>
                       <td className="font-mono text-muted-foreground">
                         {pos.stopLossPrice > 0 ? (
                           <div className="flex items-center gap-1 text-warning/90">
                             <Shield className="w-3 h-3 flex-shrink-0" />
-                            <span>${pos.stopLossPrice.toFixed(2)}</span>
+                            <span>${formatNumber(pos.stopLossPrice, { digits: 2 })}</span>
                           </div>
                         ) : (
                           '—'
                         )}
                       </td>
-                      <td className="font-mono text-xs text-muted-foreground">{pos.quantity.toFixed(4)}</td>
-                      <td className="font-mono text-xs text-muted-foreground">${pos.invested.toFixed(2)}</td>
+                      <td className="font-mono text-xs text-muted-foreground">{formatNumber(pos.quantity, { digits: 4 })}</td>
+                      <td className="font-mono text-xs text-muted-foreground">${formatNumber(pos.invested, { digits: 2 })}</td>
                       <td className="font-mono">
                         <div className="flex items-center gap-1">
                           {isPositive ? (
@@ -265,7 +269,7 @@ function PositionsTab() {
                             <ArrowDownRight className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
                           )}
                           <span className={`font-semibold ${isPositive ? 'text-success' : 'text-destructive'}`}>
-                            {isPositive ? '+' : ''}${pos.pnl.toFixed(2)} ({pos.pnlPct.toFixed(2)}%)
+                            {formatUsd(pos.pnl, { signed: true, digits: 2 })} ({formatPct(pos.pnlPct)})
                           </span>
                         </div>
                       </td>
@@ -273,8 +277,7 @@ function PositionsTab() {
                         <div className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-muted-foreground" />
                           <span>
-                            {openedDate.getMonth() + 1}/{openedDate.getDate()} {openedDate.getHours().toString().padStart(2, '0')}:
-                            {openedDate.getMinutes().toString().padStart(2, '0')}
+                            {formatDateTime(openedDate)}
                           </span>
                         </div>
                       </td>
@@ -292,6 +295,7 @@ function PositionsTab() {
 
 // --- Order Fills ---------------------------------------------------------
 function FillsTab() {
+  const t = useT();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: signals = [], refetch: refetchSignals, isLoading: isSignalsLoading } = useSignals('closed');
   const { data: strategies = [] } = useStrategies();
@@ -330,8 +334,9 @@ function FillsTab() {
 
   const handleExportCSV = () => {
     const headers = [
-      'Order ID', 'Broker Order ID', 'Signal ID', 'Strategy', 'Symbol', 'Entry Price', 'Exit Price', 'Quantity',
-      'Invested', 'Fees', 'Profit', 'Timestamp',
+      t('activity.csvOrderId'), t('activity.csvBrokerId'), t('activity.colSignalId'), t('activity.colStrategy'),
+      t('activity.colSymbol'), t('activity.colEntryPrice'), t('activity.colExitPrice'), t('activity.colQuantity'),
+      t('activity.colInvested'), t('activity.csvFees'), t('activity.csvProfit'), t('activity.csvTimestamp'),
     ];
     const rows = filteredOrders.map(({ order, signal, strategyName }) => [
       order.id, `"${order.broker_order_id}"`, signal.id, `"${strategyName}"`, signal.symbol, order.entry_price,
@@ -350,7 +355,7 @@ function FillsTab() {
   };
 
   if (isSignalsLoading && !signals) {
-    return <LoadingScreen message="Loading order execution audit logs..." />;
+    return <LoadingScreen message={t('activity.loadingFills')} />;
   }
 
   return (
@@ -362,7 +367,7 @@ function FillsTab() {
               <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search symbol, strategy, broker order ID..."
+                placeholder={t('activity.searchFills')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input pl-9 text-xs"
@@ -371,9 +376,9 @@ function FillsTab() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Symbol:</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('activity.symbolFilter')}</span>
               <select value={symbolFilter} onChange={(e) => setSymbolFilter(e.target.value)} className="form-select text-xs py-1">
-                <option value="all">All Symbols</option>
+                <option value="all">{t('activity.allSymbols')}</option>
                 {uniqueSymbols.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -387,12 +392,12 @@ function FillsTab() {
               className="bg-card/40 hover:bg-secondary/40 disabled:opacity-50 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
+              <span>{t('activity.exportCsv')}</span>
             </button>
             <button
               onClick={() => refetchSignals()}
               className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs p-1.5"
-              title="Refresh logs"
+              title={t('activity.refreshLogs')}
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -401,27 +406,27 @@ function FillsTab() {
       </Card>
 
       <Card>
-        <CardHeader title="Executed Order Fills" subtitle={`Auditing ${filteredOrders.length} confirmed orders`} />
+        <CardHeader title={t('activity.fillsTitle')} subtitle={t('activity.fillsSubtitle', { count: filteredOrders.length })} />
 
         {filteredOrders.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-            No execution logs found matching search criteria.
+            {t('activity.noFills')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded border border-border/60">
             <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-foreground [&_th]:uppercase [&_th]:text-[10px] [&_th]:font-semibold [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:whitespace-nowrap [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40 [&_thead]:bg-card/40">
               <thead>
                 <tr>
-                  <th>Order ID</th>
-                  <th>Broker Ref</th>
-                  <th>Symbol</th>
-                  <th>Strategy</th>
-                  <th>Entry Price</th>
-                  <th>Exit Price</th>
-                  <th>Quantity</th>
-                  <th>Fees</th>
-                  <th>Realized P&L</th>
-                  <th>Fill Time</th>
+                  <th>{t('activity.colOrderId')}</th>
+                  <th>{t('activity.colBrokerRef')}</th>
+                  <th>{t('activity.colSymbol')}</th>
+                  <th>{t('activity.colStrategy')}</th>
+                  <th>{t('activity.colEntryPrice')}</th>
+                  <th>{t('activity.colExitPrice')}</th>
+                  <th>{t('activity.colQuantity')}</th>
+                  <th>{t('activity.colFees')}</th>
+                  <th>{t('activity.colRealized')}</th>
+                  <th>{t('activity.colFillTime')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -440,16 +445,16 @@ function FillsTab() {
                       </td>
                       <td className="font-mono font-bold text-foreground text-xs">{signal.symbol}</td>
                       <td className="text-xs text-muted-foreground font-medium">{strategyName}</td>
-                      <td className="font-mono text-xs">${order.entry_price.toFixed(2)}</td>
-                      <td className="font-mono text-xs">{order.exit_price > 0 ? `$${order.exit_price.toFixed(2)}` : '—'}</td>
-                      <td className="font-mono text-xs">{order.quantity.toFixed(4)}</td>
-                      <td className="font-mono text-xs text-muted-foreground">${totalFee.toFixed(3)}</td>
+                      <td className="font-mono text-xs">${formatNumber(order.entry_price, { digits: 2 })}</td>
+                      <td className="font-mono text-xs">{order.exit_price > 0 ? `$${formatNumber(order.exit_price, { digits: 2 })}` : '—'}</td>
+                      <td className="font-mono text-xs">{formatNumber(order.quantity, { digits: 4 })}</td>
+                      <td className="font-mono text-xs text-muted-foreground">${formatNumber(totalFee, { digits: 3 })}</td>
                       <td className="font-mono text-xs">
                         <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
-                          {isProfit ? '+' : ''}${order.profit.toFixed(2)}
+                          {formatUsd(order.profit, { signed: true, digits: 2 })}
                         </span>
                       </td>
-                      <td className="text-xs text-muted-foreground font-mono">{new Date(order.created_at).toLocaleString()}</td>
+                      <td className="text-xs text-muted-foreground font-mono">{formatDateTime(order.created_at)}</td>
                     </tr>
                   );
                 })}
@@ -470,6 +475,7 @@ function AgentLogTab({
   searchParams: URLSearchParams;
   setSearchParams: (params: URLSearchParams) => void;
 }) {
+  const t = useT();
   const strategyIdParam = searchParams.get('strategy_id');
   const strategyId = strategyIdParam ? parseInt(strategyIdParam, 10) : undefined;
 
@@ -488,7 +494,7 @@ function AgentLogTab({
   );
 
   if (isLoading) {
-    return <LoadingScreen message="Loading agent run history..." />;
+    return <LoadingScreen message={t('activity.loadingRuns')} />;
   }
 
   return (
@@ -496,24 +502,24 @@ function AgentLogTab({
       <div className="flex items-center justify-between gap-2 mb-4">
         <CardHeader
           className="mb-0"
-          title="Agent Runs"
-          subtitle={`${sorted.length} run${sorted.length === 1 ? '' : 's'}${strategyId != null ? ` for strategy #${strategyId}` : ''} - what was asked, which tools ran, what was actually persisted`}
+          title={t('activity.agentRuns')}
+          subtitle={t('activity.agentRunsSubtitle', { count: sorted.length, scope: strategyId != null ? t('activity.forStrategy', { id: strategyId }) : '' })}
         />
         <div className="flex items-center gap-2 shrink-0">
           {strategyId != null && (
             <button
               onClick={clearFilter}
               className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs py-1.5 px-2.5 flex items-center gap-1.5"
-              title="Clear strategy filter"
+              title={t('activity.clearFilter')}
             >
-              <span>Strategy #{strategyId}</span>
+              <span>{t('activity.strategyChip', { id: strategyId })}</span>
               <X className="w-3 h-3" />
             </button>
           )}
           <button
             onClick={() => refetch()}
             className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs p-1.5"
-            title="Refresh"
+            title={t('common.refresh')}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
@@ -522,7 +528,7 @@ function AgentLogTab({
 
       {sorted.length === 0 ? (
         <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-          No agent runs recorded yet.
+          {t('activity.noRuns')}
         </div>
       ) : (
         <AgentRunsTable runs={sorted} />
@@ -534,7 +540,7 @@ function AgentLogTab({
             onClick={() => setLimit((l) => l + 20)}
             className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs py-1.5 px-4"
           >
-            Load more
+            {t('activity.loadMore')}
           </button>
         </div>
       )}

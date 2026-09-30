@@ -130,10 +130,8 @@ func (g *DefaultGuard) alertBudgetExhausted(ctx context.Context, agent entities.
 	for _, e := range g.Notifier.SendToTargets(ctx, targets, notifier.AgentMessage{
 		AgentName: agent.Name,
 		Severity:  string(entities.SeverityCritical),
-		Title:     "Daily budget exhausted",
-		Message:   fmt.Sprintf("Agent %q has spent $%.2f of its $%.2f daily budget (UTC day). It will not run again until tomorrow unless the budget is raised.", agent.Name, spent, agent.DailyBudgetUSD),
 		Timestamp: now.UTC(),
-	}) {
+	}.WithText(notifier.T("budget.title"), notifier.T("budget.message", agent.Name, spent, agent.DailyBudgetUSD))) {
 		log.Printf("agent guard: budget alert for agent %d: %v", agent.ID, e)
 	}
 }

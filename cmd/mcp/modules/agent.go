@@ -11,6 +11,7 @@ import (
 	candle_repo "go-trade-bot/app/repository/candle"
 	snapshot_repo "go-trade-bot/app/repository/performancesnapshot"
 	proposalrepo "go-trade-bot/app/repository/proposal"
+	settings_repo "go-trade-bot/app/repository/settings"
 	signalrepo "go-trade-bot/app/repository/signal"
 	strategy_repo "go-trade-bot/app/repository/strategy"
 	strategyscript "go-trade-bot/app/strategies/script"
@@ -78,6 +79,8 @@ var AgentModule = fx.Module("agent",
 			uc.Platform = agentplatform.NewGormRepository(db)
 			uc.Reports = agentreport.NewHTMLRenderer(agentplatform.NewReportDataSource(db))
 			uc.APIBaseURL = cfg.APIBaseURL
+			// i18n-02: write_report's RenderedHTML is the DefaultLocale snapshot.
+			uc.Locales = settings_repo.NewDefaultLocaleSource(settings_repo.NewRepository(db))
 			// Phase B-01: gated deploys, challengers, proposals (acting as
 			// the default agent, like every MCP tool call).
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)

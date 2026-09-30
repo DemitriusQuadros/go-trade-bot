@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { usePersistedOpen } from '@/hooks/usePersistedOpen';
+import { useT } from '@/i18n';
 
 interface CollapsibleSectionProps {
   // Stable key for localStorage persistence - prefix with the page/pane
@@ -35,6 +36,7 @@ export function CollapsibleSection({
   className = '',
   fill = false,
 }: CollapsibleSectionProps) {
+  const t = useT();
   const [open, setOpen] = usePersistedOpen(`collapsible.${id}`, defaultOpen);
 
   return (
@@ -47,7 +49,7 @@ export function CollapsibleSection({
         <button
           onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-1.5 min-w-0 text-left text-foreground hover:text-primary"
-          title={open ? `Hide ${title}` : `Show ${title}`}
+          title={open ? t('common.hideSection', { title: typeof title === 'string' ? title : '' }) : t('common.showSection', { title: typeof title === 'string' ? title : '' })}
         >
           {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
           <span className="font-semibold text-[11px] uppercase tracking-wider truncate">{title}</span>

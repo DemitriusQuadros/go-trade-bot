@@ -24,8 +24,11 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { formatNumber, formatPct, formatPrice, formatUsd } from '@/lib/format';
+import { useT } from '@/i18n';
 
 export function Dashboard() {
+  const t = useT();
   const { data: account, isLoading: isAccountLoading, refetch: refetchAccount } = useAccount();
   const { data: strategies = [], isLoading: isStrategiesLoading, refetch: refetchStrategies } = useStrategies();
   const { data: openSignals = [], isLoading: isSignalsLoading, refetch: refetchSignals } = useSignals('open');
@@ -103,7 +106,7 @@ export function Dashboard() {
   }, [performance]);
 
   if (isAccountLoading && isStrategiesLoading) {
-    return <LoadingScreen message="Initializing Dashboard..." />;
+    return <LoadingScreen message={t('dashboard.loading')} />;
   }
 
   const handleRefresh = () => {
@@ -118,8 +121,8 @@ export function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
-          <p className="text-sm text-muted-foreground mt-1">Real-time trading performance</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('dashboard.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t('dashboard.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
@@ -128,40 +131,40 @@ export function Dashboard() {
               : 'bg-destructive/10 text-destructive border-destructive/20'
           }`}>
             <Radio className={`w-3.5 h-3.5 ${sseConnected ? 'animate-pulse' : ''}`} />
-            {sseConnected ? 'Live' : 'Disconnected'}
+            {sseConnected ? t('dashboard.live') : t('dashboard.disconnected')}
           </div>
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="w-3.5 h-3.5 mr-2" />
-            Refresh
+            {t('common.refresh')}
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Account Balance"
-          value={account ? `$${(account.amount ?? (account as any).Amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-          subtitle={account?.currency ? `Currency: ${(account.currency ?? (account as any).Currency)}` : 'Spot Account'}
+          title={t('dashboard.accountBalance')}
+          value={account ? formatUsd(account.amount ?? (account as any).Amount ?? 0, { digits: 2 }) : '—'}
+          subtitle={account?.currency ? t('dashboard.currency', { currency: account.currency ?? (account as any).Currency }) : t('dashboard.spotAccount')}
           icon={<Wallet className="w-4 h-4 text-primary" />}
         />
         <MetricCard
-          title="Open Positions P&L"
-          value={`$${totalUnrealizedPnL.toFixed(2)}`}
+          title={t('dashboard.openPnl')}
+          value={formatUsd(totalUnrealizedPnL, { digits: 2 })}
           isPositive={totalUnrealizedPnL >= 0}
-          change={totalUnrealizedPnL >= 0 ? `+${totalUnrealizedPnL.toFixed(2)}` : `${totalUnrealizedPnL.toFixed(2)}`}
-          subtitle={`${positionsWithPnL.length} open position${positionsWithPnL.length === 1 ? '' : 's'}`}
+          change={formatNumber(totalUnrealizedPnL, { digits: 2, signed: true })}
+          subtitle={t('dashboard.openPositionsCount', { count: positionsWithPnL.length })}
           icon={<TrendingUp className="w-4 h-4 text-primary" />}
         />
         <MetricCard
-          title="Active Strategies"
+          title={t('dashboard.activeStrategies')}
           value={`${activeStrategiesCount} / ${strategies.length}`}
-          subtitle={`${strategies.filter((s) => s.mode === 'live').length} in live execution`}
+          subtitle={t('dashboard.inLive', { count: strategies.filter((s) => s.mode === 'live').length })}
           icon={<Cpu className="w-4 h-4 text-primary" />}
         />
         <MetricCard
-          title="Live Tickers"
+          title={t('dashboard.liveTickers')}
           value={tickers.length}
-          subtitle="Monitored crypto pairs"
+          subtitle={t('dashboard.monitoredPairs')}
           icon={<Layers className="w-4 h-4 text-primary" />}
         />
       </div>
@@ -170,11 +173,11 @@ export function Dashboard() {
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader
-              title="Open Positions"
-              subtitle="Real-time marked-to-market positions"
+              title={t('dashboard.openPositions')}
+              subtitle={t('dashboard.openPositionsSubtitle')}
               action={
                 <Link to="/activity" className="text-sm text-primary hover:underline flex items-center gap-1 font-medium">
-                  <span>View all</span>
+                  <span>{t('dashboard.viewAll')}</span>
                   <ExternalLink className="w-4 h-4" />
                 </Link>
               }
@@ -182,18 +185,18 @@ export function Dashboard() {
 
             {positionsWithPnL.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground border-t border-border">
-                No active open positions.
+                {t('dashboard.noPositions')}
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead>Strategy ID</TableHead>
-                    <TableHead>Entry Price</TableHead>
-                    <TableHead>Current Price</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Unrealized P&L</TableHead>
+                    <TableHead>{t('dashboard.colSymbol')}</TableHead>
+                    <TableHead>{t('dashboard.colStrategyId')}</TableHead>
+                    <TableHead>{t('dashboard.colEntryPrice')}</TableHead>
+                    <TableHead>{t('dashboard.colCurrentPrice')}</TableHead>
+                    <TableHead>{t('dashboard.colQuantity')}</TableHead>
+                    <TableHead>{t('dashboard.colUnrealized')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -201,17 +204,16 @@ export function Dashboard() {
                     <TableRow key={pos.id}>
                       <TableCell className="font-semibold text-foreground">{pos.symbol}</TableCell>
                       <TableCell className="text-muted-foreground">#{pos.strategy_id}</TableCell>
-                      <TableCell>${pos.entryPrice.toFixed(2)}</TableCell>
-                      <TableCell>${pos.currentPrice.toFixed(2)}</TableCell>
-                      <TableCell>{pos.quantity.toFixed(4)}</TableCell>
+                      <TableCell>${formatNumber(pos.entryPrice, { digits: 2 })}</TableCell>
+                      <TableCell>${formatNumber(pos.currentPrice, { digits: 2 })}</TableCell>
+                      <TableCell>{formatNumber(pos.quantity, { digits: 4 })}</TableCell>
                       <TableCell>
                         <span
                           className={`font-semibold ${
                             pos.unrealizedPnL >= 0 ? 'text-foreground' : 'text-destructive'
                           }`}
                         >
-                          {pos.unrealizedPnL >= 0 ? '+' : ''}
-                          ${pos.unrealizedPnL.toFixed(2)} ({pos.unrealizedPnLPct.toFixed(2)}%)
+                          {formatUsd(pos.unrealizedPnL, { signed: true, digits: 2 })} ({formatPct(pos.unrealizedPnLPct)})
                         </span>
                       </TableCell>
                     </TableRow>
@@ -223,11 +225,11 @@ export function Dashboard() {
 
           <Card>
             <CardHeader
-              title="Strategy Overview"
-              subtitle="Registered bot instances & current run modes"
+              title={t('dashboard.strategyOverview')}
+              subtitle={t('dashboard.strategyOverviewSubtitle')}
               action={
                 <Link to="/strategies" className="text-sm text-primary hover:underline flex items-center gap-1 font-medium">
-                  <span>Manage strategies</span>
+                  <span>{t('dashboard.manageStrategies')}</span>
                   <ExternalLink className="w-4 h-4" />
                 </Link>
               }
@@ -235,19 +237,19 @@ export function Dashboard() {
 
             {strategies.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground border-t border-border">
-                No strategies configured yet.
+                {t('dashboard.noStrategies')}
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Symbols</TableHead>
-                    <TableHead>Cycle</TableHead>
-                    <TableHead>Mode</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t('dashboard.colId')}</TableHead>
+                    <TableHead>{t('dashboard.colName')}</TableHead>
+                    <TableHead>{t('dashboard.colType')}</TableHead>
+                    <TableHead>{t('dashboard.colSymbols')}</TableHead>
+                    <TableHead>{t('dashboard.colCycle')}</TableHead>
+                    <TableHead>{t('dashboard.colMode')}</TableHead>
+                    <TableHead>{t('dashboard.colStatus')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,10 +278,10 @@ export function Dashboard() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Market Rates" subtitle="Latest ticker prices" />
+            <CardHeader title={t('dashboard.marketRates')} subtitle={t('dashboard.marketRatesSubtitle')} />
             {tickers.length === 0 ? (
               <div className="p-4 text-center text-sm text-muted-foreground border-t border-border">
-                No tickers available.
+                {t('dashboard.noTickers')}
               </div>
             ) : (
               <div className="px-4 pb-4 space-y-2">
@@ -292,7 +294,7 @@ export function Dashboard() {
                       {ticker.Symbol}
                     </span>
                     <span className="font-bold text-foreground">
-                      ${(ticker.Price ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${formatPrice(ticker.Price ?? 0, 8, 2)}
                     </span>
                   </div>
                 ))}
@@ -301,7 +303,7 @@ export function Dashboard() {
           </Card>
 
           <Card>
-            <CardHeader title="Cumulative P&L" subtitle="Realized historical performance" />
+            <CardHeader title={t('dashboard.cumulativePnl')} subtitle={t('dashboard.cumulativePnlSubtitle')} />
             <div className="p-4 pt-0">
               <PnlHistoryChart points={pnlChartData} height={200} />
             </div>

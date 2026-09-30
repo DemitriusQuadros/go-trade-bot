@@ -1,6 +1,7 @@
 package backtest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,9 @@ import (
 	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"go-trade-bot/internal/handler"
+	"go-trade-bot/internal/i18n"
+	"go-trade-bot/internal/metrics_provider"
+	"go-trade-bot/internal/report"
 
 	"github.com/gorilla/mux"
 )
@@ -298,6 +302,19 @@ func (h *BacktestHandler) GetReport(w http.ResponseWriter, r *http.Request) {
 		writeReportNotFound(w)
 		return
 	}
+	// i18n-02 §3: ?lang=es|pt-BR renders the report on request from the
+	// persisted metrics/trade log with translated labels. EN (the default)
+	// and runs without persisted metrics serve the stored file as before.
+	if loc, ok := i18n.Parse(r.URL.Query().Get("lang")); ok && loc != i18n.EN {
+		if input, ok := reportInputFromRun(run, loc); ok {
+			var buf bytes.Buffer
+			if err := report.Render(&buf, input, loc); err == nil {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write(buf.Bytes())
+				return
+			}
+		}
+	}
 	if run.HTMLReportPath == "" {
 		writeReportNotFound(w)
 		return
@@ -309,6 +326,32 @@ func (h *BacktestHandler) GetReport(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(content)
+}
+
+// reportInputFromRun rebuilds the HTML report input from a persisted run.
+// It reports false when the run has no persisted metrics (older runs).
+func reportInputFromRun(run entities.BacktestRun, loc i18n.Locale) (report.BacktestReportInput, bool) {
+	if len(run.MetricsJSON) == 0 {
+		return report.BacktestReportInput{}, false
+	}
+	var m metrics_provider.BacktestMetrics
+	if err := json.Unmarshal(run.MetricsJSON, &m); err != nil {
+		return report.BacktestReportInput{}, false
+	}
+	var trades []metrics_provider.TradeLogEntry
+	if len(run.TradeLogJSON) > 0 {
+		if err := json.Unmarshal(run.TradeLogJSON, &trades); err != nil {
+			return report.BacktestReportInput{}, false
+		}
+	}
+	name := run.Strategy.Name
+	if run.IsWalkForward {
+		name += report.Messages.T(loc, "walk_forward_suffix")
+	}
+	return report.BacktestReportInput{
+		RunID: run.ID, StrategyName: name, Symbol: run.Symbol,
+		StartDate: run.StartDate, EndDate: run.EndDate, Metrics: m, Trades: trades,
+	}, true
 }
 
 func writeReportNotFound(w http.ResponseWriter) {

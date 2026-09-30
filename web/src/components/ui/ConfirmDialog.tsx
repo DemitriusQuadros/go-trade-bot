@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { useT } from '@/i18n';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -16,12 +17,13 @@ export function ConfirmDialog({
   isOpen,
   title,
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText,
+  cancelText,
   isDangerous = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const t = useT();
   if (!isOpen) return null;
 
   return (
@@ -57,7 +59,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border px-4 py-2 text-sm"
           >
-            {cancelText}
+            {cancelText ?? t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -67,7 +69,7 @@ export function ConfirmDialog({
                 : 'bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary px-4 py-2 text-sm font-semibold'
             }
           >
-            {confirmText}
+            {confirmText ?? t('common.confirm')}
           </button>
         </div>
       </div>

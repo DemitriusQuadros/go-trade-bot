@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/i18n"
 )
 
 // AgentMessage is one agent notification (agents-platform A-01 §6). It is
@@ -25,6 +26,14 @@ type AgentMessage struct {
 	Link        string    `json:"link,omitempty"` // absolute deep link, optional
 	StrategyIDs []uint    `json:"strategy_ids,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
+
+	// i18n-02 §4 (never serialized): Locale is the formatters' language,
+	// set by the notifier from Settings.DefaultLocale at send time.
+	// TitleText/MessageText, when set (see WithText), re-render Title/Message
+	// in that locale; model-written text leaves them nil and is sent as is.
+	Locale      i18n.Locale `json:"-"`
+	TitleText   *Text       `json:"-"`
+	MessageText *Text       `json:"-"`
 }
 
 // Formatter turns an AgentMessage into the HTTP request for one target.
@@ -70,7 +79,13 @@ type MultiTargetNotifier struct {
 	retryDelay time.Duration
 	// telegramBaseURL is overridable for tests.
 	telegramBaseURL string
+	// locales is Settings.DefaultLocale (i18n-02 §4); nil = en.
+	locales i18n.Source
 }
+
+// SetLocaleSource sets where the notification language comes from
+// (Settings.DefaultLocale, cached). Call before the notifier is used.
+func (n *MultiTargetNotifier) SetLocaleSource(src i18n.Source) { n.locales = src }
 
 // NewMultiTargetNotifier builds a MultiTargetNotifier.
 func NewMultiTargetNotifier() *MultiTargetNotifier {
@@ -102,10 +117,11 @@ func (n *MultiTargetNotifier) format(t entities.WebhookTarget, m AgentMessage) (
 }
 
 // SendToTargets implements AgentNotifier (see the type doc for semantics).
-func (n *MultiTargetNotifier) SendToTargets(_ context.Context, targets []entities.WebhookTarget, m AgentMessage) []error {
+func (n *MultiTargetNotifier) SendToTargets(ctx context.Context, targets []entities.WebhookTarget, m AgentMessage) []error {
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now().UTC()
 	}
+	m = m.localize(sourceLocale(ctx, n.locales))
 	var errs []error
 	for _, t := range targets {
 		if !t.Enabled {
@@ -145,6 +161,7 @@ func (n *MultiTargetNotifier) SendSync(ctx context.Context, t entities.WebhookTa
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now().UTC()
 	}
+	m = m.localize(sourceLocale(ctx, n.locales))
 	url, body, contentType, err := n.format(t, m)
 	if err != nil {
 		return err
@@ -183,8 +200,18 @@ func redactURLError(err error) string {
 
 // --- Formatters --------------------------------------------------------------
 
-func severityTag(sev string) string {
+// severityTag is "[INFO]" / "[WARNING]" / "[CRITICAL]" in loc (unknown
+// severities are upper-cased as is).
+func severityTag(loc i18n.Locale, sev string) string {
+	key := "severity." + strings.ToLower(sev)
+	if _, ok := Messages[i18n.EN][key]; ok {
+		return "[" + Messages.T(loc, key) + "]"
+	}
 	return "[" + strings.ToUpper(sev) + "]"
+}
+
+func agentFooter(loc i18n.Locale, name string) string {
+	return Messages.F(loc, "footer.agent", name)
 }
 
 func requireURL(t entities.WebhookTarget) error {
@@ -230,14 +257,14 @@ func (DiscordFormatter) Format(t entities.WebhookTarget, m AgentMessage) (string
 		"title":       truncateRunes(m.Title, 256),
 		"description": truncateRunes(m.Message, 4000),
 		"color":       color,
-		"footer":      map[string]string{"text": "Agent " + m.AgentName},
+		"footer":      map[string]string{"text": agentFooter(m.Locale, m.AgentName)},
 		"timestamp":   m.Timestamp.UTC().Format(time.RFC3339),
 	}
 	if m.Link != "" {
 		embed["url"] = m.Link
 	}
 	body, err := json.Marshal(map[string]any{
-		"content": truncateRunes(fmt.Sprintf("%s %s: %s", severityTag(m.Severity), m.AgentName, m.Title), 2000),
+		"content": truncateRunes(fmt.Sprintf("%s %s: %s", severityTag(m.Locale, m.Severity), m.AgentName, m.Title), 2000),
 		"embeds":  []any{embed},
 		// Never ping @everyone/@here/roles from model-written text.
 		"allowed_mentions": map[string]any{"parse": []string{}},
@@ -260,16 +287,16 @@ func (SlackFormatter) Format(t entities.WebhookTarget, m AgentMessage) (string, 
 	if err := requireURL(t); err != nil {
 		return "", nil, "", err
 	}
-	text := fmt.Sprintf("*%s %s*\n%s", severityTag(m.Severity), slackEscape(m.Title), slackEscape(m.Message))
+	text := fmt.Sprintf("*%s %s*\n%s", severityTag(m.Locale, m.Severity), slackEscape(m.Title), slackEscape(m.Message))
 	if m.Link != "" {
-		text += fmt.Sprintf("\n<%s|Open report>", slackEscape(m.Link))
+		text += fmt.Sprintf("\n<%s|%s>", slackEscape(m.Link), slackEscape(linkLabel(m.Locale, m.Link)))
 	}
 	blocks := []any{
 		map[string]any{"type": "section", "text": map[string]string{"type": "mrkdwn", "text": truncateRunes(text, 3000)}},
-		map[string]any{"type": "context", "elements": []any{map[string]string{"type": "mrkdwn", "text": "Agent " + slackEscape(m.AgentName)}}},
+		map[string]any{"type": "context", "elements": []any{map[string]string{"type": "mrkdwn", "text": slackEscape(agentFooter(m.Locale, m.AgentName))}}},
 	}
 	body, err := json.Marshal(map[string]any{
-		"text":   fmt.Sprintf("%s %s: %s", severityTag(m.Severity), m.AgentName, m.Title),
+		"text":   fmt.Sprintf("%s %s: %s", severityTag(m.Locale, m.Severity), m.AgentName, m.Title),
 		"blocks": blocks,
 	})
 	return t.URL, body, "application/json", err
@@ -291,14 +318,14 @@ func (f TelegramFormatter) Format(t entities.WebhookTarget, m AgentMessage) (str
 		base = "https://api.telegram.org"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "<b>%s %s</b>\n", html.EscapeString(severityTag(m.Severity)), html.EscapeString(truncateRunes(m.Title, 200)))
+	fmt.Fprintf(&b, "<b>%s %s</b>\n", html.EscapeString(severityTag(m.Locale, m.Severity)), html.EscapeString(truncateRunes(m.Title, 200)))
 	// Truncate BEFORE escaping so the cut can never split an HTML entity or
 	// tag (Telegram rejects malformed parse_mode=HTML text).
 	b.WriteString(html.EscapeString(truncateRunes(m.Message, 3000)))
 	if m.Link != "" {
-		fmt.Fprintf(&b, "\n<a href=\"%s\">Open report</a>", html.EscapeString(m.Link))
+		fmt.Fprintf(&b, "\n<a href=\"%s\">%s</a>", html.EscapeString(m.Link), html.EscapeString(linkLabel(m.Locale, m.Link)))
 	}
-	fmt.Fprintf(&b, "\n<i>Agent %s</i>", html.EscapeString(m.AgentName))
+	fmt.Fprintf(&b, "\n<i>%s</i>", html.EscapeString(agentFooter(m.Locale, m.AgentName)))
 	body, err := json.Marshal(map[string]any{
 		"chat_id":                  t.ChatID,
 		"text":                     b.String(),

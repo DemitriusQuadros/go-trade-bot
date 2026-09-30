@@ -5,11 +5,13 @@ import { useRunAgent } from '@/hooks/queries';
 import { apiErrorMessage } from '@/api/client';
 import { useToast } from '@/context/ToastContext';
 import { Spinner } from '@/components/ui/Spinner';
+import { useT } from '@/i18n';
 
 // "Run now" dialog (A-03 §3): an optional operator instruction, then
 // POST /agents/{id}/run. The run itself happens asynchronously in cmd/agent;
 // this only confirms it was queued. Styled to match ui/ConfirmDialog.
 export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
+  const t = useT();
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
   const runAgent = useRunAgent();
@@ -42,10 +44,10 @@ export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClos
       { id: agent.id, prompt: prompt.trim() || undefined },
       {
         onSuccess: () => {
-          toast(`Run queued for ${agent.name}`);
+          toast(t('agents.runQueued', { name: agent.name }));
           onClose();
         },
-        onError: (err) => setError(apiErrorMessage(err, 'Failed to queue the run')),
+        onError: (err) => setError(apiErrorMessage(err, t('agents.runQueueFailed'))),
       },
     );
   };
@@ -60,15 +62,15 @@ export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClos
       <form onSubmit={submit} className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-xl">
         <div className="flex items-start justify-between mb-4">
           <h3 id="run-agent-title" className="text-base font-semibold text-foreground">
-            Run {agent.name} now
+            {t('agents.runNowTitle', { name: agent.name })}
           </h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground p-1">
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-muted-foreground hover:text-foreground p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <label htmlFor="run-agent-prompt" className="text-xs font-semibold text-foreground">
-          Instruction <span className="font-normal text-muted-foreground">(optional)</span>
+          {t('agents.instruction')} <span className="font-normal text-muted-foreground">{t('agents.optional')}</span>
         </label>
         <textarea
           id="run-agent-prompt"
@@ -76,11 +78,11 @@ export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClos
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={4}
-          placeholder="Leave empty to run the agent's standard evaluation of its bound strategies."
+          placeholder={t('agents.instructionPlaceholder')}
           className="form-textarea mt-1.5 text-xs font-mono"
         />
         <p className="text-[11px] text-muted-foreground mt-1.5">
-          The run is queued on the agent runtime and appears in the agent's run history when it finishes.
+          {t('agents.runQueuedHelp')}
         </p>
 
         {error && (
@@ -95,7 +97,7 @@ export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClos
             onClick={onClose}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border px-4 py-2 text-sm"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -103,7 +105,7 @@ export function RunAgentDialog({ agent, onClose }: { agent: Agent | null; onClos
             className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary px-4 py-2 text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50"
           >
             {runAgent.isPending ? <Spinner size="sm" className="text-primary-foreground" /> : <Play className="w-4 h-4" />}
-            Queue run
+            {t('agents.queueRun')}
           </button>
         </div>
       </form>

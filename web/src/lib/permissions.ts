@@ -1,4 +1,5 @@
 import { Capability, Strategy, UserRole } from '@/api/types';
+import { tr } from '@/i18n';
 
 // Capability helpers for the capability-aware UI (auth-02 §4). The backend
 // is the source of truth: these only decide what to SHOW; every mutation
@@ -18,22 +19,12 @@ export const ROLE_PRESETS: Record<UserRole, Capability[]> = {
 
 export const ROLES: UserRole[] = ['admin', 'friend', 'viewer'];
 
-// User-facing strings (kept together for the i18n pass).
+// Display labels live in the i18n catalog: t.enum('role', r),
+// t.enum('capability', c), t('users.adminOnly').
 export const PERMISSION_STRINGS = {
-  adminOnly: 'Only admins can change this.',
-  capabilityLabels: {
-    view: 'View',
-    backtest: 'Backtest',
-    edit_drafts: 'Edit drafts',
-    agent_chat: 'Agent chat',
-    approve_proposals: 'Approve proposals',
-    admin: 'Admin',
-  } as Record<Capability, string>,
-  roleLabels: {
-    admin: 'Admin',
-    friend: 'Friend',
-    viewer: 'Viewer',
-  } as Record<UserRole, string>,
+  get adminOnly(): string {
+    return tr('users.adminOnly');
+  },
 };
 
 export type CanFn = (cap: Capability) => boolean;

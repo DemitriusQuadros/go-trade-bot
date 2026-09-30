@@ -22,6 +22,7 @@ import (
 	userrepo "go-trade-bot/app/repository/user"
 	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
+	"go-trade-bot/internal/i18n"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -399,10 +400,15 @@ func (u *UseCase) UpdateMe(ctx context.Context, p authz.Principal, req UpdateMeR
 		user.DisplayName = name
 	}
 	if req.Locale != nil {
-		if !entities.IsValidLocale(*req.Locale) {
+		// i18n-02 §1: the supported set lives in internal/i18n; "" clears
+		// the preference. Stored canonical (e.g. "pt-br" -> "pt-BR").
+		if strings.TrimSpace(*req.Locale) == "" {
+			user.Locale = ""
+		} else if loc, ok := i18n.Parse(*req.Locale); ok {
+			user.Locale = string(loc)
+		} else {
 			return Me{}, badRequest("locale must be one of \"\", en, es, pt-BR")
 		}
-		user.Locale = *req.Locale
 	}
 	passwordChanged := false
 	if req.NewPassword != nil {

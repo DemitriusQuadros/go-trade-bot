@@ -17,6 +17,7 @@ import (
 	proposalusecase "go-trade-bot/app/usecase/proposal"
 	agentworker "go-trade-bot/app/workers/agent"
 	"go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/lock"
 	"go-trade-bot/internal/marketstatus"
 	"go-trade-bot/internal/modelprovider"
@@ -36,7 +37,11 @@ import (
 var AgentPlatformModule = fx.Module("agentplatform",
 	fx.Provide(
 		func(db *gorm.DB) agentplatform.Repository { return agentplatform.NewGormRepository(db) },
-		func() *notifier.MultiTargetNotifier { return notifier.NewMultiTargetNotifier() },
+		func(src i18n.Source) *notifier.MultiTargetNotifier {
+			n := notifier.NewMultiTargetNotifier()
+			n.SetLocaleSource(src) // i18n-02 §4
+			return n
+		},
 		func(db *gorm.DB) agentusecase.ReportRenderer {
 			return agentreport.NewHTMLRenderer(agentplatform.NewReportDataSource(db))
 		},

@@ -1,18 +1,20 @@
 import React from 'react';
 import { ConsoleEntry } from '@/pages/WorkbenchShell';
+import { useT } from '@/i18n';
 
 interface ConsolePanelProps {
   entries: ConsoleEntry[];
 }
 
 export function ConsolePanel({ entries }: ConsolePanelProps) {
+  const t = useT();
   return (
     <div
       className="console-panel border border-border rounded-lg bg-background font-mono text-xs max-h-48 overflow-y-auto"
       data-testid="console-panel"
     >
       {entries.length === 0 ? (
-        <div className="p-3 text-muted-foreground">No console output yet.</div>
+        <div className="p-3 text-muted-foreground">{t('workbench.noConsole')}</div>
       ) : (
         entries.map((e) => (
           <div

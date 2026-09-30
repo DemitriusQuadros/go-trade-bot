@@ -62,6 +62,16 @@ func (h *SettingsHandler) PutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !req.ValidDefaultLocale() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "invalid_locale",
+			"message": "default_locale must be one of en, es, pt-BR",
+		})
+		return
+	}
+
 	existing, err := h.UseCase.Get(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

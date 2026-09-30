@@ -18,8 +18,10 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { usePendingProposalCount } from '@/hooks/queries';
 import { AgentKillSwitch } from '@/components/domain/AgentKillSwitch';
+import { useT } from '@/i18n';
 
 export function MiniSidebar() {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   // Polled every 60s; approve/reject invalidate it immediately (B-02 §2).
   const { data: pendingProposals = 0 } = usePendingProposalCount();
@@ -53,66 +55,66 @@ export function MiniSidebar() {
           per-strategy Workbench's own tabs); Positions/Execution Log/Agent
           History collapsed into one Activity entry. */}
       <nav className="flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto px-2">
-        <GroupLabel expanded={expanded}>Overview</GroupLabel>
-        <NavItem to="/" icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" expanded={expanded} />
+        <GroupLabel expanded={expanded}>{t('nav.groupOverview')}</GroupLabel>
+        <NavItem to="/" icon={<LayoutDashboard className="w-5 h-5" />} label={t('nav.dashboard')} expanded={expanded} />
 
-        <GroupLabel expanded={expanded}>Trade</GroupLabel>
+        <GroupLabel expanded={expanded}>{t('nav.groupTrade')}</GroupLabel>
         <NavItem
           to="/strategies"
           icon={<Cpu className="w-5 h-5" />}
-          label="Strategies"
+          label={t('nav.strategies')}
           expanded={expanded}
           dataWalkthrough="nav-strategies"
         />
-        <NavItem to="/activity" icon={<Activity className="w-5 h-5" />} label="Activity" expanded={expanded} />
+        <NavItem to="/activity" icon={<Activity className="w-5 h-5" />} label={t('nav.activity')} expanded={expanded} />
 
-        <GroupLabel expanded={expanded}>Analyze</GroupLabel>
+        <GroupLabel expanded={expanded}>{t('nav.groupAnalyze')}</GroupLabel>
         <NavItem
           to="/backtest"
           icon={<History className="w-5 h-5" />}
-          label="Backtest Runs"
+          label={t('nav.backtestRuns')}
           expanded={expanded}
           dataWalkthrough="nav-backtest"
         />
-        <NavItem to="/optimization" icon={<TrendingUp className="w-5 h-5" />} label="Optimization" expanded={expanded} />
+        <NavItem to="/optimization" icon={<TrendingUp className="w-5 h-5" />} label={t('nav.optimization')} expanded={expanded} />
         {/* /agents/reports is nested under /agents, so /agents is
             a prefix of it - activeWhen keeps Agents highlighted on its
             editor/runs pages but not on a report page. */}
         <NavItem
           to="/agents"
           icon={<Bot className="w-5 h-5" />}
-          label="Agents"
+          label={t('nav.agents')}
           expanded={expanded}
           activeWhen={(path) =>
             path.startsWith('/agents') && !path.startsWith('/agents/reports') && !path.startsWith('/agents/proposals')
           }
         />
-        <NavItem to="/agents/reports" icon={<FileText className="w-5 h-5" />} label="Reports" expanded={expanded} />
+        <NavItem to="/agents/reports" icon={<FileText className="w-5 h-5" />} label={t('nav.reports')} expanded={expanded} />
         <NavItem
           to="/agents/proposals"
           icon={<GitPullRequest className="w-5 h-5" />}
-          label="Proposals"
+          label={t('nav.proposals')}
           expanded={expanded}
           badge={pendingProposals}
-          badgeLabel={`${pendingProposals} pending proposal${pendingProposals === 1 ? '' : 's'}`}
+          badgeLabel={t('nav.pendingProposals', { count: pendingProposals })}
         />
 
-        <GroupLabel expanded={expanded}>Manage</GroupLabel>
-        <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label="Candle Import" expanded={expanded} />
+        <GroupLabel expanded={expanded}>{t('nav.groupManage')}</GroupLabel>
+        <NavItem to="/candles" icon={<Download className="w-5 h-5" />} label={t('nav.candleImport')} expanded={expanded} />
         {isAdmin && (
           <NavItem
             to="/settings"
             icon={<Settings className="w-5 h-5" />}
-            label="Settings"
+            label={t('nav.settings')}
             expanded={expanded}
             dataWalkthrough="nav-settings"
           />
         )}
-        {isAdmin && <NavItem to="/users" icon={<Users className="w-5 h-5" />} label="Users" expanded={expanded} />}
+        {isAdmin && <NavItem to="/users" icon={<Users className="w-5 h-5" />} label={t('nav.users')} expanded={expanded} />}
         <NavItem
           to="/help"
           icon={<HelpCircle className="w-5 h-5" />}
-          label="Help & Docs"
+          label={t('nav.help')}
           expanded={expanded}
           dataWalkthrough="nav-help"
         />
@@ -170,6 +172,7 @@ function NavItem({
   // prefix (/agents vs /agents/reports).
   activeWhen?: (pathname: string) => boolean;
 }) {
+  const t = useT();
   const location = useLocation();
   return (
     <NavLink
@@ -183,8 +186,8 @@ function NavItem({
             : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
         }`
       }
-      title={expanded ? undefined : badge ? `${label} (${badgeLabel ?? badge})` : label}
-      aria-label={badge ? `${label}, ${badgeLabel ?? badge}` : undefined}
+      title={expanded ? undefined : badge ? t('nav.badgeTitle', { label, badge: badgeLabel ?? badge }) : label}
+      aria-label={badge ? t('nav.badgeAria', { label, badge: badgeLabel ?? badge }) : undefined}
     >
       <div className="shrink-0 relative">
         {icon}

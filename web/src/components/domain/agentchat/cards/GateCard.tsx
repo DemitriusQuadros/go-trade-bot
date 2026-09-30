@@ -8,6 +8,8 @@ import { humanizeCheckName } from '@/lib/proposals';
 import { GateCardItem, toolGateContext } from '@/lib/toolRefs';
 import { CardAction, ChatCard, ChatDensity } from './ChatCard';
 import { formatDay } from './BacktestCard';
+import { formatNumber } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // Gate metrics as the backend wrote them: non-finite values are shown
 // literally as +Inf / -Inf / NaN (parseProposalEvidence turns the strings
@@ -17,12 +19,13 @@ function gateValue(v: number | null | undefined): string {
   if (Number.isNaN(v)) return 'NaN';
   if (v === Infinity) return '+Inf';
   if (v === -Infinity) return '-Inf';
-  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return Number.isInteger(v) ? formatNumber(v) : formatNumber(v, { digits: 2 });
 }
 
 // deploy_to_testing / propose_promotion with a deploy-gate result (Phase
 // D-02 §6): one card for both gate runs instead of two BacktestCards.
 export function GateCard({ item, density }: { item: GateCardItem; density: ChatDensity }) {
+  const t = useT();
   const { gate, baselineId, candidateId, deployed, proposalId, targetStrategyId, call } = item;
   const baseline = useBacktest(baselineId ?? 0);
   const candidate = useBacktest(candidateId ?? 0);
@@ -36,26 +39,30 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
   if (deployed === true) {
     outcome = (
       <span className="text-success">
-        Deployed to testing strategy{' '}
-        {targetStrategyId ? (
-          <Link to={`/strategies/${targetStrategyId}/edit`} className="font-semibold hover:underline">
-            #{targetStrategyId}
-          </Link>
-        ) : null}
+        {t.rich('cards.deployedTo', {
+          link: targetStrategyId ? (
+            <Link to={`/strategies/${targetStrategyId}/edit`} className="font-semibold hover:underline">
+              #{targetStrategyId}
+            </Link>
+          ) : null,
+        })}
       </span>
     );
   } else if (proposalId != null) {
     outcome = (
       <span className="text-foreground">
-        {gate.passed === false ? 'Gate failed → ' : ''}
-        <Link to={`/agents/proposals/${proposalId}`} className="font-semibold text-primary hover:underline">
-          proposal #{proposalId}
-        </Link>{' '}
-        created (awaiting your approval)
+        {gate.passed === false ? t('cards.gateFailedArrow') : ''}
+        {t.rich('cards.proposalCreated', {
+          link: (
+            <Link to={`/agents/proposals/${proposalId}`} className="font-semibold text-primary hover:underline">
+              {t('cards.proposalLink', { id: proposalId })}
+            </Link>
+          ),
+        })}
       </span>
     );
   } else if (deployed === false) {
-    outcome = <span className="text-muted-foreground">Not deployed.</span>;
+    outcome = <span className="text-muted-foreground">{t('cards.notDeployed')}</span>;
   }
 
   return (
@@ -65,14 +72,14 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
       icon={<ShieldCheck className="w-3.5 h-3.5" />}
       title={
         <>
-          Deploy gate
+          {t('cards.deployGate')}
           {targetStrategyId ? <span className="font-normal text-muted-foreground"> · #{targetStrategyId}</span> : null}
         </>
       }
       meta={
         <>
           {failedCount > 0 && (
-            <span className="text-[11px] text-muted-foreground font-mono">{failedCount} failed</span>
+            <span className="text-[11px] text-muted-foreground font-mono">{t('cards.failedCount', { count: failedCount })}</span>
           )}
           <GateBadge passed={gate.passed} />
         </>
@@ -80,9 +87,9 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
       actions={
         runSid && candidateId ? (
           <>
-            <CardAction to={`/strategies/${runSid}/edit/backtest/${candidateId}`}>Open candidate in Code mode</CardAction>
+            <CardAction to={`/strategies/${runSid}/edit/backtest/${candidateId}`}>{t('cards.openCandidate')}</CardAction>
             {baselineId ? (
-              <CardAction to={`/strategies/${runSid}/edit/backtest/${baselineId}`}>Baseline run</CardAction>
+              <CardAction to={`/strategies/${runSid}/edit/backtest/${baselineId}`}>{t('cards.baselineRun')}</CardAction>
             ) : null}
           </>
         ) : undefined
@@ -93,21 +100,21 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
         <div className="text-[11px] text-muted-foreground font-mono">
           {[ctx.symbol, ctx.timeframe].filter(Boolean).join(' ')}
           {ctx.from ? ` · ${formatDay(ctx.from)} – ${formatDay(ctx.to)}` : ''}
-          {' · walk-forward'}
+          {t('cards.walkForwardSuffix')}
         </div>
       )}
       {checks.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No individual checks were recorded.</p>
+        <p className="text-xs text-muted-foreground">{t('cards.noChecks')}</p>
       ) : (
         <div className="overflow-x-auto rounded border border-border">
           <table className="w-full text-[11px] border-collapse [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[10px] [&_th]:uppercase [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-border/60">
             <thead className="bg-secondary/40">
               <tr>
-                <th>Check</th>
-                <th className="text-right">Candidate</th>
-                <th className="text-right">Baseline</th>
-                <th className="text-right">Threshold</th>
-                <th className="text-center">Pass</th>
+                <th>{t('cards.colCheck')}</th>
+                <th className="text-right">{t('cards.colCandidate')}</th>
+                <th className="text-right">{t('cards.colBaseline')}</th>
+                <th className="text-right">{t('cards.colThreshold')}</th>
+                <th className="text-center">{t('cards.colPass')}</th>
               </tr>
             </thead>
             <tbody>
@@ -121,9 +128,9 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
                   <td className="text-right font-mono tabular-nums text-muted-foreground">{gateValue(c.threshold)}</td>
                   <td className="text-center">
                     {c.passed === true ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-success inline" aria-label="passed" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-success inline" aria-label={t('cards.passed')} />
                     ) : c.passed === false ? (
-                      <XCircle className="w-3.5 h-3.5 text-destructive inline" aria-label="failed" />
+                      <XCircle className="w-3.5 h-3.5 text-destructive inline" aria-label={t('cards.failed')} />
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
@@ -150,7 +157,7 @@ export function GateCard({ item, density }: { item: GateCardItem; density: ChatD
           baseline={baseline.data.equity_curve ?? []}
           candidate={candidate.data.equity_curve ?? []}
           height={150}
-          summary={`Baseline run ${baselineId} versus candidate run ${candidateId} equity curves.`}
+          summary={t('cards.gateSummary', { baseline: baselineId, candidate: candidateId })}
         />
       )}
     </ChatCard>

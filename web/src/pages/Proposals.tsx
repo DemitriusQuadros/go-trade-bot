@@ -15,26 +15,29 @@ import {
   ProposalKindBadge,
   ProposalStatusBadge,
 } from '@/components/domain/AgentBadges';
-import { formatRelative } from '@/lib/time';
+import { formatDateTime, formatRelative } from '@/lib/format';
 import { HISTORY_STATUSES, ProposalTab } from '@/lib/proposals';
+import type { MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
-const TABS: { key: ProposalTab; label: string; hint: string }[] = [
-  { key: 'pending', label: 'Pending', hint: 'Waiting for your decision.' },
+const TABS: { key: ProposalTab; label: MessageKey; hint: MessageKey }[] = [
+  { key: 'pending', label: 'proposals.tabPending', hint: 'proposals.tabPendingHint' },
   {
     key: 'approved',
-    label: 'Approved',
-    hint: 'Approved and waiting for the target strategy to have no open position - they apply automatically.',
+    label: 'proposals.tabApproved',
+    hint: 'proposals.tabApprovedHint',
   },
-  { key: 'history', label: 'History', hint: 'Applied, rejected, superseded and failed proposals.' },
+  { key: 'history', label: 'proposals.tabHistory', hint: 'proposals.tabHistoryHint' },
 ];
 
-const TAB_KEYS = TABS.map((t) => t.key);
+const TAB_KEYS = TABS.map((tb) => tb.key);
 
 // Proposals inbox (B-02 §2) - /agents/proposals. Tab and filters live in
 // the URL (?tab=&strategy_id=&agent_id=) so the workbench's challenger
 // banner can link to a filtered view. strategy_id matches a proposal's
 // target OR its challenger.
 export function Proposals() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab') as ProposalTab | null;
   const tab: ProposalTab = tabParam && TAB_KEYS.includes(tabParam) ? tabParam : 'pending';
@@ -68,7 +71,7 @@ export function Proposals() {
   };
 
   const filtered = !!(strategyId || agentId);
-  const activeTab = TABS.find((t) => t.key === tab)!;
+  const activeTab = TABS.find((tb) => tb.key === tab)!;
 
   return (
     <div className="container-custom space-y-6">
@@ -76,26 +79,25 @@ export function Proposals() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <GitPullRequest className="w-6 h-6" />
-            Proposals
+            {t('proposals.title')}
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Code changes your agents want to make but can't apply on their own - live promotions and changes that
-            failed the deploy gate. Nothing here applies until you approve it.
+            {t('proposals.subtitle')}
           </p>
         </div>
 
-        <div role="tablist" aria-label="Proposal status" className="flex items-center gap-2 bg-card/20 p-1 rounded-lg border border-border/30">
-          {TABS.map((t) => (
+        <div role="tablist" aria-label={t('proposals.statusTabs')} className="flex items-center gap-2 bg-card/20 p-1 rounded-lg border border-border/30">
+          {TABS.map((tb) => (
             <button
-              key={t.key}
+              key={tb.key}
               role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => setParam('tab', t.key === 'pending' ? null : t.key)}
+              aria-selected={tab === tb.key}
+              onClick={() => setParam('tab', tb.key === 'pending' ? null : tb.key)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                tab === t.key ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+                tab === tb.key ? 'bg-secondary text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {t.label}
+              {t(tb.label)}
             </button>
           ))}
         </div>
@@ -105,11 +107,11 @@ export function Proposals() {
         <div className="flex flex-wrap items-center gap-3">
           <FilterSelect
             id="proposal-filter-strategy"
-            label="Target"
+            label={t('proposals.filterTarget')}
             value={strategyId != null ? String(strategyId) : 'all'}
             onChange={(v) => setParam('strategy_id', v)}
           >
-            <option value="all">All strategies</option>
+            <option value="all">{t('proposals.allStrategies')}</option>
             {strategies.map((s) => (
               <option key={s.id} value={s.id}>
                 #{s.id} — {s.name}
@@ -118,11 +120,11 @@ export function Proposals() {
           </FilterSelect>
           <FilterSelect
             id="proposal-filter-agent"
-            label="Agent"
+            label={t('proposals.filterAgent')}
             value={agentId != null ? String(agentId) : 'all'}
             onChange={(v) => setParam('agent_id', v)}
           >
-            <option value="all">All agents</option>
+            <option value="all">{t('proposals.allAgents')}</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
@@ -132,8 +134,8 @@ export function Proposals() {
           <button
             onClick={() => refetch()}
             className="ml-auto bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs p-1.5"
-            title="Refresh"
-            aria-label="Refresh proposals"
+            title={t('common.refresh')}
+            aria-label={t('proposals.refresh')}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
@@ -141,31 +143,34 @@ export function Proposals() {
       </Card>
 
       <Card>
-        <CardHeader title={activeTab.label} subtitle={activeTab.hint} />
+        <CardHeader title={t(activeTab.label)} subtitle={t(activeTab.hint)} />
 
         {isLoading ? (
-          <LoadingScreen message="Loading proposals..." />
+          <LoadingScreen message={t('proposals.loading')} />
         ) : error ? (
           <div className="p-8 text-center text-xs text-destructive bg-destructive/10 rounded-lg">
-            Couldn't load proposals: {apiErrorMessage(error)}
+            {t('proposals.loadFailed', { error: apiErrorMessage(error) })}
           </div>
         ) : proposals.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-2">
             <p>
               {tab === 'pending'
-                ? `Nothing waiting for you${filtered ? ' with these filters' : ''}.`
+                ? t(filtered ? 'proposals.emptyPendingFiltered' : 'proposals.emptyPending')
                 : tab === 'approved'
-                  ? 'No approved proposals are waiting to apply.'
-                  : `No past proposals${filtered ? ' match these filters' : ' yet'}.`}
+                  ? t('proposals.emptyApproved')
+                  : t(filtered ? 'proposals.emptyHistoryFiltered' : 'proposals.emptyHistory')}
             </p>
             {tab === 'pending' && !filtered && (
               <p>
-                Agents with the <span className="font-mono">propose_live</span> or{' '}
-                <span className="font-mono">edit_testing</span> permission file proposals here.{' '}
-                <Link to="/agents" className="text-primary hover:underline">
-                  Configure an agent
-                </Link>
-                .
+                {t.rich('proposals.emptyHelp', {
+                  proposeLive: <span className="font-mono">propose_live</span>,
+                  editTesting: <span className="font-mono">edit_testing</span>,
+                  link: (
+                    <Link to="/agents" className="text-primary hover:underline">
+                      {t('proposals.configureAgent')}
+                    </Link>
+                  ),
+                })}
               </p>
             )}
           </div>
@@ -186,7 +191,7 @@ export function Proposals() {
               disabled={isFetchingNextPage}
               className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs py-1.5 px-4 disabled:opacity-50"
             >
-              {isFetchingNextPage ? 'Loading...' : 'Load more'}
+              {isFetchingNextPage ? t('common.loading') : t('agents.loadMore')}
             </button>
           </div>
         )}
@@ -196,6 +201,7 @@ export function Proposals() {
 }
 
 function ProposalRow({ proposal: p, target, showStatus }: { proposal: Proposal; target?: Strategy; showStatus: boolean }) {
+  const t = useT();
   const isLive = target?.mode === 'live';
   return (
     <Link
@@ -209,7 +215,7 @@ function ProposalRow({ proposal: p, target, showStatus }: { proposal: Proposal; 
         <ProposalKindBadge kind={p.kind} />
         {isLive && <LiveTargetBadge />}
         <span className="font-semibold text-sm text-foreground truncate">
-          {p.target_strategy_name || target?.name || `Strategy #${p.target_strategy_id}`}
+          {p.target_strategy_name || target?.name || t('proposals.strategyNumber', { id: p.target_strategy_id })}
         </span>
         {target && (
           <>
@@ -222,7 +228,7 @@ function ProposalRow({ proposal: p, target, showStatus }: { proposal: Proposal; 
         {showStatus && <ProposalStatusBadge status={p.status} />}
         <span
           className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap flex items-center gap-1"
-          title={new Date(p.created_at).toLocaleString()}
+          title={formatDateTime(p.created_at, { seconds: true })}
         >
           {formatRelative(p.created_at)}
           <ArrowRight className="w-3 h-3" />
@@ -231,19 +237,19 @@ function ProposalRow({ proposal: p, target, showStatus }: { proposal: Proposal; 
       {p.rationale && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{p.rationale}</p>}
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground">
         <span>
-          by <span className="text-foreground">{p.agent_name || `agent #${p.agent_id}`}</span>
+          {t.rich('proposals.by', { name: <span className="text-foreground">{p.agent_name || t('proposals.agentNumber', { id: p.agent_id })}</span> })}
         </span>
         {p.challenger_strategy_id != null && (
           <>
             <span className="text-muted-foreground/50">·</span>
-            <span className="font-mono">from challenger #{p.challenger_strategy_id}</span>
+            <span className="font-mono">{t('proposals.fromChallenger', { id: p.challenger_strategy_id })}</span>
           </>
         )}
         {p.decided_by && (
           <>
             <span className="text-muted-foreground/50">·</span>
             <span>
-              decided by <span className="text-foreground">{p.decided_by}</span>
+              {t.rich('proposals.decidedBy', { name: <span className="text-foreground">{p.decided_by}</span> })}
             </span>
           </>
         )}

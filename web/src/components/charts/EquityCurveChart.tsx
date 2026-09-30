@@ -3,6 +3,9 @@ import { createChart, ColorType, CrosshairMode, LineSeries } from 'lightweight-c
 import { EquityPoint } from '@/api/types';
 import { getChartColors } from '@/lib/chartTheme';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
+import { chartLocalization } from '@/lib/format';
+import { useLocale } from '@/i18n';
+import { useT } from '@/i18n';
 
 interface EquityCurveChartProps {
   points: EquityPoint[];
@@ -17,14 +20,17 @@ export function EquityCurveChart({
   summary,
   height = 280,
 }: EquityCurveChartProps) {
+  const t = useT();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
+  const { locale } = useLocale();
 
   useEffect(() => {
     if (!chartContainerRef.current || !points || points.length < 2) return;
     const c = getChartColors();
 
     const chart = createChart(chartContainerRef.current, {
+      localization: chartLocalization(),
       layout: {
         background: { type: ColorType.Solid, color: c.background },
         textColor: c.muted,
@@ -92,7 +98,7 @@ export function EquityCurveChart({
         lineWidth: 1,
         lineStyle: 3,
         axisLabelVisible: true,
-        title: 'Start',
+        title: t('charts.start'),
       });
     }
 
@@ -112,12 +118,12 @@ export function EquityCurveChart({
       observer?.disconnect();
       chart.remove();
     };
-  }, [points, startingBalance, height, isDark]);
+  }, [points, startingBalance, height, isDark, locale, t]);
 
   if (!points || points.length < 2) {
     return (
       <div className="flex items-center justify-center p-8 text-xs text-muted-foreground bg-background rounded-lg border border-border/30 font-mono">
-        Not enough data points to chart equity curve.
+        {t('charts.noEquityData')}
       </div>
     );
   }

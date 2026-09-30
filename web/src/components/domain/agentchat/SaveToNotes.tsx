@@ -3,6 +3,7 @@ import { BookmarkPlus, Check } from 'lucide-react';
 import { useAddStrategyMemoryNote } from '@/hooks/queries';
 import { apiErrorMessage } from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
+import { useT } from '@/i18n';
 
 // Operator notes are capped server-side (agentplatform.maxOperatorNoteLen).
 const MAX_NOTE_CHARS = 4000;
@@ -12,6 +13,7 @@ const MAX_NOTE_CHARS = 4000;
 // the operator-note endpoint (POST /strategies/{id}/memory -> a journal entry
 // authored by the operator).
 export function SaveToNotes({ strategyId, content, className = '' }: { strategyId: number; content: string; className?: string }) {
+  const t = useT();
   const addNote = useAddStrategyMemoryNote(strategyId);
   const [saved, setSaved] = useState(false);
   // Adding notes needs `edit_drafts` (auth-02 §4).
@@ -29,7 +31,7 @@ export function SaveToNotes({ strategyId, content, className = '' }: { strategyI
     return (
       <span className={`inline-flex items-center gap-1 text-[11px] text-success ${className}`} role="status">
         <Check className="w-3 h-3" />
-        Saved to notes
+        {t('chat.savedToNotes')}
       </span>
     );
   }
@@ -40,17 +42,17 @@ export function SaveToNotes({ strategyId, content, className = '' }: { strategyI
       disabled={addNote.isPending}
       title={
         addNote.isError
-          ? apiErrorMessage(addNote.error, 'Could not save the note')
+          ? apiErrorMessage(addNote.error, t('chat.saveNoteFailed'))
           : tooLong
-            ? `Save to this strategy's notes (trimmed to ${MAX_NOTE_CHARS} characters)`
-            : "Save to this strategy's notes - every agent sees notes, not the chat"
+            ? t('chat.saveTrimmed', { max: MAX_NOTE_CHARS })
+            : t('chat.saveNoteTitle')
       }
       className={`inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 ${
         addNote.isError ? 'text-destructive hover:text-destructive' : ''
       } ${className}`}
     >
       <BookmarkPlus className="w-3 h-3" />
-      {addNote.isPending ? 'Saving…' : addNote.isError ? 'Retry save to notes' : 'Save to notes'}
+      {addNote.isPending ? t('common.saving') : addNote.isError ? t('chat.retrySave') : t('chat.saveToNotes')}
     </button>
   );
 }

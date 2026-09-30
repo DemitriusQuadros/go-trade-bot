@@ -494,6 +494,18 @@ design-system doc has been removed. Auth is the same-origin session cookie (`con
 `can(cap)`; SSE and report iframes need no token); every request sends `X-Requested-With: gtb`. UI hides or
 disables what the user's capabilities don't allow, but the backend is the source of truth.
 
+**Translation (EN / ES / PT-BR, specs `docs/specs/multiuser/i18n-01/02`)**: every UI string lives in
+`web/src/i18n/locales/{en,es,pt-BR}.ts` (`en` is the source; the others are typed `typeof en`, so a missing
+key fails `tsc`); use `useT()`/`t('area.key', vars)` and `t.enum(...)` for API enum labels - never raw JSX
+text. `npm run build` runs `web/scripts/check-i18n.mjs` first (missing keys, placeholder mismatches, raw JSX
+literals). Numbers/dates go through `web/src/lib/format.ts` (locale-aware; `formatUtcDay` stays UTC; charts
+use `chartLocalization()`). Locale: `/auth/me` `locale` → `localStorage gtb_locale` → browser. Backend:
+`internal/i18n` (`en|es|pt-BR`), `Settings.DefaultLocale` (`default_locale`, admin) for unattended runs,
+reports and webhooks; chat replies follow the user's locale (system-prompt language line). Agent reports
+store one snapshot per locale (`AgentReport.RenderedHTMLByLocale`, served by `/html?lang=`; old reports
+fall back to `RenderedHTML`). Label catalogs: `internal/report/agentreport/messages.go`,
+`internal/notifier/messages.go`, `internal/report/messages.go`.
+
 **Known inconsistency, not yet resolved**: the frontend was originally built with a plain `fetch` wrapper,
 no React Query, and Recharts for charts (deliberate decisions at the time). A later, unreviewed "redesign"
 commit introduced `@tanstack/react-query`, Tailwind, Shadcn-style components, and `lightweight-charts`

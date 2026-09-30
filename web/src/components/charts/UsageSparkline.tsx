@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { UsageDay } from '@/api/types';
-import { formatTokens, formatUsd } from '@/lib/time';
+import { formatTokens, formatUsd, formatUtcDay } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // Daily agent spend as plain-SVG columns (no chart library - a 30-bar
 // sparkline doesn't need one, and Recharts is being phased out). Colours
@@ -19,6 +20,7 @@ function utcDayKey(d: Date): string {
 }
 
 export function UsageSparkline({ days, span = 30, budget = 0, height = 72 }: UsageSparklineProps) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
 
   const series = useMemo(() => {
@@ -45,14 +47,16 @@ export function UsageSparkline({ days, span = 30, budget = 0, height = 72 }: Usa
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between text-[11px]">
         <span className="text-muted-foreground">
-          Last {span} days: <span className="font-mono text-foreground">{formatUsd(total)}</span> across{' '}
-          <span className="font-mono text-foreground">{totalRuns}</span> run{totalRuns === 1 ? '' : 's'}
+          {t('charts.usageSummary', { span, total: formatUsd(total), count: totalRuns })}
         </span>
         <span className="font-mono text-muted-foreground min-h-[1em]" aria-live="polite">
           {active
-            ? `${active.day}: ${formatUsd(active.cost_usd)} · ${active.runs} run${active.runs === 1 ? '' : 's'} · ${formatTokens(
-                active.input_tokens + active.output_tokens,
-              )} tok`
+            ? t('charts.usageDay', {
+                day: formatUtcDay(active.day),
+                cost: formatUsd(active.cost_usd),
+                count: active.runs,
+                tokens: formatTokens(active.input_tokens + active.output_tokens),
+              })
             : ''}
         </span>
       </div>
@@ -62,7 +66,7 @@ export function UsageSparkline({ days, span = 30, budget = 0, height = 72 }: Usa
         className="w-full block"
         style={{ height }}
         role="img"
-        aria-label={`Daily agent cost for the last ${span} days, total ${formatUsd(total)}`}
+        aria-label={t('charts.usageAria', { span, total: formatUsd(total) })}
         onMouseLeave={() => setHover(null)}
       >
         {series.map((d, i) => {
@@ -105,9 +109,9 @@ export function UsageSparkline({ days, span = 30, budget = 0, height = 72 }: Usa
         )}
       </svg>
       <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-        <span>{series[0]?.day}</span>
-        {budget > 0 && <span className="text-warning">- - daily budget {formatUsd(budget)}</span>}
-        <span>today (UTC)</span>
+        <span>{series[0] ? formatUtcDay(series[0].day) : ''}</span>
+        {budget > 0 && <span className="text-warning">{t('charts.dailyBudget', { budget: formatUsd(budget) })}</span>}
+        <span>{t('charts.todayUtc')}</span>
       </div>
     </div>
   );

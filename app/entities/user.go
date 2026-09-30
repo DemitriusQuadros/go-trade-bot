@@ -3,6 +3,8 @@ package entities
 import (
 	"time"
 
+	"go-trade-bot/internal/i18n"
+
 	"gorm.io/datatypes"
 )
 
@@ -35,17 +37,14 @@ type User struct {
 // DefaultUserDailyAgentBudgetUSD is a new user's DailyAgentBudgetUSD.
 const DefaultUserDailyAgentBudgetUSD = 1.00
 
-// ValidLocales are the accepted User.Locale values ("" = client decides).
-var ValidLocales = []string{"", "en", "es", "pt-BR"}
-
-// IsValidLocale reports whether l is an accepted locale.
+// IsValidLocale reports whether l is an accepted User.Locale value: "" (the
+// client decides) or a supported internal/i18n locale.
 func IsValidLocale(l string) bool {
-	for _, v := range ValidLocales {
-		if v == l {
-			return true
-		}
+	if l == "" {
+		return true
 	}
-	return false
+	_, ok := i18n.Parse(l)
+	return ok
 }
 
 // Session is a login session. Only the SHA-256 of the random token is

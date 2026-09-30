@@ -3,40 +3,20 @@ import { ShieldAlert, Loader2, Settings2, CloudOff } from 'lucide-react';
 import { ApiError, NetworkError, apiErrorMessage } from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
 import { LoadingScreen } from '@/components/ui/Spinner';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { tr, useT } from '@/i18n';
 
-// User-facing strings (kept together for the i18n pass).
-const STRINGS = {
-  appName: 'Go Trade Bot',
-  signInTitle: 'Sign in',
-  signInSubtitle: 'Use your Go Trade Bot account to continue.',
-  username: 'Username',
-  password: 'Password',
-  signIn: 'Sign in',
-  signingIn: 'Signing in...',
-  required: 'Enter your username and password.',
-  wrongCredentials: 'Wrong username or password.',
-  rateLimited: 'Too many attempts, try again in a few minutes.',
-  unreachable: 'Cannot reach server at :8080. Is cmd/api running?',
-  unexpected: 'Unexpected error signing in. Check the browser console.',
-  sessionExpired: 'Your session expired - please sign in again.',
-  loading: 'Checking your session...',
-  setupTitle: 'Setup required',
-  setupBody: 'No users yet. Set',
-  setupBody2: 'and',
-  setupBody3: 'in config.yml and restart cmd/api.',
-  accessTitle: 'Access session expired',
-  accessBody: 'Your Cloudflare Access session expired — reload the page to sign in again.',
-  reload: 'Reload page',
-};
 
 // The Console Pro auth card shell shared by every pre-app screen.
 function AuthCard({ children }: { children: ReactNode }) {
+  const t = useT();
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background text-foreground">
       <div className="w-full max-w-md p-8 bg-card border border-border shadow-2xl rounded-xl">
         <div className="flex flex-col items-center mb-6">
           <img src="/gopher-face.png" alt="" className="w-14 h-14 rounded-xl object-cover mb-3" />
-          <span className="font-semibold text-sm tracking-tight text-muted-foreground">{STRINGS.appName}</span>
+          <span className="font-semibold text-sm tracking-tight text-muted-foreground">{t('common.appName')}</span>
+          <LanguageSwitcher className="mt-3" testId="login-language" />
         </div>
         {children}
       </div>
@@ -60,16 +40,17 @@ function ErrorBox({ children }: { children: ReactNode }) {
 function loginErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     // auth-01 contract (reconciled): 401 invalid_credentials, 429 rate_limited (§4).
-    if (err.status === 401) return STRINGS.wrongCredentials;
-    if (err.status === 429) return STRINGS.rateLimited;
-    return apiErrorMessage(err, STRINGS.unexpected);
+    if (err.status === 401) return tr('errors.invalid_credentials');
+    if (err.status === 429) return tr('errors.rate_limited');
+    return apiErrorMessage(err, tr('auth.unexpected'));
   }
-  if (err instanceof NetworkError) return STRINGS.unreachable;
-  return STRINGS.unexpected;
+  if (err instanceof NetworkError) return tr('auth.unreachable');
+  return tr('auth.unexpected');
 }
 
 function LoginScreen() {
   const { login, sessionExpired, probeError } = useAuth();
+  const t = useT();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -77,12 +58,12 @@ function LoginScreen() {
 
   const notice =
     error ??
-    (probeError ? loginErrorMessage(probeError) : sessionExpired ? STRINGS.sessionExpired : null);
+    (probeError ? loginErrorMessage(probeError) : sessionExpired ? t('auth.sessionExpired') : null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setError(STRINGS.required);
+      setError(t('auth.required'));
       return;
     }
     setSubmitting(true);
@@ -99,15 +80,15 @@ function LoginScreen() {
 
   return (
     <AuthCard>
-      <h1 className="text-xl font-bold text-center text-foreground mb-1">{STRINGS.signInTitle}</h1>
-      <p className="text-xs text-center text-muted-foreground mb-6">{STRINGS.signInSubtitle}</p>
+      <h1 className="text-xl font-bold text-center text-foreground mb-1">{t('auth.signInTitle')}</h1>
+      <p className="text-xs text-center text-muted-foreground mb-6">{t('auth.signInSubtitle')}</p>
 
       {notice && <ErrorBox>{notice}</ErrorBox>}
 
       <form onSubmit={handleSubmit} className="space-y-4" data-testid="login-form">
         <div>
           <label htmlFor="gtb-username" className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-            {STRINGS.username}
+            {t('auth.username')}
           </label>
           <input
             id="gtb-username"
@@ -125,7 +106,7 @@ function LoginScreen() {
         </div>
         <div>
           <label htmlFor="gtb-password" className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-            {STRINGS.password}
+            {t('auth.password')}
           </label>
           <input
             id="gtb-password"
@@ -148,10 +129,10 @@ function LoginScreen() {
           {submitting ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{STRINGS.signingIn}</span>
+              <span>{t('auth.signingIn')}</span>
             </>
           ) : (
-            <span>{STRINGS.signIn}</span>
+            <span>{t('auth.signIn')}</span>
           )}
         </button>
       </form>
@@ -160,37 +141,42 @@ function LoginScreen() {
 }
 
 function SetupRequiredScreen() {
+  const t = useT();
+  const [before, middle, after] = t('auth.setupBody', { usernameKey: '\u0000', passwordKey: '\u0000' }).split('\u0000');
   return (
     <AuthCard>
       <div className="flex items-center justify-center gap-2 mb-3 text-foreground">
         <Settings2 className="w-5 h-5 text-primary" />
-        <h1 className="text-lg font-bold">{STRINGS.setupTitle}</h1>
+        <h1 className="text-lg font-bold">{t('auth.setupTitle')}</h1>
       </div>
       <p className="text-sm text-muted-foreground text-center leading-relaxed" data-testid="setup-required">
-        {STRINGS.setupBody} <code className="font-mono text-xs text-foreground">AUTH.BOOTSTRAP_ADMIN_USERNAME</code>{' '}
-        {STRINGS.setupBody2} <code className="font-mono text-xs text-foreground">AUTH.BOOTSTRAP_ADMIN_PASSWORD</code>{' '}
-        {STRINGS.setupBody3}
+        {before}
+        <code className="font-mono text-xs text-foreground">AUTH.BOOTSTRAP_ADMIN_USERNAME</code>
+        {middle}
+        <code className="font-mono text-xs text-foreground">AUTH.BOOTSTRAP_ADMIN_PASSWORD</code>
+        {after}
       </p>
     </AuthCard>
   );
 }
 
 function AccessRequiredScreen() {
+  const t = useT();
   return (
     <AuthCard>
       <div className="flex items-center justify-center gap-2 mb-3 text-foreground">
         <CloudOff className="w-5 h-5 text-warning" />
-        <h1 className="text-lg font-bold">{STRINGS.accessTitle}</h1>
+        <h1 className="text-lg font-bold">{t('auth.accessTitle')}</h1>
       </div>
       <p className="text-sm text-muted-foreground text-center mb-5" data-testid="access-required">
-        {STRINGS.accessBody}
+        {t('errors.access_required')}
       </p>
       <button
         type="button"
         onClick={() => window.location.reload()}
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg py-2.5 font-semibold text-sm"
       >
-        {STRINGS.reload}
+        {t('auth.reload')}
       </button>
     </AuthCard>
   );
@@ -201,12 +187,13 @@ function AccessRequiredScreen() {
 // out tears all of it down together with the cleared query cache.
 export function AuthGate({ children }: { children: ReactNode }) {
   const { status } = useAuth();
+  const t = useT();
 
   switch (status) {
     case 'loading':
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
-          <LoadingScreen message={STRINGS.loading} />
+          <LoadingScreen message={t('auth.checkingSession')} />
         </div>
       );
     case 'setup_required':

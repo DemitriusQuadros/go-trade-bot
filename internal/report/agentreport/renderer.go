@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go-trade-bot/internal/i18n"
 )
 
 // Metrics are DB-resolved performance figures for a Series.
@@ -43,10 +45,26 @@ type EquityPoint struct {
 
 // Series is everything a data-bearing block can show for one Source.
 type Series struct {
-	Label   string // e.g. "Backtest #7 · BTCUSDT" or "Strategy #3 live · last 30 days"
+	Label string // e.g. "Backtest #7 · BTCUSDT" or "Strategy #3 live · last 30 days"
+	// Ref, when set, lets the renderer build the source label in the render
+	// locale (i18n-02 §3); Label is then only the EN fallback.
+	Ref     *SeriesRef
 	Metrics Metrics
 	Equity  []EquityPoint
 	Trades  []Trade // oldest first
+}
+
+// SeriesRef describes a Series' source for a localized label.
+type SeriesRef struct {
+	Kind string // SourceBacktestRun | SourceStrategyLive
+	// ID is the backtest run id (backtest_run) or the strategy id
+	// (strategy_live).
+	ID     uint
+	Symbol string    // backtest_run
+	Start  time.Time // backtest_run
+	End    time.Time // backtest_run
+	Name   string    // strategy_live: the strategy name
+	Days   int       // strategy_live
 }
 
 // DataSource resolves block references against the DB. Implemented by
@@ -72,12 +90,16 @@ type ReportMeta struct {
 	RunID         uint
 	CreatedAt     time.Time
 	StrategyNames []string
+	// Locale selects the chrome/label language and <html lang>; "" = en.
+	// Model-written block text is rendered as is.
+	Locale i18n.Locale
 }
 
 // Renderer validates and renders blocks (interface for DI/tests).
 type Renderer interface {
 	Validate(blocks []Block) error
 	Render(ctx context.Context, meta ReportMeta, blocks []Block) (string, error)
+	RenderLocales(ctx context.Context, meta ReportMeta, blocks []Block, locales []i18n.Locale) (map[i18n.Locale]string, error)
 }
 
 // HTMLRenderer is the html/template-based Renderer.
@@ -86,9 +108,30 @@ type HTMLRenderer struct {
 	tmpl *template.Template
 }
 
+// templateFuncs are placeholders so the template parses; every render
+// clones the template and binds them to its locale (localizedFuncs).
+var templateFuncs = template.FuncMap{
+	"t":   func(string) string { return "" },
+	"tf":  func(string, ...any) string { return "" },
+	"sev": func(string) string { return "" },
+}
+
+func localizedFuncs(loc i18n.Locale) template.FuncMap {
+	return template.FuncMap{
+		"t":  func(key string) string { return Messages.T(loc, key) },
+		"tf": func(key string, args ...any) string { return Messages.F(loc, key, args...) },
+		"sev": func(sev string) string {
+			if _, ok := Messages[i18n.EN]["severity."+sev]; ok {
+				return Messages.T(loc, "severity."+sev)
+			}
+			return sev
+		},
+	}
+}
+
 // NewHTMLRenderer builds an HTMLRenderer over ds.
 func NewHTMLRenderer(ds DataSource) *HTMLRenderer {
-	return &HTMLRenderer{data: ds, tmpl: template.Must(template.New("agentreport").Parse(reportTemplate))}
+	return &HTMLRenderer{data: ds, tmpl: template.Must(template.New("agentreport").Funcs(templateFuncs).Parse(reportTemplate))}
 }
 
 // Validate implements Renderer.
@@ -150,6 +193,7 @@ type blockView struct {
 }
 
 type pageView struct {
+	Lang       string
 	Title      string
 	Severity   string
 	AgentName  string
@@ -160,12 +204,43 @@ type pageView struct {
 }
 
 // Render implements Renderer. It validates first, resolves every data
-// reference through DataSource, and executes the template.
+// reference through DataSource, and executes the template in meta.Locale.
 func (r *HTMLRenderer) Render(ctx context.Context, meta ReportMeta, blocks []Block) (string, error) {
 	if err := Validate(blocks); err != nil {
 		return "", err
 	}
+	return r.render(ctx, r.data, meta, blocks)
+}
+
+// RenderLocales renders the same report once per locale (i18n-02 §3: the
+// write-time snapshots). Every data reference is resolved once and shared by
+// all locales, so the snapshots show identical numbers; only chrome/labels
+// differ. An empty locales list means every supported locale.
+func (r *HTMLRenderer) RenderLocales(ctx context.Context, meta ReportMeta, blocks []Block, locales []i18n.Locale) (map[i18n.Locale]string, error) {
+	if err := Validate(blocks); err != nil {
+		return nil, err
+	}
+	if len(locales) == 0 {
+		locales = i18n.Supported
+	}
+	data := newMemoData(r.data)
+	out := make(map[i18n.Locale]string, len(locales))
+	for _, loc := range locales {
+		m := meta
+		m.Locale = loc
+		html, err := r.render(ctx, data, m, blocks)
+		if err != nil {
+			return nil, err
+		}
+		out[loc] = html
+	}
+	return out, nil
+}
+
+func (r *HTMLRenderer) render(ctx context.Context, data DataSource, meta ReportMeta, blocks []Block) (string, error) {
+	loc := i18n.ParseOr(string(meta.Locale), i18n.Default)
 	page := pageView{
+		Lang:       string(loc),
 		Title:      meta.Title,
 		Severity:   meta.Severity,
 		AgentName:  meta.AgentName,
@@ -174,15 +249,19 @@ func (r *HTMLRenderer) Render(ctx context.Context, meta ReportMeta, blocks []Blo
 		Strategies: strings.Join(meta.StrategyNames, ", "),
 	}
 	for i, b := range blocks {
-		v, err := r.resolve(ctx, b)
+		v, err := resolve(ctx, data, loc, b)
 		if err != nil {
 			return "", fmt.Errorf("block %d (%q): %w", i, b.Type, err)
 		}
 		page.Blocks = append(page.Blocks, v)
 	}
 
+	tmpl, err := r.tmpl.Clone()
+	if err != nil {
+		return "", fmt.Errorf("render report: %w", err)
+	}
 	var buf bytes.Buffer
-	if err := r.tmpl.Execute(&buf, page); err != nil {
+	if err := tmpl.Funcs(localizedFuncs(loc)).Execute(&buf, page); err != nil {
 		return "", fmt.Errorf("render report: %w", err)
 	}
 	if buf.Len() > MaxRenderedBytes {
@@ -191,21 +270,37 @@ func (r *HTMLRenderer) Render(ctx context.Context, meta ReportMeta, blocks []Blo
 	return buf.String(), nil
 }
 
-func (r *HTMLRenderer) series(ctx context.Context, s Source) (Series, error) {
+func series(ctx context.Context, data DataSource, s Source) (Series, error) {
 	switch s.Kind {
 	case SourceBacktestRun:
-		return r.data.BacktestRun(ctx, s.ID)
+		return data.BacktestRun(ctx, s.ID)
 	case SourceStrategyLive:
 		days := s.Days
 		if days <= 0 {
 			days = 30
 		}
-		return r.data.StrategyLive(ctx, s.StrategyID, days)
+		return data.StrategyLive(ctx, s.StrategyID, days)
 	}
 	return Series{}, fmt.Errorf("unknown source kind %q", s.Kind)
 }
 
-func (r *HTMLRenderer) resolve(ctx context.Context, b Block) (blockView, error) {
+// sourceLabel is s's label in loc: built from s.Ref when the DataSource
+// provided one, else the DataSource's own (EN) Label.
+func sourceLabel(loc i18n.Locale, s Series) string {
+	if s.Ref == nil {
+		return s.Label
+	}
+	switch s.Ref.Kind {
+	case SourceBacktestRun:
+		return Messages.F(loc, "source.backtest", s.Ref.ID, s.Ref.Symbol,
+			s.Ref.Start.UTC().Format("2006-01-02"), s.Ref.End.UTC().Format("2006-01-02"))
+	case SourceStrategyLive:
+		return Messages.F(loc, "source.strategy_live", s.Ref.Name, s.Ref.ID, s.Ref.Days)
+	}
+	return s.Label
+}
+
+func resolve(ctx context.Context, data DataSource, loc i18n.Locale, b Block) (blockView, error) {
 	v := blockView{Type: b.Type}
 	switch b.Type {
 	case TypeSummary:
@@ -221,27 +316,27 @@ func (r *HTMLRenderer) resolve(ctx context.Context, b Block) (blockView, error) 
 	case TypeKPIGrid:
 		var d kpiGridData
 		_ = json.Unmarshal(b.Data, &d)
-		s, err := r.series(ctx, d.Source)
+		s, err := series(ctx, data, d.Source)
 		if err != nil {
 			return v, err
 		}
-		v.SourceLabel = s.Label
+		v.SourceLabel = sourceLabel(loc, s)
 		for _, m := range d.Metrics {
-			v.KPIs = append(v.KPIs, kpi(m, s.Metrics))
+			v.KPIs = append(v.KPIs, kpi(loc, m, s.Metrics))
 		}
 	case TypeEquityChart:
 		var d equityChartData
 		_ = json.Unmarshal(b.Data, &d)
-		s, err := r.series(ctx, d.Source)
+		s, err := series(ctx, data, d.Source)
 		if err != nil {
 			return v, err
 		}
-		v.SourceLabel = s.Label
+		v.SourceLabel = sourceLabel(loc, s)
 		v.Chart = buildChart(s.Equity)
 	case TypeTradeTable:
 		var d tradeTableData
 		_ = json.Unmarshal(b.Data, &d)
-		s, err := r.series(ctx, d.Source)
+		s, err := series(ctx, data, d.Source)
 		if err != nil {
 			return v, err
 		}
@@ -249,10 +344,10 @@ func (r *HTMLRenderer) resolve(ctx context.Context, b Block) (blockView, error) 
 		if limit <= 0 || limit > MaxTradeRows {
 			limit = 20
 		}
-		v.SourceLabel = s.Label
+		v.SourceLabel = sourceLabel(loc, s)
 		trades := s.Trades
 		if len(trades) > limit {
-			v.TradesNote = fmt.Sprintf("Showing the last %d of %d trades.", limit, len(trades))
+			v.TradesNote = Messages.F(loc, "trades.note", limit, len(trades))
 			trades = trades[len(trades)-limit:]
 		}
 		for _, t := range trades {
@@ -261,12 +356,12 @@ func (r *HTMLRenderer) resolve(ctx context.Context, b Block) (blockView, error) 
 	case TypeCodeDiff:
 		var d codeDiffData
 		_ = json.Unmarshal(b.Data, &d)
-		from, to, label, err := r.diffSources(ctx, d)
+		from, to, label, err := diffSources(ctx, data, loc, d)
 		if err != nil {
 			return v, err
 		}
 		v.SourceLabel = label
-		v.Diff, v.DiffNote = unifiedDiff(from, to)
+		v.Diff, v.DiffNote = unifiedDiff(loc, from, to)
 	case TypeRecommendation:
 		var d recommendationData
 		_ = json.Unmarshal(b.Data, &d)
@@ -280,30 +375,30 @@ func (r *HTMLRenderer) resolve(ctx context.Context, b Block) (blockView, error) 
 	return v, nil
 }
 
-func (r *HTMLRenderer) diffSources(ctx context.Context, d codeDiffData) (from, to, label string, err error) {
+func diffSources(ctx context.Context, data DataSource, loc i18n.Locale, d codeDiffData) (from, to, label string, err error) {
 	if d.FromSource != nil && d.ToSource != nil {
-		return *d.FromSource, *d.ToSource, fmt.Sprintf("Strategy #%d · proposed change", d.StrategyID), nil
+		return *d.FromSource, *d.ToSource, Messages.F(loc, "diff.source_proposed", d.StrategyID), nil
 	}
-	fromLabel, toLabel := "previous version", "current"
+	fromLabel, toLabel := Messages.T(loc, "diff.previous_version"), Messages.T(loc, "diff.current")
 	if d.FromVersionID != nil {
-		from, err = r.data.ScriptVersion(ctx, d.StrategyID, *d.FromVersionID)
-		fromLabel = "version #" + strconv.FormatUint(uint64(*d.FromVersionID), 10)
+		from, err = data.ScriptVersion(ctx, d.StrategyID, *d.FromVersionID)
+		fromLabel = Messages.F(loc, "diff.version", *d.FromVersionID)
 	} else {
-		from, err = r.data.PreviousScript(ctx, d.StrategyID)
+		from, err = data.PreviousScript(ctx, d.StrategyID)
 	}
 	if err != nil {
 		return "", "", "", err
 	}
 	if d.ToVersionID != nil {
-		to, err = r.data.ScriptVersion(ctx, d.StrategyID, *d.ToVersionID)
-		toLabel = "version #" + strconv.FormatUint(uint64(*d.ToVersionID), 10)
+		to, err = data.ScriptVersion(ctx, d.StrategyID, *d.ToVersionID)
+		toLabel = Messages.F(loc, "diff.version", *d.ToVersionID)
 	} else {
-		to, err = r.data.CurrentScript(ctx, d.StrategyID)
+		to, err = data.CurrentScript(ctx, d.StrategyID)
 	}
 	if err != nil {
 		return "", "", "", err
 	}
-	return from, to, fmt.Sprintf("Strategy #%d · %s → %s", d.StrategyID, fromLabel, toLabel), nil
+	return from, to, Messages.F(loc, "diff.source_versions", d.StrategyID, fromLabel, toLabel), nil
 }
 
 func splitParagraphs(text string) []string {
@@ -340,17 +435,8 @@ func signedTone(v float64) string {
 	return ""
 }
 
-var metricLabels = map[string]string{
-	"sharpe":        "Sharpe",
-	"max_drawdown":  "Max drawdown",
-	"win_rate":      "Win rate",
-	"profit_factor": "Profit factor",
-	"total_trades":  "Total trades",
-	"net_pnl":       "Net P&L",
-}
-
-func kpi(metric string, m Metrics) kpiView {
-	k := kpiView{Label: metricLabels[metric]}
+func kpi(loc i18n.Locale, metric string, m Metrics) kpiView {
+	k := kpiView{Label: Messages.T(loc, "metric."+metric)}
 	switch metric {
 	case "sharpe":
 		k.Value = fmtNum(m.Sharpe, 2)
@@ -368,7 +454,7 @@ func kpi(metric string, m Metrics) kpiView {
 		k.Value = fmtNum(m.WinRatePct, 1) + "%"
 	case "profit_factor":
 		if m.TotalTrades == 0 {
-			k.Value = "n/a"
+			k.Value = Messages.T(loc, "value.na")
 		} else if math.IsInf(m.ProfitFactor, 1) || m.ProfitFactor >= 1e15 {
 			// No losing trades. The backtest usecase persists +Inf as
 			// math.MaxFloat64 (Postgres can't store Inf); same sentinel rule

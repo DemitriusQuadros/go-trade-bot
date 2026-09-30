@@ -31,9 +31,12 @@ import {
 import { UsageSparkline } from '@/components/charts/UsageSparkline';
 import { useToast } from '@/context/ToastContext';
 import { AGENT_PERMISSIONS } from '@/lib/agentPermissions';
-import { CRON_PRESETS, describeCron } from '@/lib/cron';
-import { formatTokens, formatUsd } from '@/lib/time';
+import { describeCron } from '@/lib/cron';
+import { CronScheduleBuilder } from '@/components/domain/CronScheduleBuilder';
+import { formatTokens, formatUsd } from '@/lib/format';
 import { normalizeTriggers } from '@/lib/triggers';
+import { formatUtcDay } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // Form state mirrors AgentRequest, except the budget stays a string while
 // typing (so "0." or "" don't get coerced mid-edit) and the Phase C
@@ -132,6 +135,7 @@ const HELP = 'text-[11px] text-muted-foreground';
 
 // Agent editor (A-03 §4) - /agents/new and /agents/:id.
 export function AgentEditor() {
+  const t = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const agentId = id ? Number(id) : 0;
@@ -152,7 +156,6 @@ export function AgentEditor() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [baseline, setBaseline] = useState<FormState>(EMPTY_FORM);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [newCron, setNewCron] = useState('');
   const [strategySearch, setStrategySearch] = useState('');
   // Trigger field errors appear only after the first save attempt, then
   // track edits live. chainError holds the backend's 400 chain/cycle
@@ -204,19 +207,19 @@ export function AgentEditor() {
     setShowTriggerErrors(true);
     const budget = Number(form.daily_budget_usd);
     if (form.daily_budget_usd.trim() === '' || !Number.isFinite(budget) || budget < 0) {
-      setSaveError('Daily budget must be a number of US dollars, 0 or more (0 = unlimited).');
+      setSaveError(t('agentEditor.errBudget'));
       return;
     }
     if (parseMaxIterations(form.max_iterations) === null) {
       setSaveError(
-        `Max tool iterations must be blank (use the default) or a whole number from ${MIN_ITERATIONS} to ${MAX_ITERATIONS}.`,
+        t('agentEditor.errIterations', { min: MIN_ITERATIONS, max: MAX_ITERATIONS }),
       );
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (triggerErrors.count > 0) {
       setSaveError(
-        `Fix the ${triggerErrors.count} highlighted trigger field${triggerErrors.count === 1 ? '' : 's'} in the Schedule section.`,
+        t('agentEditor.errTriggers', { count: triggerErrors.count }),
       );
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -226,7 +229,7 @@ export function AgentEditor() {
       // 400 (invalid cron / permission / budget / trigger, chain cycle) and
       // 409 (duplicate name) come back as {"error","message"} - shown
       // inline, form state kept.
-      const msg = apiErrorMessage(err, 'Failed to save the agent');
+      const msg = apiErrorMessage(err, t('agentEditor.saveFailed'));
       setSaveError(msg);
       // Chain-cycle and self-chain rejections: 400 {"error":"chain_cycle"}.
       if (apiErrorCode(err) === 'chain_cycle') {
@@ -242,14 +245,14 @@ export function AgentEditor() {
           const f = formFromAgent(saved);
           setForm(f);
           setBaseline(f);
-          toast(`${saved.name} saved`);
+          toast(t('agentEditor.saved', { name: saved.name }));
         },
         onError,
       });
     } else {
       createAgent.mutate(req, {
         onSuccess: (saved) => {
-          toast(`${saved.name} created`);
+          toast(t('agentEditor.created', { name: saved.name }));
           // Programmatic navigation isn't intercepted by the guard (it only
           // catches link clicks and unloads). replace: Back shouldn't return
           // to an empty "new" form.
@@ -260,12 +263,12 @@ export function AgentEditor() {
     }
   };
 
-  if (isEdit && isLoading) return <LoadingScreen message="Loading agent..." />;
+  if (isEdit && isLoading) return <LoadingScreen message={t('agentEditor.loading')} />;
   if (isEdit && loadError) {
     return (
       <div className="flex items-center gap-2 p-12 text-destructive">
         <AlertCircle className="w-6 h-6 shrink-0" />
-        <span>Couldn't load agent #{agentId}: {apiErrorMessage(loadError)}</span>
+        <span>{t('agentEditor.loadFailed', { id: agentId, error: apiErrorMessage(loadError) })}</span>
       </div>
     );
   }
@@ -283,16 +286,16 @@ export function AgentEditor() {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <Link to="/agents" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1">
-            <ArrowLeft className="w-3.5 h-3.5" /> Agents
+            <ArrowLeft className="w-3.5 h-3.5" /> {t('agentEditor.back')}
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            {isEdit ? agent?.name || `Agent #${agentId}` : 'New Agent'}
+            {isEdit ? agent?.name || t('agents.agentNumber', { id: agentId }) : t('agentEditor.newAgent')}
             {isDefault && <DefaultAgentBadge />}
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             {isEdit
-              ? 'Changes to schedule, permissions and strategies apply from the agent\'s next run.'
-              : 'Define a persona: what it should look for, which strategies it watches and when it runs.'}
+              ? t('agentEditor.editSubtitle')
+              : t('agentEditor.newSubtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -301,7 +304,7 @@ export function AgentEditor() {
               to={`/agents/${agentId}/runs`}
               className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5"
             >
-              <History className="w-3.5 h-3.5" /> Runs
+              <History className="w-3.5 h-3.5" /> {t('agentEditor.runs')}
             </Link>
           )}
           {!readOnly && <SaveButton saving={saving} dirty={dirty || !isEdit} />}
@@ -311,7 +314,7 @@ export function AgentEditor() {
       {readOnly && (
         <div role="note" data-testid="agent-readonly-banner" className="p-3 rounded-lg border border-warning/40 bg-warning/10 text-xs text-foreground flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
-          <span>Read-only — only admins can change agents.</span>
+          <span>{t('agentEditor.readOnly')}</span>
         </div>
       )}
 
@@ -319,7 +322,7 @@ export function AgentEditor() {
         <div role="alert" className="p-3 rounded-lg border border-destructive/40 bg-destructive/15 text-xs text-foreground flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
           <div>
-            <div className="font-semibold text-destructive">Couldn't save</div>
+            <div className="font-semibold text-destructive">{t('agentEditor.couldntSave')}</div>
             <div className="mt-0.5">{saveError}</div>
           </div>
         </div>
@@ -329,11 +332,11 @@ export function AgentEditor() {
       <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 space-y-6">
       {/* 1. Identity */}
       <Card>
-        <CardHeader title="Identity" subtitle="Who this agent is and what it's for" />
+        <CardHeader title={t('agentEditor.identity')} subtitle={t('agentEditor.identitySubtitle')} />
         <div className="space-y-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="agent-name" className={LABEL}>
-              Name
+              {t('agentEditor.name')}
             </label>
             <input
               id="agent-name"
@@ -342,28 +345,26 @@ export function AgentEditor() {
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
               disabled={isDefault}
-              placeholder="e.g. Risk Monitor"
+              placeholder={t('agentEditor.namePlaceholder')}
               className="form-input text-sm max-w-md"
             />
-            {isDefault && <p className={HELP}>The default Copilot agent can't be renamed.</p>}
+            {isDefault && <p className={HELP}>{t('agentEditor.defaultNoRename')}</p>}
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="agent-goal" className={LABEL}>
-              Goal
+              {t('agentEditor.goal')}
             </label>
             <textarea
               id="agent-goal"
               rows={10}
               value={form.goal}
               onChange={(e) => set('goal', e.target.value)}
-              placeholder={'e.g. Watch drawdown and win-rate drift on my bound strategies. Flag anything that departs from its last backtest by more than 20%, and write a report explaining why.'}
+              placeholder={t('agentEditor.goalPlaceholder')}
               className="form-textarea font-mono text-xs leading-relaxed"
               aria-describedby="agent-goal-help"
             />
             <p id="agent-goal-help" className={HELP}>
-              The agent's standing instructions. They're added on top of the global house rules every agent follows
-              (no order placement, never modifying live strategies, cite data by reference) - you don't need to repeat
-              those here.
+              {t('agentEditor.goalHelp')}
             </p>
           </div>
         </div>
@@ -371,11 +372,11 @@ export function AgentEditor() {
 
       {/* 2. Model */}
       <Card>
-        <CardHeader title="Model" subtitle="Which LLM answers for this agent" />
+        <CardHeader title={t('agentEditor.model')} subtitle={t('agentEditor.modelSubtitle')} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="agent-provider" className={LABEL}>
-              Provider
+              {t('agentEditor.provider')}
             </label>
             <select
               id="agent-provider"
@@ -383,21 +384,21 @@ export function AgentEditor() {
               onChange={(e) => set('provider', e.target.value as AgentProvider)}
               className="form-select text-sm"
             >
-              <option value="">Default</option>
+              <option value="">{t('agentEditor.providerDefault')}</option>
               <option value="anthropic">Anthropic</option>
               <option value="gemini">Gemini</option>
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="agent-model" className={LABEL}>
-              Model
+              {t('agentEditor.model')}
             </label>
             <input
               id="agent-model"
               type="text"
               value={form.model}
               onChange={(e) => set('model', e.target.value)}
-              placeholder="provider default"
+              placeholder={t('agentEditor.modelPlaceholder')}
               className="form-input text-sm font-mono"
             />
           </div>
@@ -407,11 +408,11 @@ export function AgentEditor() {
       {/* 3. Permissions */}
       <Card>
         <CardHeader
-          title="Permissions"
-          subtitle="What this agent may do. Reading memory, writing journal notes and writing reports are always allowed."
+          title={t('agentEditor.permissions')}
+          subtitle={t('agentEditor.permissionsSubtitle')}
         />
         <fieldset className="space-y-1">
-          <legend className="sr-only">Permissions</legend>
+          <legend className="sr-only">{t('agentEditor.permissions')}</legend>
           {AGENT_PERMISSIONS.map((p) => {
             const disabled = !!p.phase;
             const checked = form.permissions.includes(p.key);
@@ -445,23 +446,25 @@ export function AgentEditor() {
       {/* 4. Strategies */}
       <Card>
         <CardHeader
-          title="Strategies"
-          subtitle={`${form.strategy_ids.length} selected - the strategies this agent evaluates on each run`}
+          title={t('agentEditor.strategies')}
+          subtitle={t('agentEditor.strategiesSubtitle', { count: form.strategy_ids.length })}
         />
         <div className="p-3 mb-3 rounded-lg border border-border bg-secondary/40 text-[11px] text-muted-foreground flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning" />
           <span>
-            Agents never modify a live or productive strategy directly. They improve one through a dryrun{' '}
-            <span className="font-mono">challenger</span> copy and a promotion proposal that you approve in{' '}
-            <Link to="/agents/proposals" className="text-primary hover:underline">
-              Proposals
-            </Link>
-            . Non-live strategies can be auto-deployed with <span className="font-mono">edit_testing</span>, but only when
-            the deploy gate passes.
+            {t.rich('agentEditor.liveNotice', {
+              challenger: <span className="font-mono">challenger</span>,
+              proposals: (
+                <Link to="/agents/proposals" className="text-primary hover:underline">
+                  {t('agentEditor.proposalsLink')}
+                </Link>
+              ),
+              editTesting: <span className="font-mono">edit_testing</span>,
+            })}
           </span>
         </div>
         {strategies.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No strategies exist yet.</p>
+          <p className="text-xs text-muted-foreground">{t('agentEditor.noStrategies')}</p>
         ) : (
           <>
             {strategies.length > 8 && (
@@ -469,8 +472,8 @@ export function AgentEditor() {
                 type="search"
                 value={strategySearch}
                 onChange={(e) => setStrategySearch(e.target.value)}
-                placeholder="Filter strategies..."
-                aria-label="Filter strategies"
+                placeholder={t('agentEditor.filterStrategies')}
+                aria-label={t('agentEditor.filterStrategiesAria')}
                 className="form-input text-xs mb-2 max-w-xs"
               />
             )}
@@ -497,10 +500,10 @@ export function AgentEditor() {
 
       {/* 5. Schedule */}
       <Card>
-        <CardHeader title="Schedule" subtitle="Cron schedules (UTC) and event, market and chained triggers. With none, the agent only runs manually or in chat." />
+        <CardHeader title={t('agentEditor.schedule')} subtitle={t('agentEditor.scheduleSubtitle')} />
         <div className="space-y-3">
           {form.cron.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No schedule - manual runs only.</p>
+            <p className="text-xs text-muted-foreground">{t('agentEditor.noSchedule')}</p>
           ) : (
             <ul className="space-y-1.5">
               {form.cron.map((spec, i) => (
@@ -509,7 +512,7 @@ export function AgentEditor() {
                   <input
                     type="text"
                     value={spec}
-                    aria-label={`Cron schedule ${i + 1}`}
+                    aria-label={t('agentEditor.cronAria', { n: i + 1 })}
                     onChange={(e) => set('cron', form.cron.map((c, j) => (j === i ? e.target.value : c)))}
                     className="form-input text-xs font-mono py-1.5 max-w-[12rem]"
                   />
@@ -519,7 +522,7 @@ export function AgentEditor() {
                   <button
                     type="button"
                     onClick={() => set('cron', form.cron.filter((_, j) => j !== i))}
-                    aria-label={`Remove schedule ${spec}`}
+                    aria-label={t('agentEditor.removeSchedule', { spec })}
                     className="ml-auto p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -530,65 +533,16 @@ export function AgentEditor() {
           )}
 
           <div className="pt-3 border-t border-border flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Add:</span>
-              {CRON_PRESETS.map((p) => (
-                <button
-                  key={p.spec}
-                  type="button"
-                  onClick={() => addCron(p.spec)}
-                  disabled={form.cron.includes(p.spec)}
-                  className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs px-2.5 py-1 disabled:opacity-40"
-                  title={p.spec}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newCron}
-                onChange={(e) => setNewCron(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addCron(newCron);
-                    setNewCron('');
-                  }
-                }}
-                placeholder="*/30 * * * *"
-                aria-label="Custom cron expression"
-                className="form-input text-xs font-mono py-1.5 max-w-[12rem]"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  addCron(newCron);
-                  setNewCron('');
-                }}
-                disabled={!newCron.trim()}
-                className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-40"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-              {newCron.trim() && (
-                <span className="text-xs text-muted-foreground truncate">
-                  {describeCron(newCron)} UTC
-                </span>
-              )}
-            </div>
+            <CronScheduleBuilder existingSchedules={form.cron} onAddSchedule={addCron} />
             <p className={HELP}>
-              Standard 5-field cron (minute hour day month weekday). Invalid expressions are rejected on save.
+              {t('agentEditor.cronHelp')}
             </p>
           </div>
 
           <div className="pt-3 border-t border-border">
-            <div className="text-xs font-semibold text-foreground">Triggers</div>
+            <div className="text-xs font-semibold text-foreground">{t('agentEditor.triggers')}</div>
             <p className={HELP}>
-              Besides the schedule, run this agent when a bound strategy emits an event, when a watched market moves,
-              or after another agent finishes. Every trigger runs unattended under the same permissions, budget and
-              kill switch.
+              {t('agentEditor.triggersHelp')}
             </p>
           </div>
           <AgentTriggersEditor
@@ -607,64 +561,62 @@ export function AgentEditor() {
       {/* 6. Notifications */}
       <Card>
         <CardHeader
-          title="Notifications"
-          subtitle="Where this agent's notify tool sends messages (needs the notify permission)"
+          title={t('agentEditor.notifications')}
+          subtitle={t('agentEditor.notificationsSubtitle')}
           action={
             isAdmin ? (
               <Link to="/settings#agent-notifications" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                Manage targets <ExternalLink className="w-3 h-3" />
+                {t('agentEditor.manageTargets')} <ExternalLink className="w-3 h-3" />
               </Link>
             ) : undefined
           }
         />
         {!isAdmin ? (
           <p className="text-xs text-muted-foreground">
-            {form.webhook_target_ids.length} notification target{form.webhook_target_ids.length === 1 ? '' : 's'} selected.
+            {t('agentEditor.targetsSelected', { count: form.webhook_target_ids.length })}
           </p>
         ) : targets.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No webhook targets yet -{' '}
-            <Link to="/settings#agent-notifications" className="text-primary hover:underline">
-              add one in Settings
-            </Link>
-            .
+            {t.rich('agentEditor.noTargets', {
+              link: (
+                <Link to="/settings#agent-notifications" className="text-primary hover:underline">
+                  {t('agentEditor.addInSettings')}
+                </Link>
+              ),
+            })}
           </p>
         ) : (
           <div className="rounded-lg border border-border divide-y divide-border">
-            {targets.map((t) => (
-              <label key={t.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/40">
+            {targets.map((wt) => (
+              <label key={wt.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/40">
                 <input
                   type="checkbox"
-                  checked={form.webhook_target_ids.includes(t.id)}
-                  onChange={() => set('webhook_target_ids', toggle(form.webhook_target_ids, t.id))}
+                  checked={form.webhook_target_ids.includes(wt.id)}
+                  onChange={() => set('webhook_target_ids', toggle(form.webhook_target_ids, wt.id))}
                   className="w-4 h-4 rounded border-border focus:ring-ring focus:ring-offset-background"
                 />
-                <span className="flex-1 text-xs text-foreground">{t.name}</span>
-                <span className="text-[10px] font-mono uppercase text-muted-foreground">{t.kind}</span>
-                {!t.enabled && <span className="text-[10px] uppercase font-semibold text-muted-foreground">disabled</span>}
+                <span className="flex-1 text-xs text-foreground">{wt.name}</span>
+                <span className="text-[10px] font-mono uppercase text-muted-foreground">{wt.kind}</span>
+                {!wt.enabled && <span className="text-[10px] uppercase font-semibold text-muted-foreground">{t('agentEditor.targetDisabled')}</span>}
               </label>
             ))}
           </div>
         )}
         {form.webhook_target_ids.length > 0 && !form.permissions.includes('notify') && (
           <p className="mt-2 text-[11px] text-warning">
-            Targets are selected but the <span className="font-mono">notify</span> permission is off - this agent won't
-            send anything.
+            {t.rich('agentEditor.notifyOff', { notify: <span className="font-mono">notify</span> })}
           </p>
         )}
       </Card>
 
       {/* 7. Limits */}
       <Card>
-        <CardHeader title="Limits" subtitle="Spend and deploy guardrails - a run that would exceed the budget halts" />
+        <CardHeader title={t('agentEditor.limits')} subtitle={t('agentEditor.limitsSubtitle')} />
         <div className="space-y-4">
           <div className="flex flex-col gap-1.5 max-w-xs">
             <label htmlFor="agent-budget" className={LABEL}>
-              Daily budget (USD)
-              <HelpTooltip>
-                Model spend allowed per UTC day. Once today's cost reaches it, further runs are refused until midnight
-                UTC. 0 means unlimited.
-              </HelpTooltip>
+              {t('agentEditor.dailyBudget')}
+              <HelpTooltip>{t('agentEditor.dailyBudgetHelp')}</HelpTooltip>
             </label>
             <input
               id="agent-budget"
@@ -677,19 +629,15 @@ export function AgentEditor() {
             />
             {budgetNum === 0 && (
               <p className="text-[11px] text-warning flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Unlimited - a looping or chatty agent can run up real cost.
+                <AlertTriangle className="w-3 h-3" /> {t('agentEditor.unlimitedWarning')}
               </p>
             )}
           </div>
 
           <div className="flex flex-col gap-1.5 max-w-xs">
             <label htmlFor="agent-max-deploys" className={LABEL}>
-              Max auto-deploys per day
-              <HelpTooltip>
-                How many times per UTC day this agent may push code to a non-live strategy on its own via
-                deploy_to_testing. Each one must pass the deploy gate first; a change that fails becomes a proposal
-                instead. Live strategies are never auto-deployed.
-              </HelpTooltip>
+              {t('agentEditor.maxDeploys')}
+              <HelpTooltip>{t('agentEditor.maxDeploysHelp')}</HelpTooltip>
             </label>
             <input
               id="agent-max-deploys"
@@ -706,30 +654,26 @@ export function AgentEditor() {
             />
             <p id="agent-max-deploys-help" className={HELP}>
               {form.max_auto_deploys_per_day === 0
-                ? 'Auto-deploy disabled - every change becomes a proposal for you to approve.'
-                : 'Needs the edit_testing permission. 0 disables auto-deploy (proposals only).'}
+                ? t('agentEditor.autoDeployOff')
+                : t('agentEditor.autoDeployNeeds')}
             </p>
             {form.max_auto_deploys_per_day > 0 && !form.permissions.includes('edit_testing') && (
               <p className="text-[11px] text-warning">
-                The <span className="font-mono">edit_testing</span> permission is off - this agent can't auto-deploy.
+                {t.rich('agentEditor.editTestingOff', { perm: <span className="font-mono">edit_testing</span> })}
               </p>
             )}
           </div>
 
           <div className="flex flex-col gap-1.5 max-w-xs">
             <label htmlFor="agent-max-iterations" className={LABEL}>
-              Max tool iterations
-              <HelpTooltip>
-                How many model-to-tool round trips one run may take. When a run reaches the cap, the model gets one
-                last turn with tools disabled to give its final answer, and the run is marked "hit iteration cap".
-                Leave blank to use the default: 24 for scheduled and triggered runs, 8 for chat.
-              </HelpTooltip>
+              {t('agentEditor.maxIterations')}
+              <HelpTooltip>{t('agentEditor.maxIterationsHelp')}</HelpTooltip>
             </label>
             <input
               id="agent-max-iterations"
               type="text"
               inputMode="numeric"
-              placeholder="Default (24 scheduled / 8 chat)"
+              placeholder={t('agentEditor.maxIterationsPlaceholder')}
               value={form.max_iterations}
               onChange={(e) => set('max_iterations', e.target.value)}
               className="form-input text-sm"
@@ -741,8 +685,8 @@ export function AgentEditor() {
               className={parseMaxIterations(form.max_iterations) === null ? 'text-[11px] text-destructive' : HELP}
             >
               {parseMaxIterations(form.max_iterations) === null
-                ? `Enter a whole number from ${MIN_ITERATIONS} to ${MAX_ITERATIONS}, or leave blank for the default.`
-                : `Blank or 0 = default (24 scheduled/triggered, 8 chat). Allowed: ${MIN_ITERATIONS}-${MAX_ITERATIONS}.`}
+                ? t('agentEditor.iterationsInvalid', { min: MIN_ITERATIONS, max: MAX_ITERATIONS })
+                : t('agentEditor.iterationsHelp', { min: MIN_ITERATIONS, max: MAX_ITERATIONS })}
             </p>
           </div>
 
@@ -758,7 +702,7 @@ export function AgentEditor() {
           onClick={() => guard.requestNavigate('/agents')}
           className="bg-secondary hover:bg-accent text-foreground rounded border border-border px-4 py-2 text-sm"
         >
-          {dirty ? 'Cancel' : 'Back'}
+          {dirty ? t('common.cancel') : t('common.back')}
         </button>
         {!readOnly && <SaveButton saving={saving} dirty={dirty || !isEdit} large />}
       </div>
@@ -768,10 +712,10 @@ export function AgentEditor() {
           it they'd default to submit. */}
       <ConfirmDialog
         isOpen={guard.pendingPath != null}
-        title="Discard unsaved changes?"
-        message="You have unsaved changes to this agent. Leave the page and discard them?"
-        confirmText="Discard changes"
-        cancelText="Keep editing"
+        title={t('agentEditor.discardTitle')}
+        message={t('agentEditor.discardMessage')}
+        confirmText={t('agentEditor.discardConfirm')}
+        cancelText={t('agentEditor.keepEditing')}
         isDangerous
         onConfirm={guard.confirmLeave}
         onCancel={guard.cancelLeave}
@@ -781,6 +725,7 @@ export function AgentEditor() {
 }
 
 function SaveButton({ saving, dirty, large }: { saving: boolean; dirty: boolean; large?: boolean }) {
+  const t = useT();
   return (
     <button
       type="submit"
@@ -790,19 +735,20 @@ function SaveButton({ saving, dirty, large }: { saving: boolean; dirty: boolean;
       }`}
     >
       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-      <span>{saving ? 'Saving...' : 'Save agent'}</span>
+      <span>{saving ? t('common.saving') : t('agentEditor.saveAgent')}</span>
     </button>
   );
 }
 
 function UsagePanel({ agentId, budget }: { agentId: number; budget: number }) {
+  const t = useT();
   const { data: usage, isLoading, error } = useAgentUsage(agentId, 30);
 
   if (isLoading) {
-    return <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading usage...</div>;
+    return <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('agentEditor.loadingUsage')}</div>;
   }
   if (error || !usage) {
-    return <div className="text-xs text-muted-foreground">Usage unavailable{error ? `: ${apiErrorMessage(error)}` : ''}.</div>;
+    return <div className="text-xs text-muted-foreground">{error ? t('agentEditor.usageUnavailableErr', { error: apiErrorMessage(error) }) : t('agentEditor.usageUnavailable')}</div>;
   }
 
   const activeDays = [...usage.days].filter((d) => d.runs > 0).sort((a, b) => b.day.localeCompare(a.day));
@@ -811,17 +757,20 @@ function UsagePanel({ agentId, budget }: { agentId: number; budget: number }) {
     <div className="pt-3 border-t border-border space-y-3">
       <div className="flex items-baseline gap-4 text-xs">
         <span className="text-muted-foreground">
-          Today: <span className="font-mono text-foreground">{formatUsd(usage.today.cost_usd)}</span>
+          {t.rich('agentEditor.today', { cost: <span className="font-mono text-foreground">{formatUsd(usage.today.cost_usd)}</span> })}
           {budget > 0 && <span className="font-mono text-muted-foreground"> / {formatUsd(budget)}</span>}
         </span>
         <span className="text-muted-foreground">
-          <span className="font-mono text-foreground">{usage.today.runs}</span> run{usage.today.runs === 1 ? '' : 's'}
+          {t('agentEditor.todayRuns', { count: usage.today.runs })}
         </span>
         <span className="text-muted-foreground">
-          <span className="font-mono text-foreground">
-            {formatTokens(usage.today.input_tokens)} / {formatTokens(usage.today.output_tokens)}
-          </span>{' '}
-          tokens in / out
+          {t.rich('agentEditor.tokensInOut', {
+            tokens: (
+              <span className="font-mono text-foreground">
+                {formatTokens(usage.today.input_tokens)} / {formatTokens(usage.today.output_tokens)}
+              </span>
+            ),
+          })}
         </span>
       </div>
       <UsageSparkline days={usage.days} budget={budget} />
@@ -830,16 +779,16 @@ function UsagePanel({ agentId, budget }: { agentId: number; budget: number }) {
           <table className="w-full text-xs border-collapse [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[10px] [&_th]:uppercase [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:px-3 [&_td]:py-1.5 [&_tbody_tr]:border-t [&_tbody_tr]:border-border/40">
             <thead className="bg-secondary/40 sticky top-0">
               <tr>
-                <th>Day (UTC)</th>
-                <th className="text-right">Runs</th>
-                <th className="text-right">Tokens in / out</th>
-                <th className="text-right">Cost</th>
+                <th>{t('agentEditor.colDay')}</th>
+                <th className="text-right">{t('agentEditor.colRuns')}</th>
+                <th className="text-right">{t('agentEditor.colTokens')}</th>
+                <th className="text-right">{t('agentEditor.colCost')}</th>
               </tr>
             </thead>
             <tbody className="font-mono">
               {activeDays.map((d) => (
                 <tr key={d.day}>
-                  <td className="text-muted-foreground">{d.day}</td>
+                  <td className="text-muted-foreground">{formatUtcDay(d.day)}</td>
                   <td className="text-right text-foreground">{d.runs}</td>
                   <td className="text-right text-muted-foreground">
                     {formatTokens(d.input_tokens)} / {formatTokens(d.output_tokens)}

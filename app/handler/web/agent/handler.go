@@ -23,6 +23,7 @@ import (
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/handler"
 
 	"github.com/gorilla/mux"
@@ -385,8 +386,10 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 	}
 
 	var userID *uint
+	var userLocale string
 	if p, ok := authz.FromContext(ctx); ok {
 		userID = p.UserIDPtr()
+		userLocale = p.Locale
 	}
 	// Agent tools act as system (auth-01 §3): the run gets no principal, so
 	// e.g. the strategy draft-only guard does not apply to tools (the agent
@@ -399,6 +402,7 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 		History:      history,
 		StrategyID:   req.StrategyID,
 		UserID:       userID,
+		Locale:       chatLocale(userLocale, r.Header.Get("Accept-Language")),
 	})
 	h.recordUsage(ctx, run)
 	if err != nil && run.ID == 0 {
@@ -408,6 +412,19 @@ func (h *AgentHandler) sendPersonaMessage(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(ToRunResponseWithNames(run, map[uint]string{agent.ID: agent.Name}))
+}
+
+// chatLocale is the chat reply language (i18n-02 §2): the user's saved
+// locale, else the first supported Accept-Language match, else "" (the
+// usecase then uses Settings.DefaultLocale).
+func chatLocale(userLocale, acceptLanguage string) string {
+	if loc, ok := i18n.Parse(userLocale); ok {
+		return string(loc)
+	}
+	if loc, ok := i18n.FromAcceptLanguage(acceptLanguage); ok {
+		return string(loc)
+	}
+	return ""
 }
 
 // recordUsage adds a finished chat run's cost to the acting user's usage.

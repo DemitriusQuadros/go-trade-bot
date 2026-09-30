@@ -24,6 +24,7 @@ import (
 	"go-trade-bot/app/repository/agentplatform"
 	backtestusecase "go-trade-bot/app/usecase/backtest"
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
 	"go-trade-bot/internal/report/agentreport"
@@ -216,6 +217,11 @@ type AgentUseCase struct {
 	Lock       StrategyLock
 	APIBaseURL string // for report/proposal deep links (<APIBaseURL>/agents/reports/<id>, /agents/proposals/<id>)
 
+	// Locales is Settings.DefaultLocale (i18n-02): the language of
+	// unattended runs and the RenderedHTML snapshot of write_report. nil =
+	// always en.
+	Locales i18n.Source
+
 	// Coverage backs get_candle_coverage (fix-02 B2). Set by WirePhaseB
 	// when the candle repository supports it; nil = the tool reports "not
 	// available".
@@ -242,7 +248,9 @@ type AgentUseCase struct {
 // ReportRenderer validates and renders report blocks (internal/report/agentreport).
 type ReportRenderer interface {
 	Validate(blocks []agentreport.Block) error
-	Render(ctx context.Context, meta agentreport.ReportMeta, blocks []agentreport.Block) (string, error)
+	// RenderLocales renders one snapshot per locale (i18n-02 §3), resolving
+	// data once for all of them.
+	RenderLocales(ctx context.Context, meta agentreport.ReportMeta, blocks []agentreport.Block, locales []i18n.Locale) (map[i18n.Locale]string, error)
 }
 
 func NewAgentUseCase(
@@ -410,6 +418,10 @@ type RunRequest struct {
 	// UserID is the app user who started a chat run (auth-01 §6), recorded
 	// on AgentRun.UserID. Nil for unattended and service-token runs.
 	UserID *uint
+	// Locale is the reply language for chat runs (i18n-02 §2: the user's
+	// locale, else Accept-Language). Ignored by unattended runs, which use
+	// Settings.DefaultLocale; empty or unsupported = the default locale.
+	Locale string
 }
 
 // DefaultAgent returns the default "Copilot" persona. Without a Platform

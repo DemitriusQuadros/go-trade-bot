@@ -1,5 +1,6 @@
 import React, { useState, useId, useEffect, useRef } from 'react';
 import { Info } from 'lucide-react';
+import { useT } from '@/i18n';
 
 export interface HelpTooltipProps {
   children: React.ReactNode;
@@ -14,7 +15,8 @@ const positionClasses: Record<'top' | 'bottom' | 'left' | 'right', string> = {
   right: 'left-full top-1/2 -translate-y-1/2 ml-2',
 };
 
-export function HelpTooltip({ children, label = 'More information', side = 'top' }: HelpTooltipProps) {
+export function HelpTooltip({ children, label, side = 'top' }: HelpTooltipProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const id = useId();
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -47,7 +49,7 @@ export function HelpTooltip({ children, label = 'More information', side = 'top'
       <button
         type="button"
         aria-describedby={open ? id : undefined}
-        aria-label={label}
+        aria-label={label ?? t('common.moreInfo')}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}

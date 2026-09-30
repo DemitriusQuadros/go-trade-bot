@@ -28,6 +28,7 @@ import { useEditorBridge } from '@/context/EditorBridgeContext';
 import { usePendingProposalCount, usePlatformSettings } from '@/hooks/queries';
 import { usePersistedOpen } from '@/hooks/usePersistedOpen';
 import { useTheme } from '@/hooks/useTheme';
+import { useT } from '@/i18n';
 
 // Header buttons share one look: muted icon, accent hover.
 const HEADER_BUTTON =
@@ -37,14 +38,15 @@ const HEADER_BUTTON =
 // Endpoints). Unconfigured URLs are hidden; with none configured the menu
 // offers a single shortcut to Settings instead of an empty list.
 function MonitoringMenu() {
+  const t = useT();
   const navigate = useNavigate();
   const { data: settings } = usePlatformSettings();
 
   const links: { label: string; key: keyof PlatformSettings; icon: React.ReactNode }[] = [
     { label: 'Prometheus', key: 'prometheus_url', icon: <BarChart3 /> },
     { label: 'Grafana', key: 'grafana_url', icon: <LineChart /> },
-    { label: 'Asynqmon – Worker', key: 'asynqmon_url', icon: <ListChecks /> },
-    { label: 'Asynqmon – Agents', key: 'agents_asynqmon_url', icon: <Bot /> },
+    { label: t('nav.asynqWorker'), key: 'asynqmon_url', icon: <ListChecks /> },
+    { label: t('nav.asynqAgents'), key: 'agents_asynqmon_url', icon: <Bot /> },
   ];
 
   const items: DropdownMenuItem[] = links.flatMap(({ label, key, icon }) => {
@@ -55,19 +57,19 @@ function MonitoringMenu() {
   });
 
   if (items.length === 0) {
-    items.push({ label: 'Configure monitoring links…', icon: <Settings />, onClick: () => navigate('/settings') });
+    items.push({ label: t('nav.configureMonitoring'), icon: <Settings />, onClick: () => navigate('/settings') });
   }
 
   return (
     <DropdownMenu
       items={items}
       align="right"
-      label="Monitoring dashboards"
+      label={t('nav.monitoringMenu')}
       triggerClassName={HEADER_BUTTON}
       trigger={
         <>
           <Activity className="w-4 h-4" />
-          <span className="hidden sm:inline">Monitoring</span>
+          <span className="hidden sm:inline">{t('nav.monitoring')}</span>
           <ChevronDown className="w-3 h-3 opacity-60" />
         </>
       }
@@ -92,10 +94,11 @@ const SEGMENT = 'flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-colo
 // Agent | Code segmented toggle - same look as the Workbench's
 // Script/Split/Chart control.
 function ModeToggle({ agentMode, onAgent, onCode }: { agentMode: boolean; onAgent: () => void; onCode: () => void }) {
+  const t = useT();
   return (
     <div
       role="group"
-      aria-label="App mode"
+      aria-label={t('nav.appMode')}
       data-walkthrough="mode-toggle"
       className="flex items-center bg-background border border-border rounded overflow-hidden shrink-0"
     >
@@ -103,43 +106,44 @@ function ModeToggle({ agentMode, onAgent, onCode }: { agentMode: boolean; onAgen
         type="button"
         onClick={onAgent}
         aria-pressed={agentMode}
-        title="Agent mode - full-screen conversation (Ctrl+Shift+.)"
+        title={t('nav.modeAgentTitle')}
         data-testid="mode-toggle-agent"
         className={`${SEGMENT} border-r border-border ${
           agentMode ? 'bg-secondary text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
         }`}
       >
         <Bot className="w-4 h-4" />
-        <span>Agent</span>
+        <span>{t('nav.modeAgent')}</span>
       </button>
       <button
         type="button"
         onClick={onCode}
         aria-pressed={!agentMode}
-        title="Code mode - the app, with the agent as a side dock (Ctrl+Shift+.)"
+        title={t('nav.modeCodeTitle')}
         data-testid="mode-toggle-code"
         className={`${SEGMENT} ${
           !agentMode ? 'bg-secondary text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
         }`}
       >
         <Code2 className="w-4 h-4" />
-        <span>Code</span>
+        <span>{t('nav.modeCode')}</span>
       </button>
     </div>
   );
 }
 
 function PendingProposalsIndicator() {
+  const t = useT();
   const { data: pending = 0 } = usePendingProposalCount();
   return (
     <Link
       to="/agents/proposals"
       className={HEADER_BUTTON}
-      title={`${pending} pending proposal${pending === 1 ? '' : 's'}`}
-      aria-label={`Proposals, ${pending} pending`}
+      title={t('nav.pendingProposals', { count: pending })}
+      aria-label={t('nav.proposalsPending', { count: pending })}
     >
       <GitPullRequest className="w-4 h-4" />
-      <span className="hidden sm:inline">Proposals</span>
+      <span className="hidden sm:inline">{t('nav.proposals')}</span>
       {pending > 0 && (
         <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-warning text-warning-foreground text-[10px] font-bold leading-5 text-center">
           {pending > 99 ? '99+' : pending}
@@ -150,6 +154,7 @@ function PendingProposalsIndicator() {
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
@@ -205,14 +210,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-background text-foreground flex flex-col">
         <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border">
           <div className="h-14 flex items-center gap-2 px-3 sm:px-4 min-w-0">
-            <Link to="/" className="flex items-center gap-2 shrink-0" title="Dashboard">
+            <Link to="/" className="flex items-center gap-2 shrink-0" title={t('nav.dashboard')}>
               <img src="/gopher-face.png" alt="" className="w-8 h-8 rounded-md object-cover" />
               <span className="hidden md:inline font-semibold text-sm tracking-tight text-foreground">GTB</span>
             </Link>
             <ModeToggle agentMode onAgent={goAgent} onCode={goCode} />
-            <button type="button" onClick={goCode} className={`${HEADER_BUTTON} hidden md:flex`} title="Back to where you were in Code mode">
+            <button type="button" onClick={goCode} className={`${HEADER_BUTTON} hidden md:flex`} title={t('nav.backToCodeTitle')}>
               <ArrowLeft className="w-4 h-4" />
-              <span>Back to Code mode</span>
+              <span>{t('nav.backToCode')}</span>
             </button>
             <div className="ml-auto flex items-center gap-1 min-w-0">
               <PendingProposalsIndicator />
@@ -222,8 +227,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                title={theme === 'dark' ? 'Switch to light (paper) mode' : 'Switch to dark mode'}
-                aria-label="Toggle color theme"
+                title={theme === 'dark' ? t('nav.themeLight') : t('nav.themeDark')}
+                aria-label={t('nav.themeToggle')}
               >
                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
@@ -251,8 +256,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={toggleTheme}
               className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-              title={theme === 'dark' ? 'Switch to light (paper) mode' : 'Switch to dark mode'}
-              aria-label="Toggle color theme"
+              title={theme === 'dark' ? t('nav.themeLight') : t('nav.themeDark')}
+              aria-label={t('nav.themeToggle')}
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>

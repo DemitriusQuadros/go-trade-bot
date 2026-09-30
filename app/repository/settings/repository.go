@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/i18n"
 
 	"gorm.io/gorm"
 )
@@ -62,4 +63,16 @@ func (r *repository) SetAgentsPaused(ctx context.Context, paused bool) error {
 		return tx.Model(&entities.Settings{}).Where("id = ?", existing.ID).
 			Updates(map[string]any{"agents_paused": paused, "updated_at": time.Now()}).Error
 	})
+}
+
+// NewDefaultLocaleSource is Settings.DefaultLocale as an i18n.Source,
+// cached for 60 s (i18n-02 §4); a read error yields en.
+func NewDefaultLocaleSource(repo Repository) *i18n.CachedSource {
+	return i18n.NewCachedSource(func(ctx context.Context) (string, error) {
+		s, err := repo.Get(ctx)
+		if err != nil || s == nil {
+			return "", err
+		}
+		return s.DefaultLocale, nil
+	}, i18n.DefaultCacheTTL)
 }

@@ -26,34 +26,31 @@ import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import { WebhookTargetsSection } from '@/components/domain/WebhookTargetsSection';
 import { DeployGateSection } from '@/components/domain/DeployGateSection';
 import { useLocation } from 'react-router-dom';
+import { LOCALES, LOCALE_NATIVE, normalizeLocale, tr } from '@/i18n';
+import { useT } from '@/i18n';
 
 type SavePhase = 'idle' | 'saving-safe' | 'saving-risk' | 'error';
 
 function humanizeSettingsError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 503) {
-      return (
-        "Couldn't apply — active trading cycles didn't finish within 30 seconds. " +
-        'Nothing was changed; your previous settings are still in effect. Try again shortly.'
-      );
+      return tr('settings.errDrain');
     }
     if (err.status === 502) {
-      return (
-        'The new broker credentials were rejected when applying them. Nothing was changed — ' +
-        'double-check the values and try again.'
-      );
+      return tr('settings.errCredentials');
     }
     if (err.status === 400) {
-      return err.body || 'Invalid settings — check the highlighted fields.';
+      return err.body || tr('settings.errInvalid');
     }
   }
   if (err instanceof Error) {
     return err.message;
   }
-  return 'Failed to save settings. Please try again.';
+  return tr('settings.errGeneric');
 }
 
 export function Settings() {
+  const t = useT();
   const { data: loadedSettings, isLoading, isError, error: loadError } = usePlatformSettings();
   const updateSettingsMutation = useUpdateSettings();
 
@@ -66,6 +63,7 @@ export function Settings() {
     grafana_url: '',
     asynqmon_url: '',
     agents_asynqmon_url: '',
+    default_locale: 'en',
   });
 
   const [dirtySecrets, setDirtySecrets] = useState<Record<string, string>>({});
@@ -98,6 +96,7 @@ export function Settings() {
         grafana_url: loadedSettings.grafana_url || '',
         asynqmon_url: loadedSettings.asynqmon_url || '',
         agents_asynqmon_url: loadedSettings.agents_asynqmon_url || '',
+        default_locale: normalizeLocale(loadedSettings.default_locale) ?? 'en',
       });
       setDirtySecrets({});
     }
@@ -126,7 +125,7 @@ export function Settings() {
     try {
       await updateSettingsMutation.mutateAsync(payload);
       setPhase('idle');
-      setSuccessMessage('Settings successfully updated and applied in-process.');
+      setSuccessMessage(t('settings.saved'));
       setDirtySecrets({});
     } catch (err: unknown) {
       setPhase('error');
@@ -188,7 +187,7 @@ export function Settings() {
       <div className="flex items-center gap-2 p-12 text-destructive">
         <AlertCircle className="w-6 h-6 shrink-0" />
         <span>
-          Failed to load platform configuration: {humanizeSettingsError(loadError)}
+          {t('settings.loadFailed', { error: humanizeSettingsError(loadError) })}
         </span>
       </div>
     );
@@ -197,7 +196,7 @@ export function Settings() {
   if (isLoading || !loadedSettings) {
     return (
       <div className="flex items-center justify-center p-12 text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading platform configuration...
+        <Loader2 className="w-6 h-6 animate-spin mr-2" /> {t('settings.loading')}
       </div>
     );
   }
@@ -209,10 +208,10 @@ export function Settings() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          Platform Settings
+          {t('settings.title')}
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          Configure broker exchange API keys, trading modes, safety guards, and monitoring endpoints.
+          {t('settings.subtitle')}
         </p>
       </div>
 
@@ -227,34 +226,34 @@ export function Settings() {
       {/* 1. Broker Credentials */}
       <Card>
         <CardHeader
-          title="Broker Exchange API Credentials"
-          subtitle="Real and testnet API keys for order execution and market data streaming"
+          title={t('settings.brokerTitle')}
+          subtitle={t('settings.brokerSubtitle')}
         />
         <div className="p-6 pt-0 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <MaskedSecretField
-              label="Live API Key"
+              label={t('settings.liveKey')}
               maskedValue={loadedSettings.broker_api_key}
               isDirty={dirtySecrets.broker_api_key !== undefined}
               onSaveChange={(val) => handleSecretChange('broker_api_key', val)}
               onReset={() => handleSecretReset('broker_api_key')}
             />
             <MaskedSecretField
-              label="Live API Secret"
+              label={t('settings.liveSecret')}
               maskedValue={loadedSettings.broker_api_secret}
               isDirty={dirtySecrets.broker_api_secret !== undefined}
               onSaveChange={(val) => handleSecretChange('broker_api_secret', val)}
               onReset={() => handleSecretReset('broker_api_secret')}
             />
             <MaskedSecretField
-              label="Testnet API Key"
+              label={t('settings.testnetKey')}
               maskedValue={loadedSettings.broker_testnet_api_key}
               isDirty={dirtySecrets.broker_testnet_api_key !== undefined}
               onSaveChange={(val) => handleSecretChange('broker_testnet_api_key', val)}
               onReset={() => handleSecretReset('broker_testnet_api_key')}
             />
             <MaskedSecretField
-              label="Testnet API Secret"
+              label={t('settings.testnetSecret')}
               maskedValue={loadedSettings.broker_testnet_api_secret}
               isDirty={dirtySecrets.broker_testnet_api_secret !== undefined}
               onSaveChange={(val) => handleSecretChange('broker_testnet_api_secret', val)}
@@ -267,17 +266,15 @@ export function Settings() {
       {/* 2. Mode & Safety Guards */}
       <Card>
         <CardHeader
-          title="Mode & Safety Guards"
-          subtitle="System-wide operating mode ceiling and dry-run execution frictions"
+          title={t('settings.modeTitle')}
+          subtitle={t('settings.modeSubtitle')}
         />
         <div className="p-6 pt-0 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                Operating Mode Ceiling
-                <HelpTooltip>
-                  Global mode ceiling. Individual strategies cannot exceed this operating mode.
-                </HelpTooltip>
+                {t('settings.modeCeiling')}
+                <HelpTooltip>{t('settings.modeCeilingHelp')}</HelpTooltip>
               </label>
               <select
                 value={formState.mode}
@@ -289,10 +286,10 @@ export function Settings() {
                 }
                 className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
               >
-                <option value="backtest">Backtest (backtest)</option>
-                <option value="dryrun">Dry Run (dryrun)</option>
-                <option value="paper">Paper Trading (paper)</option>
-                <option value="live">Real Live Trading (live)</option>
+                <option value="backtest">{t('settings.optBacktest')}</option>
+                <option value="dryrun">{t('settings.optDryrun')}</option>
+                <option value="paper">{t('settings.optPaper')}</option>
+                <option value="live">{t('settings.optLive')}</option>
               </select>
             </div>
 
@@ -305,10 +302,8 @@ export function Settings() {
                   className="w-4 h-4 rounded border-border text-muted-foreground focus:ring-ring focus:ring-offset-background"
                 />
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  Use Exchange Testnet
-                  <HelpTooltip>
-                    When enabled, connects to Binance Testnet endpoints rather than production exchanges.
-                  </HelpTooltip>
+                  {t('settings.testnet')}
+                  <HelpTooltip>{t('settings.testnetHelp')}</HelpTooltip>
                 </span>
               </label>
             </div>
@@ -316,12 +311,12 @@ export function Settings() {
 
           <div className="pt-2 border-t border-border">
             <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
-              Dry-Run & Paper Simulation Frictions
+              {t('settings.frictions')}
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  Slippage (%) <HelpTooltip>Simulated adverse execution slippage per fill</HelpTooltip>
+                  {t('settings.slippage')} <HelpTooltip>{t('settings.slippageHelp')}</HelpTooltip>
                 </label>
                 <input
                   type="number"
@@ -343,7 +338,7 @@ export function Settings() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  Fee (%) <HelpTooltip>Simulated exchange commission fee per trade</HelpTooltip>
+                  {t('settings.fee')} <HelpTooltip>{t('settings.feeHelp')}</HelpTooltip>
                 </label>
                 <input
                   type="number"
@@ -365,7 +360,7 @@ export function Settings() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  Fill Delay (ms) <HelpTooltip>Simulated network & queue latency before fill</HelpTooltip>
+                  {t('settings.fillDelay')} <HelpTooltip>{t('settings.fillDelayHelp')}</HelpTooltip>
                 </label>
                 <input
                   type="number"
@@ -392,12 +387,12 @@ export function Settings() {
       {/* 3. Webhook Notifications */}
       <Card>
         <CardHeader
-          title="Webhook Notifications"
-          subtitle="Dispatch trade execution and risk alert events to Discord, Telegram, or custom endpoints"
+          title={t('settings.webhookTitle')}
+          subtitle={t('settings.webhookSubtitle')}
         />
         <div className="p-6 pt-0">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Webhook URL</label>
+            <label className="text-xs font-semibold text-foreground">{t('settings.webhookUrl')}</label>
             <input
               type="url"
               value={formState.webhook_url}
@@ -406,18 +401,37 @@ export function Settings() {
               className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
             />
           </div>
+          {/* i18n-02 §1: Settings.DefaultLocale. */}
+          <div className="flex flex-col gap-1.5 mt-4 max-w-xs">
+            <label htmlFor="settings-default-locale" className="text-xs font-semibold text-foreground">
+              {t('settings.defaultLocale')}
+            </label>
+            <select
+              id="settings-default-locale"
+              value={formState.default_locale ?? 'en'}
+              onChange={(e) => setFormState({ ...formState, default_locale: e.target.value })}
+              className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
+            >
+              {LOCALES.map((l) => (
+                <option key={l} value={l}>
+                  {LOCALE_NATIVE[l]}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">{t('settings.defaultLocaleHelp')}</p>
+          </div>
         </div>
       </Card>
 
       {/* 4. Monitoring */}
       <Card>
         <CardHeader
-          title="Monitoring & Observability Endpoints"
-          subtitle="External dashboards linked from the Monitoring menu in the top bar"
+          title={t('settings.monitoringTitle')}
+          subtitle={t('settings.monitoringSubtitle')}
         />
         <div className="p-6 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Prometheus URL</label>
+            <label className="text-xs font-semibold text-foreground">{t('settings.prometheusUrl')}</label>
             <input
               type="url"
               value={formState.prometheus_url}
@@ -428,7 +442,7 @@ export function Settings() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Grafana Dashboard URL</label>
+            <label className="text-xs font-semibold text-foreground">{t('settings.grafanaUrl')}</label>
             <input
               type="url"
               value={formState.grafana_url}
@@ -439,7 +453,7 @@ export function Settings() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Worker Asynqmon URL</label>
+            <label className="text-xs font-semibold text-foreground">{t('settings.workerAsynqUrl')}</label>
             <input
               type="url"
               value={formState.asynqmon_url}
@@ -450,7 +464,7 @@ export function Settings() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Agents Asynqmon URL</label>
+            <label className="text-xs font-semibold text-foreground">{t('settings.agentsAsynqUrl')}</label>
             <input
               type="url"
               value={formState.agents_asynqmon_url}
@@ -471,7 +485,7 @@ export function Settings() {
           className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary text-sm font-semibold text-white shadow-lg flex items-center gap-2 transition-colors disabled:opacity-50"
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          <span>Save Settings</span>
+          <span>{t('settings.save')}</span>
         </button>
       </div>
 
@@ -491,10 +505,10 @@ export function Settings() {
       {/* Live Mode Confirmation Dialog */}
       <ConfirmDialog
         isOpen={pendingLiveConfirm}
-        title="Confirm Switch to LIVE Mode"
-        message="Switching to LIVE mode will place real orders with real capital using your configured broker credentials. This cannot be undone by canceling after the fact — you'll need to switch back to a safer mode explicitly. Continue?"
+        title={t('settings.liveTitle')}
+        message={t('settings.liveMessage')}
         isDangerous={true}
-        confirmText="Confirm & Enable LIVE"
+        confirmText={t('settings.liveConfirm')}
         onConfirm={handleConfirmLive}
         onCancel={handleCancelLive}
       />
@@ -503,6 +517,7 @@ export function Settings() {
 }
 
 function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | null }) {
+  const t = useT();
   if (phase === 'saving-risk') {
     return (
       <div
@@ -511,8 +526,7 @@ function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | n
       >
         <Loader2 className="w-4 h-4 animate-spin text-foreground shrink-0" />
         <span>
-          Applying in-process — waiting for active trading cycles to drain before swapping credentials/mode.
-          This can take up to 30 seconds.
+          {t('settings.applyingRisk')}
         </span>
       </div>
     );
@@ -525,7 +539,7 @@ function SettingsSaveBar({ phase, error }: { phase: SavePhase; error: string | n
         aria-live="polite"
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground shrink-0" />
-        <span>Applying settings…</span>
+        <span>{t('settings.applying')}</span>
       </div>
     );
   }
@@ -558,6 +572,7 @@ function MaskedSecretField({
   onSaveChange: (val: string) => void;
   onReset: () => void;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [typedValue, setTypedValue] = useState('');
 
@@ -588,7 +603,7 @@ function MaskedSecretField({
         </label>
         {isDirty && (
           <span className="text-[10px] font-bold text-warning uppercase tracking-wider bg-warning/15 px-1.5 py-0.5 rounded border border-warning/40">
-            Modified
+            {t('settings.modified')}
           </span>
         )}
       </div>
@@ -600,7 +615,7 @@ function MaskedSecretField({
             autoFocus
             value={typedValue}
             onChange={(e) => setTypedValue(e.target.value)}
-            placeholder="Paste new secret here"
+            placeholder={t('settings.pasteSecret')}
             className="w-full px-2.5 py-1.5 rounded bg-card border border-border text-xs text-foreground focus:outline-none focus:border-primary font-mono"
           />
           <div className="flex items-center justify-end gap-2">
@@ -609,29 +624,29 @@ function MaskedSecretField({
               onClick={handleCancel}
               className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               onClick={handleApply}
               className="px-2.5 py-1 rounded text-xs font-semibold bg-primary hover:bg-primary text-white"
             >
-              Confirm New Value
+              {t('settings.confirmValue')}
             </button>
           </div>
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2 pt-0.5">
           <span className="font-mono text-xs text-muted-foreground truncate">
-            {isDirty ? '•••••••••••••••• (New value queued)' : maskedValue || '(Not configured)'}
+            {isDirty ? t('settings.queued') : maskedValue || t('settings.notConfigured')}
           </span>
           <div className="flex items-center gap-1 shrink-0">
             {isDirty ? (
               <button
                 type="button"
                 onClick={handleRevert}
-                aria-label={`Revert ${label}`}
-                title="Revert to original saved value"
+                aria-label={t('settings.revertAria', { label })}
+                title={t('settings.revertTitle')}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -640,10 +655,10 @@ function MaskedSecretField({
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                aria-label={`Change ${label}`}
+                aria-label={t('settings.changeAria', { label })}
                 className="px-2 py-1 rounded text-xs font-medium text-foreground hover:text-foreground hover:bg-card/40 border border-border/60 flex items-center gap-1"
               >
-                <Edit3 className="w-3 h-3" /> Change
+                <Edit3 className="w-3 h-3" /> {t('settings.change')}
               </button>
             )}
           </div>

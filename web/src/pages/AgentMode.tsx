@@ -19,7 +19,7 @@ import { Agent, Strategy } from '@/api/types';
 import { useChatSession } from '@/context/ChatSessionContext';
 import { usePendingProposalCount, useProposals, useStrategies, useStrategy } from '@/hooks/queries';
 import { usePersistedOpen } from '@/hooks/usePersistedOpen';
-import { formatUsd, formatRelative } from '@/lib/time';
+import { formatUsd, formatRelative } from '@/lib/format';
 import { proposalKindLabel } from '@/lib/proposals';
 import { ModeBadge } from '@/components/ui/ModeBadge';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -29,17 +29,13 @@ import { ChatTranscript } from '@/components/domain/agentchat/ChatTranscript';
 import { ChatComposer, ChatComposerHandle } from '@/components/domain/agentchat/ChatComposer';
 import { ChatBudgetLine, ChatDisabledNotice } from '@/components/domain/agentchat/ChatAccess';
 import { useAuth } from '@/context/AuthContext';
+import type { MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
-const STRATEGY_PROMPTS = [
-  'Backtest this over the last 6 months',
-  'Why did the last trades lose?',
-  'Propose an improvement as a challenger',
-];
-const GENERAL_PROMPTS = [
-  'Which strategies have no recent backtest?',
-  'Summarize how my strategies performed this week',
-  'Which strategy has the worst drawdown right now, and why?',
-];
+// Empty-state suggestions (translated: they're sent to the model in the
+// user's language, which is fine - i18n-01 §3).
+const STRATEGY_PROMPTS: MessageKey[] = ['chat.promptStrategy1', 'chat.promptStrategy2', 'chat.promptStrategy3'];
+const GENERAL_PROMPTS: MessageKey[] = ['chat.promptGeneral1', 'chat.promptGeneral2', 'chat.promptGeneral3'];
 
 const RAIL_HEADING = 'px-3 mb-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-muted-foreground';
 
@@ -48,6 +44,7 @@ const RAIL_HEADING = 'px-3 mb-1.5 text-[10px] font-mono font-semibold uppercase 
 // right rail: the selected strategy's summary, shared memory and pending
 // proposals. Same conversation state as the Code-mode dock.
 export function AgentMode() {
+  const t = useT();
   const s = useChatSession();
   const [searchParams, setSearchParams] = useSearchParams();
   const composerRef = useRef<ChatComposerHandle>(null);
@@ -58,11 +55,11 @@ export function AgentMode() {
 
   useEffect(() => {
     const prev = document.title;
-    document.title = s.strategyId != null ? `Agent · strategy #${s.strategyId} · GTB` : 'Agent · GTB';
+    document.title = s.strategyId != null ? t('chat.docTitleStrategy', { id: s.strategyId }) : t('chat.docTitle');
     return () => {
       document.title = prev;
     };
-  }, [s.strategyId]);
+  }, [s.strategyId, t]);
 
   const setParam = (key: 'strategy' | 'agent', value: number | undefined) => {
     const next = new URLSearchParams(searchParams);
@@ -81,7 +78,7 @@ export function AgentMode() {
     setLeftDrawer(false);
   };
 
-  const prompts = s.strategyId != null ? STRATEGY_PROMPTS : GENERAL_PROMPTS;
+  const prompts = (s.strategyId != null ? STRATEGY_PROMPTS : GENERAL_PROMPTS).map((k) => t(k));
   const hasStrategy = s.strategyId != null;
 
   const leftRail = (
@@ -98,18 +95,18 @@ export function AgentMode() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex min-w-0 relative" data-testid="agent-mode">
       {/* Left rail: inline from lg, a drawer below. */}
-      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border bg-card flex-col min-h-0" aria-label="Conversation context">
+      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border bg-card flex-col min-h-0" aria-label={t('chat.contextAria')}>
         {leftRail}
       </aside>
 
-      <section className="flex-1 min-w-0 flex flex-col" aria-label="Conversation">
+      <section className="flex-1 min-w-0 flex flex-col" aria-label={t('chat.conversationAria')}>
         <div className="h-11 shrink-0 border-b border-border flex items-center gap-2 px-3 min-w-0">
           <button
             type="button"
             onClick={() => setLeftDrawer(true)}
             className="lg:hidden p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60"
-            aria-label="Open conversation context"
-            title="Persona and strategy"
+            aria-label={t('chat.openContext')}
+            title={t('chat.personaAndStrategy')}
           >
             <PanelLeft className="w-4 h-4" />
           </button>
@@ -120,8 +117,8 @@ export function AgentMode() {
                 type="button"
                 onClick={() => setRightDrawer(true)}
                 className="xl:hidden ml-auto p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60"
-                aria-label="Open strategy info"
-                title="Strategy info"
+                aria-label={t('chat.openStrategyInfo')}
+                title={t('chat.strategyInfo')}
               >
                 <PanelRightOpen className="w-4 h-4" />
               </button>
@@ -129,8 +126,8 @@ export function AgentMode() {
                 type="button"
                 onClick={() => setRightRailOpen((o) => !o)}
                 className="hidden xl:inline-flex ml-auto p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60"
-                aria-label={rightRailOpen ? 'Hide strategy info' : 'Show strategy info'}
-                title={rightRailOpen ? 'Hide strategy info' : 'Show strategy info'}
+                aria-label={rightRailOpen ? t('chat.hideStrategyInfo') : t('chat.showStrategyInfo')}
+                title={rightRailOpen ? t('chat.hideStrategyInfo') : t('chat.showStrategyInfo')}
               >
                 {rightRailOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
               </button>
@@ -146,8 +143,8 @@ export function AgentMode() {
               <MessageSquareText className="w-10 h-10 text-muted-foreground opacity-40" />
               <p className="text-sm text-muted-foreground">
                 {hasStrategy
-                  ? `Talk to ${s.selectedAgent?.name ?? 'the agent'} about strategy #${s.strategyId}.`
-                  : `Ask ${s.selectedAgent?.name ?? 'the agent'} about your strategies, backtests and proposals.`}
+                  ? t('chat.emptyStrategy', { agent: s.selectedAgent?.name ?? t('chat.theAgent'), id: s.strategyId })
+                  : t('chat.emptyGeneral', { agent: s.selectedAgent?.name ?? t('chat.theAgent') })}
               </p>
               {canChat && <div className="flex flex-wrap justify-center gap-2 mt-1">
                 {prompts.map((p) => (
@@ -177,7 +174,7 @@ export function AgentMode() {
               value={s.draft}
               onChange={s.setDraft}
               disabled={s.sending}
-              placeholder={hasStrategy ? `Message about strategy #${s.strategyId}… (Shift+Enter for a new line)` : 'Message the agent… (Shift+Enter for a new line)'}
+              placeholder={hasStrategy ? t('chat.placeholderStrategy', { id: s.strategyId }) : t('chat.placeholderGeneral')}
               onSubmit={() => {
                 s.send(s.draft);
                 s.setDraft('');
@@ -187,7 +184,7 @@ export function AgentMode() {
               <ChatDisabledNotice density="comfortable" />
             )}
             <p className="mt-1.5 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              <span>Agents only change backtest/dryrun testing strategies; live changes need your approval.</span>
+              <span>{t('chat.safetyNote')}</span>
               {canChat && <ChatBudgetLine className="ml-auto" />}
             </p>
           </div>
@@ -196,18 +193,18 @@ export function AgentMode() {
 
       {/* Right rail: inline (collapsible) from xl, a drawer below. */}
       {rightRail && rightRailOpen && (
-        <aside className="hidden xl:flex w-[22rem] shrink-0 border-l border-border bg-card flex-col min-h-0" aria-label="Strategy info">
+        <aside className="hidden xl:flex w-[22rem] shrink-0 border-l border-border bg-card flex-col min-h-0" aria-label={t('chat.strategyInfo')}>
           {rightRail}
         </aside>
       )}
 
       {leftDrawer && (
-        <Drawer side="left" label="Conversation context" onClose={() => setLeftDrawer(false)}>
+        <Drawer side="left" label={t('chat.contextAria')} onClose={() => setLeftDrawer(false)}>
           {leftRail}
         </Drawer>
       )}
       {rightDrawer && rightRail && (
-        <Drawer side="right" label="Strategy info" onClose={() => setRightDrawer(false)}>
+        <Drawer side="right" label={t('chat.strategyInfo')} onClose={() => setRightDrawer(false)}>
           {rightRail}
         </Drawer>
       )}
@@ -216,11 +213,12 @@ export function AgentMode() {
 }
 
 function ContextTitle({ strategyId, agentName, paused }: { strategyId?: number; agentName?: string; paused: boolean }) {
+  const t = useT();
   const { data: strategy } = useStrategy(strategyId ?? 0);
   return (
     <div className="min-w-0 flex items-center gap-2 text-sm">
       <Bot className="w-4 h-4 text-primary shrink-0" />
-      <span className="font-semibold text-foreground truncate">{agentName ?? 'Agent'}</span>
+      <span className="font-semibold text-foreground truncate">{agentName ?? t('chat.agent')}</span>
       {paused && <AgentStatusBadge status="paused" />}
       <span className="text-muted-foreground shrink-0">·</span>
       <span className="text-muted-foreground truncate">
@@ -229,7 +227,7 @@ function ContextTitle({ strategyId, agentName, paused }: { strategyId?: number; 
             <span className="font-mono">#{strategyId}</span> {strategy?.name ?? ''}
           </>
         ) : (
-          'General'
+          t('chat.general')
         )}
       </span>
     </div>
@@ -249,6 +247,7 @@ function Drawer({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -277,7 +276,7 @@ function Drawer({
         <button
           type="button"
           onClick={onClose}
-          aria-label={`Close ${label.toLowerCase()}`}
+          aria-label={t('chat.closeDrawer', { label: label.toLowerCase() })}
           className="absolute top-2 right-2 z-10 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60"
         >
           <X className="w-4 h-4" />
@@ -301,6 +300,7 @@ function LeftRail({
   strategyId?: number;
   onSelectStrategy: (id: number | undefined) => void;
 }) {
+  const t = useT();
   const { data: strategies = [], isLoading } = useStrategies();
   const { data: pending = 0 } = usePendingProposalCount();
   const [query, setQuery] = useState('');
@@ -314,10 +314,10 @@ function LeftRail({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto py-3 space-y-4">
-      <section aria-label="Personas">
-        <h2 className={RAIL_HEADING}>Persona</h2>
+      <section aria-label={t('chat.personas')}>
+        <h2 className={RAIL_HEADING}>{t('chat.persona')}</h2>
         <ul className="px-1.5 space-y-0.5">
-          {agents.length === 0 && <li className="px-2 text-xs text-muted-foreground">Default agent</li>}
+          {agents.length === 0 && <li className="px-2 text-xs text-muted-foreground">{t('chat.defaultAgent')}</li>}
           {agents.map((a) => {
             const selected = a.id === selectedAgentId;
             return (
@@ -326,7 +326,7 @@ function LeftRail({
                   type="button"
                   onClick={() => onSelectAgent(a)}
                   aria-pressed={selected}
-                  title={a.paused ? `${a.name} is paused - it can't answer until it is resumed on the Agents page.` : a.goal || a.name}
+                  title={a.paused ? t('chat.agentPausedTitle', { name: a.name }) : a.goal || a.name}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs transition-colors ${
                     selected ? 'bg-accent text-accent-foreground font-semibold' : 'text-foreground hover:bg-accent/60'
                   } ${a.paused ? 'opacity-60' : ''}`}
@@ -334,7 +334,7 @@ function LeftRail({
                   <Bot className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">{a.name}</span>
                   {a.paused && <AgentStatusBadge status="paused" />}
-                  <span className="ml-auto font-mono tabular-nums text-[10px] text-muted-foreground" title="Model cost today (UTC)">
+                  <span className="ml-auto font-mono tabular-nums text-[10px] text-muted-foreground" title={t('chat.costToday')}>
                     {formatUsd(a.today_cost_usd)}
                   </span>
                 </button>
@@ -344,16 +344,16 @@ function LeftRail({
         </ul>
       </section>
 
-      <section aria-label="Strategy context">
-        <h2 className={RAIL_HEADING}>Context</h2>
+      <section aria-label={t('chat.strategyContext')}>
+        <h2 className={RAIL_HEADING}>{t('chat.context')}</h2>
         <div className="px-3 mb-1.5 relative">
           <Search className="w-3.5 h-3.5 absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search strategies"
-            aria-label="Search strategies"
+            placeholder={t('chat.searchStrategies')}
+            aria-label={t('chat.searchStrategies')}
             className="form-input w-full text-xs py-1.5 pl-7"
           />
         </div>
@@ -361,10 +361,10 @@ function LeftRail({
           <li>
             <StrategyOption selected={strategyId == null} onClick={() => onSelectStrategy(undefined)}>
               <Globe className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">General</span>
+              <span className="truncate">{t('chat.general')}</span>
             </StrategyOption>
           </li>
-          {isLoading && <li className="px-2 text-xs text-muted-foreground">Loading strategies…</li>}
+          {isLoading && <li className="px-2 text-xs text-muted-foreground">{t('chat.loadingStrategies')}</li>}
           {filtered.map((st) => (
             <li key={st.id}>
               <StrategyOption selected={st.id === strategyId} onClick={() => onSelectStrategy(st.id)}>
@@ -373,18 +373,18 @@ function LeftRail({
             </li>
           ))}
           {!isLoading && filtered.length === 0 && query && (
-            <li className="px-2 text-xs text-muted-foreground">No strategy matches “{query}”.</li>
+            <li className="px-2 text-xs text-muted-foreground">{t('chat.noStrategyMatch', { query })}</li>
           )}
         </ul>
       </section>
 
-      <nav aria-label="Agents platform" className="px-1.5 space-y-0.5 border-t border-border pt-3">
-        <RailLink to="/agents" icon={<Bot className="w-3.5 h-3.5" />} label="Agents" />
-        <RailLink to="/agents/reports" icon={<FileText className="w-3.5 h-3.5" />} label="Reports" />
+      <nav aria-label={t('chat.platformNav')} className="px-1.5 space-y-0.5 border-t border-border pt-3">
+        <RailLink to="/agents" icon={<Bot className="w-3.5 h-3.5" />} label={t('nav.agents')} />
+        <RailLink to="/agents/reports" icon={<FileText className="w-3.5 h-3.5" />} label={t('nav.reports')} />
         <RailLink
           to="/agents/proposals"
           icon={<GitPullRequest className="w-3.5 h-3.5" />}
-          label="Proposals"
+          label={t('nav.proposals')}
           badge={pending > 0 ? pending : undefined}
         />
       </nav>
@@ -408,13 +408,14 @@ function StrategyOption({ selected, onClick, children }: { selected: boolean; on
 }
 
 function StrategyRow({ strategy: st }: { strategy: Strategy }) {
+  const t = useT();
   return (
     <span className="flex flex-col gap-1 min-w-0 w-full">
       <span className="flex items-center gap-1.5 min-w-0">
         <span className="font-mono text-muted-foreground shrink-0">#{st.id}</span>
         <span className="truncate">{st.name}</span>
         {st.challenger_of_id ? (
-          <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-primary" title={`Challenger of #${st.challenger_of_id}`}>
+          <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-primary" title={t('chat.challengerOfId', { id: st.challenger_of_id })}>
             <GitBranch className="w-3 h-3" />#{st.challenger_of_id}
           </span>
         ) : null}
@@ -428,6 +429,7 @@ function StrategyRow({ strategy: st }: { strategy: Strategy }) {
 }
 
 function RailLink({ to, icon, label, badge }: { to: string; icon: React.ReactNode; label: string; badge?: number }) {
+  const t = useT();
   return (
     <Link to={to} className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-accent/60">
       {icon}
@@ -435,7 +437,7 @@ function RailLink({ to, icon, label, badge }: { to: string; icon: React.ReactNod
       {badge != null && (
         <span
           className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full bg-warning text-warning-foreground text-[10px] font-bold leading-5 text-center"
-          aria-label={`${badge} pending`}
+          aria-label={t('chat.pendingCount', { count: badge })}
         >
           {badge > 99 ? '99+' : badge}
         </span>
@@ -445,17 +447,18 @@ function RailLink({ to, icon, label, badge }: { to: string; icon: React.ReactNod
 }
 
 function RightRail({ strategyId }: { strategyId: number }) {
+  const t = useT();
   const { data: st, isLoading, error } = useStrategy(strategyId);
   const proposals = useProposals({ status: 'pending', strategy_id: strategyId });
   const pending = useMemo(() => proposals.data?.pages.flat() ?? [], [proposals.data]);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
-      <section aria-label="Strategy summary" className="rounded-lg border border-border bg-background/40 p-3 space-y-2">
+      <section aria-label={t('chat.strategySummary')} className="rounded-lg border border-border bg-background/40 p-3 space-y-2">
         {isLoading ? (
-          <div className="text-xs text-muted-foreground">Loading strategy #{strategyId}…</div>
+          <div className="text-xs text-muted-foreground">{t('chat.loadingStrategy', { id: strategyId })}</div>
         ) : error || !st ? (
-          <div className="text-xs text-destructive">Strategy #{strategyId} couldn't be loaded.</div>
+          <div className="text-xs text-destructive">{t('chat.strategyLoadFailed', { id: strategyId })}</div>
         ) : (
           <>
             <div className="pr-6">
@@ -470,19 +473,19 @@ function RightRail({ strategyId }: { strategyId: number }) {
                   to={`/agent?strategy=${st.challenger_of_id}`}
                   className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline"
                 >
-                  <GitBranch className="w-3 h-3" /> challenger of #{st.challenger_of_id}
+                  <GitBranch className="w-3 h-3" /> {t('chat.challengerOfLower', { id: st.challenger_of_id })}
                 </Link>
               ) : null}
             </div>
             <div className="text-xs text-muted-foreground">
               <span className="font-mono text-foreground">{(st.monitored_symbols ?? []).join(', ') || '—'}</span>
-              {st.cycle ? <span> · every {st.cycle}m</span> : null}
+              {st.cycle ? <span>{t('chat.everyMinutes', { count: st.cycle })}</span> : null}
             </div>
             <Link
               to={`/strategies/${st.id}/edit`}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
             >
-              <Code2 className="w-3.5 h-3.5" /> Open in Code mode
+              <Code2 className="w-3.5 h-3.5" /> {t('chat.openInCode')}
             </Link>
           </>
         )}
@@ -492,15 +495,15 @@ function RightRail({ strategyId }: { strategyId: number }) {
           added here shows up there without a reload (and vice versa). */}
       <AgentNotesPanel strategyId={strategyId} />
 
-      <section aria-label="Pending proposals" className="rounded-lg border border-border bg-card">
+      <section aria-label={t('chat.pendingProposals')} className="rounded-lg border border-border bg-card">
         <h2 className="px-3 py-2 bg-secondary/60 border-b border-border text-[11px] font-semibold uppercase tracking-wider text-foreground">
-          Pending proposals
+          {t('chat.pendingProposals')}
         </h2>
         <div className="p-2">
           {proposals.isLoading ? (
-            <div className="px-1 text-xs text-muted-foreground">Loading…</div>
+            <div className="px-1 text-xs text-muted-foreground">{t('chat.loading')}</div>
           ) : pending.length === 0 ? (
-            <div className="px-1 text-xs text-muted-foreground">None waiting for approval.</div>
+            <div className="px-1 text-xs text-muted-foreground">{t('chat.noneWaiting')}</div>
           ) : (
             <ul className="space-y-1">
               {pending.map((p) => (

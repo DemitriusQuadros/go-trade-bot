@@ -54,6 +54,8 @@ func (s *ReportDataSource) BacktestRun(ctx context.Context, id uint) (agentrepor
 	out := agentreport.Series{
 		Label: fmt.Sprintf("Backtest #%d · %s · %s → %s", run.ID, run.Symbol,
 			run.StartDate.UTC().Format("2006-01-02"), run.EndDate.UTC().Format("2006-01-02")),
+		Ref: &agentreport.SeriesRef{Kind: agentreport.SourceBacktestRun, ID: run.ID, Symbol: run.Symbol,
+			Start: run.StartDate, End: run.EndDate},
 		Metrics: agentreport.Metrics{
 			Sharpe:           run.Sharpe,
 			MaxDrawdown:      run.MaxDrawdownPct,
@@ -107,7 +109,10 @@ func (s *ReportDataSource) StrategyLive(ctx context.Context, strategyID uint, da
 		return agentreport.Series{}, err
 	}
 
-	out := agentreport.Series{Label: fmt.Sprintf("%s (strategy #%d) · live · last %d days · per-trade Sharpe, drawdown in quote currency", strat.Name, strategyID, days)}
+	out := agentreport.Series{
+		Label: fmt.Sprintf("%s (strategy #%d) · live · last %d days · per-trade Sharpe, drawdown in quote currency", strat.Name, strategyID, days),
+		Ref:   &agentreport.SeriesRef{Kind: agentreport.SourceStrategyLive, ID: strategyID, Name: strat.Name, Days: days},
+	}
 	var profits []float64
 	var grossWin, grossLoss, equity, peak, maxDD float64
 	wins := 0

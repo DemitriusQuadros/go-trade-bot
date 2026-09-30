@@ -8,18 +8,20 @@ import { ModeBadge } from '@/components/ui/ModeBadge';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { CardAction, CardButton, CardFallback, CardSkeleton, ChatCard, ChatDensity } from './ChatCard';
 import { ApplyTarget } from '../types';
+import { tr } from '@/i18n';
+import { useT } from '@/i18n';
 
 const COLLAPSED_CHANGED_LINES = 30;
 const CONTEXT_LINES = 2;
 
 function verbFor(calls: AgentToolCall[]): string {
   const tools = new Set(calls.map((c) => c.tool));
-  if (tools.has('create_challenger')) return 'Created challenger';
-  if (tools.has('create_strategy')) return 'Created strategy';
-  if (tools.has('deploy_to_testing')) return 'Deployed to testing';
+  if (tools.has('create_challenger')) return tr('cards.verbChallenger');
+  if (tools.has('create_strategy')) return tr('cards.verbCreated');
+  if (tools.has('deploy_to_testing')) return tr('cards.verbDeployed');
   // save_strategy_script without strategy_id creates a strategy.
-  if (calls.every((c) => c.tool === 'save_strategy_script' && toolArgNumber(c, 'strategy_id') == null)) return 'Created strategy';
-  return 'Updated script';
+  if (calls.every((c) => c.tool === 'save_strategy_script' && toolArgNumber(c, 'strategy_id') == null)) return tr('cards.verbCreated');
+  return tr('cards.verbUpdated');
 }
 
 function time(iso: string | undefined): number {
@@ -80,6 +82,7 @@ export function CodeChangeCard({
   density: ChatDensity;
   apply?: ApplyTarget;
 }) {
+  const t = useT();
   const { strategyId, calls } = item;
   const strategy = useStrategy(strategyId);
   const versions = useScriptVersions(strategyId);
@@ -103,9 +106,9 @@ export function CodeChangeCard({
   const removed = diff.filter((d) => d.type === 'remove').length;
   const { rows, truncated } = useMemo(() => hunks(diff, full ? null : COLLAPSED_CHANGED_LINES), [diff, full]);
 
-  if (strategy.isLoading || versions.isLoading) return <CardSkeleton label={`Loading strategy #${strategyId}`} />;
+  if (strategy.isLoading || versions.isLoading) return <CardSkeleton label={t('cards.loadingStrategy', { id: strategyId })} />;
   if (strategy.error && proposed == null) {
-    return <CardFallback text={`Strategy #${strategyId} couldn't be loaded.`} to={`/strategies/${strategyId}/edit`} />;
+    return <CardFallback text={t('cards.strategyFailed', { id: strategyId })} to={`/strategies/${strategyId}/edit`} />;
   }
 
   const s = strategy.data;
@@ -121,7 +124,7 @@ export function CodeChangeCard({
         <>
           {verbFor(calls)} · #{strategyId}
           {s?.name ? <span className="font-normal text-muted-foreground"> {s.name}</span> : null}
-          {championId ? <span className="font-normal text-muted-foreground"> (challenger of #{championId})</span> : null}
+          {championId ? <span className="font-normal text-muted-foreground">{t('cards.challengerOf', { id: championId })}</span> : null}
         </>
       }
       meta={
@@ -137,20 +140,20 @@ export function CodeChangeCard({
         <>
           {canApply && (
             <CardButton onClick={() => apply!.onApply(proposed!)} icon={<FileDiff className="w-3 h-3" />}>
-              Apply to editor
+              {t('cards.applyToEditor')}
             </CardButton>
           )}
-          <CardAction to={`/strategies/${strategyId}/edit`}>Open in Code mode</CardAction>
+          <CardAction to={`/strategies/${strategyId}/edit`}>{t('cards.openInCode')}</CardAction>
         </>
       }
     >
       {proposed == null ? (
-        <p className="text-xs text-muted-foreground">The script source isn't available for this change.</p>
+        <p className="text-xs text-muted-foreground">{t('cards.noSource')}</p>
       ) : added === 0 && removed === 0 ? (
-        <p className="text-xs text-muted-foreground">No changes against the previous script version.</p>
+        <p className="text-xs text-muted-foreground">{t('cards.noDiff')}</p>
       ) : (
         <>
-          {!previous && <p className="text-[11px] text-muted-foreground">No previous version - the whole script is new.</p>}
+          {!previous && <p className="text-[11px] text-muted-foreground">{t('cards.noPrevious')}</p>}
           <div className="max-h-96 overflow-auto rounded border border-border/60 bg-background/60 font-mono text-[11px]">
             {rows.map((line, i) =>
               line.type === 'gap' ? (
@@ -178,7 +181,7 @@ export function CodeChangeCard({
               onClick={() => setFull((f) => !f)}
               className="text-[11px] text-muted-foreground hover:text-foreground underline"
             >
-              {full ? 'Show first 30 changed lines' : 'Show full diff'}
+              {full ? t('cards.showFirst', { count: COLLAPSED_CHANGED_LINES }) : t('cards.showFullDiff')}
             </button>
           )}
         </>

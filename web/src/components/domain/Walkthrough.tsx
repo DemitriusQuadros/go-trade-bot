@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { tr, type MessageKey } from '@/i18n';
+import { useT } from '@/i18n';
 
 export const WALKTHROUGH_STORAGE_KEY = 'gtb_walkthrough_completed';
 
@@ -11,39 +13,25 @@ export interface WalkthroughStep {
   route?: string;
 }
 
+// Title/body are read at access time from the i18n catalog (walkthrough.*).
+const step = (targetSelector: string, key: string, route?: string): WalkthroughStep => ({
+  targetSelector,
+  route,
+  get title() {
+    return tr(`walkthrough.${key}Title` as MessageKey);
+  },
+  get body() {
+    return tr(`walkthrough.${key}Body` as MessageKey);
+  },
+});
+
 export const DEFAULT_WALKTHROUGH_STEPS: WalkthroughStep[] = [
-  {
-    targetSelector: '[data-walkthrough="nav-strategies"]',
-    title: 'Strategies',
-    body: 'Build, backtest, and run trading strategies from here — no code required.',
-  },
-  {
-    targetSelector: '[data-walkthrough="new-strategy-btn"]',
-    route: '/strategies',
-    title: 'Build a strategy',
-    body: 'This wizard walks you through scope, entry rules, sizing, and exits — no JSON editing needed.',
-  },
-  {
-    targetSelector: '[data-walkthrough="mode-toggle"]',
-    title: 'Agent and Code modes',
-    body:
-      'Agent mode is a full-screen conversation with an AI agent; Code mode is the app with the same chat in a side dock (Ctrl+.). Switch any time with Ctrl+Shift+. - the conversation carries over.',
-  },
-  {
-    targetSelector: '[data-walkthrough="nav-backtest"]',
-    title: 'Backtest',
-    body: 'Validate a strategy against historical data before risking real capital.',
-  },
-  {
-    targetSelector: '[data-walkthrough="nav-settings"]',
-    title: 'Settings',
-    body: 'Broker credentials, trading mode, and monitoring links all live here.',
-  },
-  {
-    targetSelector: '[data-walkthrough="nav-help"]',
-    title: 'Help',
-    body: 'Come back here any time you need a refresher — including replaying this walkthrough.',
-  },
+  step('[data-walkthrough="nav-strategies"]', 'strategies'),
+  step('[data-walkthrough="new-strategy-btn"]', 'build', '/strategies'),
+  step('[data-walkthrough="mode-toggle"]', 'modes'),
+  step('[data-walkthrough="nav-backtest"]', 'backtest'),
+  step('[data-walkthrough="nav-settings"]', 'settings'),
+  step('[data-walkthrough="nav-help"]', 'help'),
 ];
 
 export interface WalkthroughProps {
@@ -57,6 +45,7 @@ export function Walkthrough({
   onComplete,
   onSkip,
 }: WalkthroughProps) {
+  const t = useT();
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const navigate = useNavigate();
@@ -173,7 +162,7 @@ export function Walkthrough({
 
       {/* Screen-reader announcement */}
       <div className="sr-only" aria-live="polite">
-        {`Step ${currentStepIdx + 1} of ${steps.length}: ${step.title}. ${step.body}`}
+        {t('walkthrough.stepAnnounce', { n: currentStepIdx + 1, total: steps.length, title: step.title, body: step.body })}
       </div>
 
       {/* Step Callout Card */}
@@ -193,7 +182,7 @@ export function Walkthrough({
             type="button"
             onClick={onSkip}
             className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-secondary"
-            aria-label="Skip walkthrough"
+            aria-label={t('walkthrough.skipAria')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -207,7 +196,7 @@ export function Walkthrough({
             onClick={onSkip}
             className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
           >
-            Skip
+            {t('walkthrough.skip')}
           </button>
           <div className="flex items-center gap-2">
             {currentStepIdx > 0 && (
@@ -216,7 +205,7 @@ export function Walkthrough({
                 onClick={handlePrev}
                 className="px-2.5 py-1.5 rounded text-xs text-foreground hover:bg-secondary flex items-center gap-1"
               >
-                <ChevronLeft className="w-3.5 h-3.5" /> Back
+                <ChevronLeft className="w-3.5 h-3.5" /> {t('common.back')}
               </button>
             )}
             <button
@@ -226,11 +215,11 @@ export function Walkthrough({
             >
               {isLast ? (
                 <>
-                  <Check className="w-3.5 h-3.5" /> Done
+                  <Check className="w-3.5 h-3.5" /> {t('common.done')}
                 </>
               ) : (
                 <>
-                  Next <ChevronRight className="w-3.5 h-3.5" />
+                  {t('common.next')} <ChevronRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>

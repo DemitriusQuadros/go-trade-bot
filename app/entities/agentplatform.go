@@ -1,6 +1,7 @@
 package entities
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/datatypes"
@@ -170,7 +171,40 @@ type AgentReport struct {
 	Summary      string         `gorm:"type:text"` // first summary block text, for list views/webhooks
 	BlocksJSON   datatypes.JSON `gorm:"type:jsonb"`
 	RenderedHTML string         `gorm:"type:text"`
-	CreatedAt    time.Time      `gorm:"index"`
+	// RenderedHTMLByLocale holds one write-time snapshot per locale
+	// (i18n-02 §3): {"en": "<!DOCTYPE html>...", "es": ..., "pt-BR": ...}.
+	// Only chrome/labels differ; RenderedHTML stays the Settings.DefaultLocale
+	// snapshot for back-compat. Reports written before i18n-02 have none.
+	RenderedHTMLByLocale datatypes.JSON `gorm:"type:jsonb"`
+	CreatedAt            time.Time      `gorm:"index"`
+}
+
+// SetLocaleSnapshots stores per-locale snapshots (locale -> HTML).
+func (r *AgentReport) SetLocaleSnapshots(byLocale map[string]string) error {
+	if len(byLocale) == 0 {
+		r.RenderedHTMLByLocale = nil
+		return nil
+	}
+	b, err := json.Marshal(byLocale)
+	if err != nil {
+		return err
+	}
+	r.RenderedHTMLByLocale = datatypes.JSON(b)
+	return nil
+}
+
+// HTMLForLocale returns the snapshot for locale, falling back to
+// RenderedHTML (reports without per-locale snapshots, or a missing locale).
+func (r AgentReport) HTMLForLocale(locale string) string {
+	if locale != "" && len(r.RenderedHTMLByLocale) > 0 {
+		var m map[string]string
+		if err := json.Unmarshal(r.RenderedHTMLByLocale, &m); err == nil {
+			if html, ok := m[locale]; ok && html != "" {
+				return html
+			}
+		}
+	}
+	return r.RenderedHTML
 }
 
 // WebhookTargetKind selects the payload formatter for a WebhookTarget.

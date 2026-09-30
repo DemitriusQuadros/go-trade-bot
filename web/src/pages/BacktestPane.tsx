@@ -13,7 +13,6 @@ import { DrawdownChart } from '@/components/charts/DrawdownChart';
 import { MonteCarloDistribution } from '@/components/charts/MonteCarloDistribution';
 import { BacktestLaunchForm } from '@/components/domain/BacktestLaunchForm';
 import { WorkbenchContext } from './WorkbenchShell';
-import { formatUtcDay } from '@/lib/time';
 import {
   Download,
   Dices,
@@ -24,8 +23,11 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-react';
+import { formatDateTime, formatNumber, formatPct, formatUsd, formatUtcDay } from '@/lib/format';
+import { useT } from '@/i18n';
 
 export function BacktestPane() {
+  const t = useT();
   const ctx = useOutletContext<WorkbenchContext>();
   const { runId } = useParams<{ runId?: string }>();
   const navigate = useNavigate();
@@ -80,7 +82,7 @@ export function BacktestPane() {
       const res = await api.runMonteCarlo(numericRunId, 1000);
       setMonteCarlo(res);
     } catch (err: any) {
-      setMcError(apiErrorMessage(err, 'Failed to compute Monte Carlo simulations'));
+      setMcError(apiErrorMessage(err, t('backtest.mcFailed')));
     } finally {
       setMcLoading(false);
     }
@@ -98,15 +100,23 @@ export function BacktestPane() {
 
   const handleExportCSV = () => {
     if (!run || !run.trade_log || !Array.isArray(run.trade_log)) return;
-    const headers = ['Entry Time', 'Exit Time', 'Entry Price', 'Exit Price', 'Quantity', 'Profit', 'Exit Reason'];
-    const rows = run.trade_log.map((t) => [
-      t.entry_time || '',
-      t.exit_time || '',
-      t.entry_price || '',
-      t.exit_price || '',
-      t.quantity || '',
-      t.profit || '',
-      `"${(t.exit_reason || '').replace(/"/g, '""')}"`,
+    const headers = [
+      t('backtest.csvEntryTime'),
+      t('backtest.csvExitTime'),
+      t('backtest.csvEntryPrice'),
+      t('backtest.csvExitPrice'),
+      t('backtest.csvQuantity'),
+      t('backtest.csvProfit'),
+      t('backtest.csvExitReason'),
+    ];
+    const rows = run.trade_log.map((tr) => [
+      tr.entry_time || '',
+      tr.exit_time || '',
+      tr.entry_price || '',
+      tr.exit_price || '',
+      tr.quantity || '',
+      tr.profit || '',
+      `"${(tr.exit_reason || '').replace(/"/g, '""')}"`,
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -129,20 +139,20 @@ export function BacktestPane() {
     if (strategyId == null) {
       return (
         <div className="p-8 text-center text-xs text-muted-foreground">
-          Save this strategy before running a backtest.
+          {t('backtest.saveFirst')}
         </div>
       );
     }
     if (!canBacktest) {
       return (
         <div className="p-8 text-center text-xs text-muted-foreground" data-testid="backtest-no-permission">
-          Your account can't run backtests. Pick a past run from Backtest Runs to view it.
+          {t('backtest.noPermission')}
         </div>
       );
     }
     return (
       <Card>
-        <CardHeader title="Launch Historical Simulation" subtitle="Configure the test range, symbol & fill assumptions for this strategy" />
+        <CardHeader title={t('backtest.launchTitle')} subtitle={t('backtest.launchSubtitle')} />
         <BacktestLaunchForm
           strategyId={strategyId}
           initialSymbol={searchParams.get('symbol') || undefined}
@@ -153,13 +163,13 @@ export function BacktestPane() {
   }
 
   if (isLoading) {
-    return <LoadingScreen message={`Loading Backtest #${runId}...`} />;
+    return <LoadingScreen message={t('backtest.loadingRun', { id: runId })} />;
   }
 
   if (!run) {
     return (
       <div className="p-8 text-center text-xs text-destructive bg-destructive/15 border border-destructive/40 rounded-lg">
-        Backtest run #{runId} not found.
+        {t('backtest.notFound', { id: runId })}
       </div>
     );
   }
@@ -176,17 +186,17 @@ export function BacktestPane() {
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <h2 className="text-lg font-bold text-foreground font-mono">
-              Backtest #{run.id} — {run.symbol}
+              {t('backtest.runTitle', { id: run.id, symbol: run.symbol })}
             </h2>
             <StatusBadge status={run.passed ? 'passed' : 'failed'} />
             {run.is_walk_forward && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-accent text-accent-foreground border-border">
-                Walk-Forward
+                {t('backtest.walkForward')}
               </span>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Strategy #{run.strategy_id}
+            {t('backtest.strategyRef', { id: run.strategy_id })}
             {run.strategy_name ? ` — ${run.strategy_name}` : ''}
           </p>
           <p className="text-xs text-muted-foreground">
@@ -201,7 +211,7 @@ export function BacktestPane() {
               activeTab === 'analytics' ? 'bg-secondary text-white shadow' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            Analytics
+            {t('backtest.tabAnalytics')}
           </button>
           <button
             onClick={() => setActiveTab('report')}
@@ -210,7 +220,7 @@ export function BacktestPane() {
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Report</span>
+            <span>{t('backtest.tabReport')}</span>
           </button>
         </div>
       </div>
@@ -222,29 +232,29 @@ export function BacktestPane() {
           renders in now (see WorkbenchShell). */}
       <div className="grid grid-cols-2 gap-3">
         <MetricCard
-          title="Total Return"
-          value={`${isReturnPositive ? '+' : ''}${run.total_return_pct.toFixed(2)}%`}
+          title={t('backtest.totalReturn')}
+          value={formatPct(run.total_return_pct, 2, { signed: true })}
           isPositive={isReturnPositive}
-          subtitle={`Trades executed: ${run.total_trades}`}
+          subtitle={t('backtest.tradesExecuted', { count: run.total_trades })}
           icon={<TrendingUp className="w-4 h-4 text-success" />}
         />
         <MetricCard
-          title="Sharpe Ratio"
-          value={run.sharpe.toFixed(2)}
-          subtitle={run.sharpe >= 1.5 ? 'Strong risk-adjusted return' : 'Moderate'}
+          title={t('backtest.sharpe')}
+          value={formatNumber(run.sharpe, { digits: 2 })}
+          subtitle={run.sharpe >= 1.5 ? t('backtest.sharpeStrong') : t('backtest.sharpeModerate')}
           icon={<Activity className="w-4 h-4 text-foreground" />}
         />
         <MetricCard
-          title="Max Drawdown"
-          value={`${run.max_drawdown_pct.toFixed(2)}%`}
+          title={t('backtest.maxDrawdown')}
+          value={formatPct(run.max_drawdown_pct)}
           isPositive={false}
-          subtitle="Peak-to-trough decline"
+          subtitle={t('backtest.peakToTrough')}
           icon={<AlertTriangle className="w-4 h-4 text-destructive" />}
         />
         <MetricCard
-          title="Win Rate / Profit Factor"
-          value={`${run.win_rate_pct.toFixed(1)}%`}
-          subtitle={`Profit Factor: ${run.profit_factor}`}
+          title={t('backtest.winRatePf')}
+          value={formatPct(run.win_rate_pct, 1)}
+          subtitle={t('backtest.profitFactor', { value: typeof run.profit_factor === 'number' ? formatNumber(run.profit_factor, { maxDigits: 2 }) : '∞' })}
           icon={<Percent className="w-4 h-4 text-warning" />}
         />
       </div>
@@ -252,20 +262,20 @@ export function BacktestPane() {
       {activeTab === 'report' ? (
         <Card className="p-0 overflow-hidden">
           <div className="p-3 bg-card/20 border-b border-border/30 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">Interactive HTML Simulation Report</span>
+            <span className="text-xs font-semibold text-muted-foreground">{t('backtest.htmlReport')}</span>
             <a
               href={api.getReportUrl(run.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-foreground hover:text-foreground flex items-center gap-1 font-medium"
             >
-              <span>Open in new tab</span>
+              <span>{t('backtest.openNewTab')}</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
           <iframe
             src={api.getReportUrl(run.id)}
-            title={`Backtest ${run.id} Report`}
+            title={t('backtest.reportFrame', { id: run.id })}
             className="w-full h-[800px] border-none bg-background"
           />
         </Card>
@@ -276,18 +286,18 @@ export function BacktestPane() {
               App.tsx routes), where that breakpoint fires off the window's
               width regardless of how narrow this container actually is. */}
           <div className="grid grid-cols-1 gap-6">
-            <CollapsibleSection id="workbench.backtest.equity" title="Equity Growth Curve" defaultOpen>
+            <CollapsibleSection id="workbench.backtest.equity" title={t('backtest.equityCurve')} defaultOpen>
               <EquityCurveChart points={run.equity_curve || []} height={260} />
             </CollapsibleSection>
-            <CollapsibleSection id="workbench.backtest.drawdown" title="Underwater Drawdown (%)" defaultOpen>
+            <CollapsibleSection id="workbench.backtest.drawdown" title={t('backtest.underwater')} defaultOpen>
               <DrawdownChart points={drawdownPoints} height={260} />
             </CollapsibleSection>
           </div>
 
           <CollapsibleSection
             id="workbench.backtest.montecarlo"
-            title="Monte Carlo Stress Testing"
-            subtitle="(1,000 iterations)"
+            title={t('backtest.monteCarlo')}
+            subtitle={t('backtest.iterations', { count: formatNumber(1000) })}
             defaultOpen
             action={
               canBacktest && (
@@ -297,7 +307,7 @@ export function BacktestPane() {
                 className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
               >
                 <Dices className="w-3.5 h-3.5 text-foreground" />
-                <span>{mcLoading ? 'Simulating...' : 'Run Monte Carlo'}</span>
+                <span>{mcLoading ? t('backtest.simulating') : t('backtest.runMonteCarlo')}</span>
               </button>
               )
             }
@@ -314,14 +324,14 @@ export function BacktestPane() {
               />
             ) : (
               <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-                Click "Run Monte Carlo" for 1,000 randomized resamplings of this trade log.
+                {t('backtest.mcHint', { count: formatNumber(1000) })}
               </div>
             )}
           </CollapsibleSection>
 
           <CollapsibleSection
             id="workbench.backtest.tradeLog"
-            title="Executed Trade Log"
+            title={t('backtest.tradeLog')}
             subtitle={`(${run.trade_log && Array.isArray(run.trade_log) ? run.trade_log.length : 0})`}
             defaultOpen
             action={
@@ -331,14 +341,14 @@ export function BacktestPane() {
                   className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-2.5 py-1"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export CSV</span>
+                  <span>{t('backtest.exportCsv')}</span>
                 </button>
               ) : undefined
             }
           >
             {!run.trade_log || !Array.isArray(run.trade_log) || run.trade_log.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground bg-background/40 rounded-lg">
-                No individual trade logs recorded for this run.
+                {t('backtest.noTrades')}
               </div>
             ) : (
               // `.table`/`.table-container` were dead classes (see the
@@ -353,25 +363,25 @@ export function BacktestPane() {
                   <thead className="sticky top-0 bg-card/60">
                     <tr>
                       <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Entry
+                        {t('backtest.colEntry')}
                       </th>
                       <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Exit
+                        {t('backtest.colExit')}
                       </th>
                       <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Entry Price
+                        {t('backtest.colEntryPrice')}
                       </th>
                       <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Exit Price
+                        {t('backtest.colExitPrice')}
                       </th>
                       <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Qty
+                        {t('backtest.colQty')}
                       </th>
                       <th className="px-2 py-1.5 text-right text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Profit
+                        {t('backtest.colProfit')}
                       </th>
                       <th className="px-2 py-1.5 text-left text-foreground uppercase text-[10px] font-semibold whitespace-nowrap">
-                        Reason
+                        {t('backtest.colReason')}
                       </th>
                     </tr>
                   </thead>
@@ -380,12 +390,7 @@ export function BacktestPane() {
                       const isProfit = (trade.profit || 0) >= 0;
                       const formatTs = (ts: string) =>
                         ts
-                          ? new Date(ts).toLocaleString(undefined, {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
+                          ? formatDateTime(ts)
                           : '—';
                       return (
                         <tr key={idx} className="border-t border-border/40 hover:bg-card/10">
@@ -396,25 +401,25 @@ export function BacktestPane() {
                             {formatTs(trade.exit_time)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            ${Number(trade.entry_price || 0).toFixed(2)}
+                            ${formatNumber(Number(trade.entry_price || 0), { digits: 2 })}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            ${Number(trade.exit_price || 0).toFixed(2)}
+                            ${formatNumber(Number(trade.exit_price || 0), { digits: 2 })}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            {Number(trade.quantity || 0).toFixed(4)}
+                            {formatNumber(Number(trade.quantity || 0), { digits: 4 })}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
                             {trade.profit !== undefined ? (
                               <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
-                                {isProfit ? '+' : ''}${Number(trade.profit).toFixed(2)}
+                                {formatUsd(Number(trade.profit), { signed: true, digits: 2 })}
                               </span>
                             ) : (
                               '—'
                             )}
                           </td>
                           <td className="px-2 py-1.5 text-muted-foreground max-w-[200px] truncate" title={trade.exit_reason || ''}>
-                            {trade.exit_reason || '—'}
+                            {trade.exit_reason ? t.enum('exitReason', trade.exit_reason) : '—'}
                           </td>
                         </tr>
                       );

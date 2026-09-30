@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { tr } from '@/i18n';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -43,7 +44,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         <div className="flex items-start gap-3 p-6 m-4 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive">
           <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold">Something went wrong rendering this page.</p>
+            <p className="font-semibold">{tr('common.renderError')}</p>
             <p className="text-xs text-destructive/80">{this.state.error.message}</p>
           </div>
         </div>

@@ -1,8 +1,9 @@
 package agentreport
 
 import (
-	"fmt"
 	"strings"
+
+	"go-trade-bot/internal/i18n"
 )
 
 // diffContext is the number of unchanged lines kept around each change.
@@ -14,11 +15,11 @@ const maxDiffCells = 4_000_000
 // unifiedDiff computes a line diff between from and to (LCS-based) and
 // collapses long unchanged runs, returning display lines plus an optional
 // note.
-func unifiedDiff(from, to string) ([]diffLineView, string) {
+func unifiedDiff(loc i18n.Locale, from, to string) ([]diffLineView, string) {
 	a := splitLines(from)
 	b := splitLines(to)
 	if len(a)*len(b) > maxDiffCells {
-		return nil, fmt.Sprintf("Diff too large to render (%d → %d lines).", len(a), len(b))
+		return nil, Messages.F(loc, "diff.too_large", len(a), len(b))
 	}
 
 	// LCS lengths, suffix-based.
@@ -70,7 +71,7 @@ func unifiedDiff(from, to string) ([]diffLineView, string) {
 		}
 	}
 	if !changed {
-		return nil, "No changes."
+		return nil, Messages.T(loc, "diff.no_changes")
 	}
 
 	// Keep only context lines within diffContext of a change.
@@ -90,7 +91,7 @@ func unifiedDiff(from, to string) ([]diffLineView, string) {
 	for idx, l := range raw {
 		if keep[idx] {
 			if skipped > 0 {
-				out = append(out, diffLineView{Kind: "gap", Sign: "⋯", Text: fmt.Sprintf("%d unchanged lines", skipped)})
+				out = append(out, diffLineView{Kind: "gap", Sign: "⋯", Text: Messages.F(loc, "diff.unchanged_lines", skipped)})
 				skipped = 0
 			}
 			out = append(out, l)
@@ -99,7 +100,7 @@ func unifiedDiff(from, to string) ([]diffLineView, string) {
 		}
 	}
 	if skipped > 0 {
-		out = append(out, diffLineView{Kind: "gap", Sign: "⋯", Text: fmt.Sprintf("%d unchanged lines", skipped)})
+		out = append(out, diffLineView{Kind: "gap", Sign: "⋯", Text: Messages.F(loc, "diff.unchanged_lines", skipped)})
 	}
 	return out, ""
 }

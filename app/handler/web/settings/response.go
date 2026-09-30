@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"go-trade-bot/app/entities"
+	"go-trade-bot/internal/i18n"
 )
 
 // maskedPlaceholderPrefix is what MaskSecret prepends to a non-empty secret's
@@ -61,6 +62,8 @@ type SettingsResponseDTO struct {
 	// AgentsPaused is the agents kill switch - read-only here; written via
 	// PUT /agents/kill-switch.
 	AgentsPaused bool `json:"agents_paused"`
+	// DefaultLocale (i18n-02 §1): "en" | "es" | "pt-BR" (never empty).
+	DefaultLocale string `json:"default_locale"`
 }
 
 func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
@@ -82,6 +85,7 @@ func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
 		AsynqmonURL:       s.AsynqmonURL,
 		AgentsAsynqmonURL: s.AgentsAsynqmonURL,
 		AgentsPaused:      s.AgentsPaused,
+		DefaultLocale:     string(i18n.ParseOr(s.DefaultLocale, i18n.Default)),
 	}
 }
 

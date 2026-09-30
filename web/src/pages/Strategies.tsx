@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useStrategies } from '@/hooks/queries';
 import { api, apiErrorMessage } from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
-import { canEditStrategy, PERMISSION_STRINGS } from '@/lib/permissions';
+import { canEditStrategy } from '@/lib/permissions';
 import { Strategy, StrategyMode, StrategyStatus } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -22,8 +22,10 @@ import {
   Trash2,
   GitBranch,
 } from 'lucide-react';
+import { useT } from '@/i18n';
 
 export function Strategies() {
+  const t = useT();
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const { data: strategies = [], refetch: refetchStrategies, isLoading: isStrategiesLoading } = useStrategies();
@@ -52,7 +54,7 @@ export function Strategies() {
     isOpen: false,
     title: '',
     message: '',
-    confirmText: 'Confirm',
+    confirmText: '',
     isDangerous: false,
     onConfirm: () => {},
   });
@@ -93,10 +95,10 @@ export function Strategies() {
     const newStatus: StrategyStatus = strat.status === 'disabled' ? 'productive' : 'disabled';
     try {
       await api.patchStrategyStatus(strat.id, newStatus);
-      setActionMessage({ type: 'success', text: `Strategy #${strat.id} set to ${newStatus}` });
+      setActionMessage({ type: 'success', text: t('strategies.statusSet', { id: strat.id, status: t.enum('status', newStatus) }) });
       refetchStrategies();
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update status') });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, t('strategies.statusFailed')) });
     }
   };
 
@@ -104,9 +106,9 @@ export function Strategies() {
     if (newMode === 'live') {
       setConfirmDialog({
         isOpen: true,
-        title: 'Confirm Switch to LIVE Trading',
-        message: `Are you sure you want to enable REAL LIVE execution for "${strat.name}"? Real orders and capital will be committed on the exchange.`,
-        confirmText: 'Confirm LIVE Mode',
+        title: t('strategies.liveTitle'),
+        message: t('strategies.liveMessage', { name: strat.name }),
+        confirmText: t('strategies.liveConfirm'),
         isDangerous: true,
         onConfirm: async () => {
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -121,10 +123,10 @@ export function Strategies() {
   const executeModeChange = async (id: number, mode: StrategyMode) => {
     try {
       await api.patchStrategyMode(id, mode);
-      setActionMessage({ type: 'success', text: `Strategy #${id} switched to ${mode} mode` });
+      setActionMessage({ type: 'success', text: t('strategies.modeSwitched', { id, mode: t.enum('modeOption', mode) }) });
       refetchStrategies();
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update mode') });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, t('strategies.modeFailed')) });
     }
   };
 
@@ -137,18 +139,18 @@ export function Strategies() {
   const handleDelete = (strat: Strategy) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Permanently Delete Strategy',
-      message: `Delete "${strat.name}" (#${strat.id})? This permanently removes it and ALL related data - signals, orders, backtests, executions, performance history, script versions, and agent chat history. This cannot be undone.`,
-      confirmText: 'Delete Permanently',
+      title: t('strategies.deleteTitle'),
+      message: t('strategies.deleteMessage', { name: strat.name, id: strat.id }),
+      confirmText: t('strategies.deleteConfirm'),
       isDangerous: true,
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         try {
           await api.deleteStrategy(strat.id);
-          setActionMessage({ type: 'success', text: `Strategy #${strat.id} deleted` });
+          setActionMessage({ type: 'success', text: t('strategies.deleted', { id: strat.id }) });
           refetchStrategies();
         } catch (err: any) {
-          setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to delete strategy') });
+          setActionMessage({ type: 'error', text: apiErrorMessage(err, t('strategies.deleteFailed')) });
         }
       },
     });
@@ -157,14 +159,14 @@ export function Strategies() {
   const handleEnqueue = async () => {
     try {
       await api.enqueueStrategy();
-      setActionMessage({ type: 'success', text: 'All active strategies enqueued for tick evaluation' });
+      setActionMessage({ type: 'success', text: t('strategies.enqueued') });
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to trigger enqueue') });
+      setActionMessage({ type: 'error', text: apiErrorMessage(err, t('strategies.enqueueFailed')) });
     }
   };
 
   if (isStrategiesLoading && !strategies) {
-    return <LoadingScreen message="Loading strategies..." />;
+    return <LoadingScreen message={t('strategies.loading')} />;
   }
 
   return (
@@ -173,10 +175,10 @@ export function Strategies() {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            Strategy Management
+            {t('strategies.title')}
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Configure algorithmic strategies, operating parameters & execution modes
+            {t('strategies.subtitle')}
           </p>
         </div>
 
@@ -185,10 +187,10 @@ export function Strategies() {
           <button
             onClick={handleEnqueue}
             className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs flex items-center gap-1.5 px-3 py-1.5"
-            title="Force immediate worker execution pass"
+            title={t('strategies.enqueueTickTitle')}
           >
             <Send className="w-3.5 h-3.5 text-primary" />
-            <span>Enqueue Tick</span>
+            <span>{t('strategies.enqueueTick')}</span>
           </button>
           )}
 
@@ -199,7 +201,7 @@ export function Strategies() {
             className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Plus className="w-4 h-4" />
-            <span>New Strategy</span>
+            <span>{t('strategies.newStrategy')}</span>
           </button>
           )}
         </div>
@@ -227,7 +229,7 @@ export function Strategies() {
           <div className="flex-1 max-w-sm">
             <input
               type="text"
-              placeholder="Search by name, algorithm, symbol, rules..."
+              placeholder={t('strategies.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-input text-xs"
@@ -236,38 +238,38 @@ export function Strategies() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Status:</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('strategies.statusLabel')}</span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="form-select text-xs py-1"
               >
-                <option value="all">All Statuses</option>
-                <option value="productive">Productive</option>
-                <option value="testing">Testing</option>
-                <option value="disabled">Disabled</option>
+                <option value="all">{t('strategies.allStatuses')}</option>
+                <option value="productive">{t.enum('statusOption', 'productive')}</option>
+                <option value="testing">{t.enum('statusOption', 'testing')}</option>
+                <option value="disabled">{t.enum('statusOption', 'disabled')}</option>
               </select>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Mode:</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('strategies.modeLabel')}</span>
               <select
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value)}
                 className="form-select text-xs py-1"
               >
-                <option value="all">All Modes</option>
-                <option value="dryrun">Dry Run</option>
-                <option value="paper">Paper</option>
-                <option value="live">Live</option>
-                <option value="backtest">Backtest</option>
+                <option value="all">{t('strategies.allModes')}</option>
+                <option value="dryrun">{t.enum('modeOption', 'dryrun')}</option>
+                <option value="paper">{t.enum('modeOption', 'paper')}</option>
+                <option value="live">{t.enum('modeOption', 'live')}</option>
+                <option value="backtest">{t.enum('modeOption', 'backtest')}</option>
               </select>
             </div>
 
             <button
               onClick={() => refetchStrategies()}
               className="bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs p-1.5"
-              title="Refresh"
+              title={t('common.refresh')}
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -278,35 +280,35 @@ export function Strategies() {
       {/* Strategies List Table */}
       <Card>
         <CardHeader
-          title="Configured Strategies"
-          subtitle={`Displaying ${filteredStrategies.length} of ${strategies?.length || 0} registered bots`}
+          title={t('strategies.listTitle')}
+          subtitle={t('strategies.listSubtitle', { shown: filteredStrategies.length, total: strategies?.length || 0 })}
         />
 
         {strategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg space-y-3">
-            <p>No strategies configured.</p>
+            <p>{t('strategies.empty')}</p>
             {canCreate && (
             <button
               onClick={() => navigate('/strategies/new')}
               className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs px-3 py-1.5 font-bold"
             >
-              + New Strategy
+              {t('strategies.newStrategyPlus')}
             </button>
             )}
           </div>
         ) : filteredStrategies.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground bg-secondary/40 rounded-lg">
-            No strategies found matching filter criteria.
+            {t('strategies.noMatch')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-border bg-secondary/40">
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Strategy</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Symbols</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Mode</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('strategies.colStrategy')}</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('strategies.colSymbols')}</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('strategies.colStatus')}</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('strategies.colMode')}</th>
                   <th className="w-10 px-2 py-2.5"></th>
                 </tr>
               </thead>
@@ -315,26 +317,26 @@ export function Strategies() {
                   const editable = canEditStrategy(can, strat);
                   const items: DropdownMenuItem[] = [
                     {
-                      label: editable ? 'View / Edit Script' : 'View Script',
+                      label: editable ? t('strategies.viewEditScript') : t('strategies.viewScript'),
                       icon: <Code2 />,
                       onClick: () => navigate(`/strategies/${strat.id}/edit`),
                     },
                     {
-                      label: 'Agent History',
+                      label: t('strategies.agentHistory'),
                       icon: <Bot />,
                       onClick: () => navigate(`/activity?tab=agent&strategy_id=${strat.id}`),
                     },
                   ];
                   if (isAdmin) {
                     items.push({
-                      label: strat.status === 'disabled' ? 'Enable' : 'Disable',
+                      label: strat.status === 'disabled' ? t('strategies.enable') : t('strategies.disable'),
                       icon: strat.status === 'disabled' ? <Play /> : <Pause />,
                       onClick: () => handleToggleStatus(strat),
                     });
                   }
                   if (editable) {
                     items.push({
-                      label: 'Delete',
+                      label: t('common.delete'),
                       icon: <Trash2 />,
                       onClick: () => handleDelete(strat),
                       destructive: true,
@@ -352,7 +354,7 @@ export function Strategies() {
                       {strat.challenger_of_id != null && (
                         <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1 min-w-0">
                           <GitBranch className="w-3 h-3 shrink-0" />
-                          <span className="shrink-0">challenger of</span>
+                          <span className="shrink-0">{t('strategies.challengerOf')}</span>
                           <Link
                             to={`/strategies/${strat.challenger_of_id}/edit`}
                             onClick={(e) => e.stopPropagation()}
@@ -374,7 +376,7 @@ export function Strategies() {
                                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/40 text-[10px] font-semibold hover:bg-primary/25"
                               >
                                 <GitBranch className="w-3 h-3" />
-                                {list.length} challenger{list.length === 1 ? '' : 's'}
+                                {t('strategies.challengers', { count: list.length })}
                               </Link>
                             );
                           })()}
@@ -415,18 +417,18 @@ export function Strategies() {
                         value={strat.mode}
                         onChange={(e) => handleModeChange(strat, e.target.value as StrategyMode)}
                         disabled={!isAdmin}
-                        title={isAdmin ? undefined : PERMISSION_STRINGS.adminOnly}
-                        aria-label={`Mode of ${strat.name}`}
+                        title={isAdmin ? undefined : t('users.adminOnly')}
+                        aria-label={t('strategies.modeOf', { name: strat.name })}
                         className="bg-secondary border border-border text-xs rounded px-2 py-1 text-foreground focus:outline-none focus:border-primary font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <option value="dryrun">Dry Run</option>
-                        <option value="paper">Paper</option>
-                        <option value="live">LIVE</option>
-                        <option value="backtest">Backtest</option>
+                        <option value="dryrun">{t.enum('modeOption', 'dryrun')}</option>
+                        <option value="paper">{t.enum('modeOption', 'paper')}</option>
+                        <option value="live">{t.enum('mode', 'live')}</option>
+                        <option value="backtest">{t.enum('modeOption', 'backtest')}</option>
                       </select>
                     </td>
                     <td className="px-2 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu label={`Actions for ${strat.name}`} items={items} />
+                      <DropdownMenu label={t('strategies.actionsFor', { name: strat.name })} items={items} />
                     </td>
                   </tr>
                   );

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { useT } from '@/i18n';
 
 // Generic dialog shell - same overlay/card look as ConfirmDialog. Escape and
 // the close button call onClose; focus moves into the dialog on open and
@@ -17,6 +18,7 @@ export function Modal({
   footer?: React.ReactNode;
   testId?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function Modal({
       >
         <div className="flex items-start justify-between mb-4">
           <h3 className="text-base font-semibold text-foreground">{title}</h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground p-1">
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-muted-foreground hover:text-foreground p-1">
             <X className="w-5 h-5" />
           </button>
         </div>

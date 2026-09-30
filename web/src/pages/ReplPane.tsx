@@ -12,6 +12,8 @@ import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { WorkbenchContext } from './WorkbenchShell';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw, RefreshCw } from 'lucide-react';
+import { formatTime } from '@/lib/format';
+import { useT } from '@/i18n';
 
 interface ReplHistoryEntry {
   id: string;
@@ -40,11 +42,12 @@ const MAX_WINDOW_CANDLES = 2000;
 // (auth-02 §4). Without it, show a notice instead of an editor that would
 // 403 on every keystroke.
 export function ReplPane() {
+  const t = useT();
   const canRun = useAuth().can('backtest');
   if (!canRun) {
     return (
       <div className="p-8 text-center text-xs text-muted-foreground font-sans" data-testid="repl-no-permission">
-        Your account can't run the script REPL.
+        {t('workbench.replNoPermission')}
       </div>
     );
   }
@@ -52,6 +55,7 @@ export function ReplPane() {
 }
 
 function ReplPaneInner() {
+  const t = useT();
   const ctx = useOutletContext<WorkbenchContext>();
   const { setReplTrace, setReplResult, setActiveTraceSource, draft, appendConsoleEntry } = ctx;
   const isDark = useIsDarkMode();
@@ -120,7 +124,7 @@ function ReplPaneInner() {
         trace: res.trace || [],
         error: res.error,
         noData: isNoData,
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: formatTime(new Date()),
       };
 
       setHistory((prev) => [newEntry, ...prev.slice(0, 49)]); // keep up to 50 entries
@@ -147,7 +151,7 @@ function ReplPaneInner() {
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') return; // superseded by a newer keystroke - not a real error
-      const message = err.message || 'Failed to evaluate snippet';
+      const message = err.message || t('workbench.evalFailed');
       setActiveError(message);
       setReplTrace([]);
       setReplResult(null);
@@ -238,26 +242,26 @@ function ReplPaneInner() {
       <div className="space-y-4">
         <CollapsibleSection
           id="workbench.repl.snippet"
-          title="Lua Snippet"
-          subtitle="(expression or hook)"
+          title={t('workbench.luaSnippet')}
+          subtitle={t('workbench.snippetSubtitle')}
           defaultOpen
           action={
             <>
               <button
                 onClick={handleEvaluateNow}
                 className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-                title="Re-run now (skip the debounce wait)"
+                title={t('workbench.rerunTitle')}
               >
                 <RefreshCw className="w-3 h-3" />
-                <span>Re-run now</span>
+                <span>{t('workbench.rerun')}</span>
               </button>
               <button
                 onClick={() => setSource(DEFAULT_SNIPPET)}
                 className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-                title="Reset to template"
+                title={t('workbench.resetTitle')}
               >
                 <RotateCcw className="w-3 h-3" />
-                <span>Reset</span>
+                <span>{t('common.reset')}</span>
               </button>
             </>
           }
@@ -275,14 +279,14 @@ function ReplPaneInner() {
           </div>
         </CollapsibleSection>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title="Auto-runs 600ms after you stop typing or change symbol/timeframe">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title={t('workbench.replAutoRunTitle')}>
           <Terminal className="w-3.5 h-3.5 text-foreground shrink-0" />
-          <span>Auto-runs on edit</span>
+          <span>{t('workbench.autoRun')}</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
-            <span className="text-muted-foreground px-1 text-[11px]">Symbol:</span>
+            <span className="text-muted-foreground px-1 text-[11px]">{t('workbench.symbolLabel')}</span>
             <input
               type="text"
               value={symbol}
@@ -292,7 +296,7 @@ function ReplPaneInner() {
             />
           </div>
           <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
-            <span className="text-muted-foreground px-1 text-[11px]">TF:</span>
+            <span className="text-muted-foreground px-1 text-[11px]">{t('workbench.tfLabel')}</span>
             <select
               value={timeframe}
               onChange={(e) => setTimeframe(e.target.value)}
@@ -306,7 +310,7 @@ function ReplPaneInner() {
             </select>
           </div>
           <div className="flex items-center gap-1.5 bg-background/60 p-1 rounded border border-border/40">
-            <span className="text-muted-foreground px-1 text-[11px]">Window:</span>
+            <span className="text-muted-foreground px-1 text-[11px]">{t('workbench.windowLabel')}</span>
             <input
               type="number"
               value={windowCandles}
@@ -314,7 +318,7 @@ function ReplPaneInner() {
               className="bg-background text-foreground font-bold px-2 py-1 rounded border border-border text-xs w-16 focus:outline-none focus:border-primary"
               min={10}
               max={MAX_WINDOW_CANDLES}
-              title="Also grows automatically when you zoom/pan out on the chart"
+              title={t('workbench.windowTitle')}
             />
           </div>
           <button
@@ -323,7 +327,7 @@ function ReplPaneInner() {
             className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{isEvaluating ? 'Evaluating...' : 'Evaluate'}</span>
+            <span>{isEvaluating ? t('workbench.evaluating') : t('workbench.evaluate')}</span>
           </button>
         </div>
 
@@ -336,7 +340,7 @@ function ReplPaneInner() {
               <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
               <div className="space-y-0.5">
                 <span className="font-bold block text-destructive uppercase tracking-wide text-[11px]">
-                  Evaluation Error
+                  {t('workbench.evalError')}
                 </span>
                 <pre className="whitespace-pre-wrap font-mono text-[11px] text-destructive">{activeError}</pre>
               </div>
@@ -347,10 +351,10 @@ function ReplPaneInner() {
           </div>
         )}
 
-        <CollapsibleSection id="workbench.repl.history" title="Execution History" subtitle={`(${history.length})`} defaultOpen>
+        <CollapsibleSection id="workbench.repl.history" title={t('workbench.history')} subtitle={`(${history.length})`} defaultOpen>
           {history.length === 0 ? (
             <div className="p-4 text-center text-xs text-muted-foreground bg-background/40 rounded">
-              No evaluation history yet. Type a snippet above - it runs automatically.
+              {t('workbench.historyEmpty')}
             </div>
           ) : (
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -376,7 +380,7 @@ function ReplPaneInner() {
                         <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
                       )}
                       <span className="font-mono truncate text-[11px] text-foreground">
-                        {entry.source.split('\n')[0] || '(empty)'}
+                        {entry.source.split('\n')[0] || t('workbench.emptySnippet')}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] shrink-0 text-muted-foreground">
@@ -395,14 +399,12 @@ function ReplPaneInner() {
       {/* Right column: Return Value panel ONLY - no chart here anymore;
           SharedPriceChart (shell-level) now renders replTrace. */}
       <div className="space-y-4">
-        <CollapsibleSection id="workbench.repl.returnValue" title="Return Value" subtitle="(Runner.Eval output)" defaultOpen>
+        <CollapsibleSection id="workbench.repl.returnValue" title={t('workbench.returnValue')} subtitle="(Runner.Eval output)" defaultOpen>
           <div className="p-3 bg-background/90 rounded border border-border/60 text-xs min-h-[70px] overflow-x-auto">
             {activeNoData ? (
               <div className="text-warning text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>
-                  No candle data for {symbol} / {timeframe}.
-                </span>
+                <span>{t('workbench.noCandles', { symbol, timeframe })}</span>
               </div>
             ) : ctx.replResult !== null && ctx.replResult !== undefined ? (
               <pre className="text-success font-mono text-xs">
@@ -410,7 +412,7 @@ function ReplPaneInner() {
               </pre>
             ) : (
               <span className="text-muted-foreground text-xs italic">
-                {activeError ? 'Evaluation terminated with error' : 'No result (expression yielded nil)'}
+                {activeError ? t('workbench.evalTerminated') : t('workbench.noResult')}
               </span>
             )}
           </div>

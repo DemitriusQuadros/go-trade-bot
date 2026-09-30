@@ -369,6 +369,9 @@ export interface PlatformSettings {
   // ignores it). Changed via PUT /agents/kill-switch. true = no agent runs
   // start, and in-flight runs halt before their next model call.
   agents_paused: boolean;
+  // i18n-02 §1: language for unattended agent output and webhook notifications.
+  // i18n-02 contract (reconciled): field name `default_locale`, values 'en' | 'es' | 'pt-BR', default 'en'.
+  default_locale?: string;
 }
 
 export interface PlatformSettingsUpdateRequest {
@@ -386,6 +389,8 @@ export interface PlatformSettingsUpdateRequest {
   asynqmon_url?: string;
   // Fix-02 B5: display-only link to cmd/agent's Asynqmon UI (:9194).
   agents_asynqmon_url?: string;
+  // i18n-02 contract (reconciled): admin-editable in PUT /settings.
+  default_locale?: string;
 }
 
 export interface PlatformSettingsUpdateResponse {

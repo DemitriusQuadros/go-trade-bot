@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"go-trade-bot/app/entities"
 	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
@@ -243,7 +244,7 @@ func (h *StrategyHandler) PatchStatus(w http.ResponseWriter, r *http.Request) {
 
 	strat, err := h.UseCase.UpdateStatus(r.Context(), uint(id), entities.StrategyStatus(dto.Status))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writePatchError(w, err)
 		return
 	}
 
@@ -271,7 +272,7 @@ func (h *StrategyHandler) PatchMode(w http.ResponseWriter, r *http.Request) {
 
 	strat, err := h.UseCase.UpdateMode(r.Context(), uint(id), dto.Mode)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writePatchError(w, err)
 		return
 	}
 
@@ -331,4 +332,16 @@ func (h *StrategyHandler) RevertVersion(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Version reverted"})
+}
+
+// writePatchError keeps PATCH status/mode's historical 400 plain-text error,
+// except for coded errors (i18n-02 §5: the 403 {"error":"forbidden"} of the
+// draft-only guard), which keep their status and stable JSON code.
+func writePatchError(w http.ResponseWriter, err error) {
+	var ce *customerror.CustomError
+	if errors.As(err, &ce) && ce.ErrorCode != "" {
+		customerror.WriteHTTPError(w, err)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadRequest)
 }

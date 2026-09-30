@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Wrench, AlertTriangle, ArrowUpRight, FileDiff } from 'lucide-react';
 import { AgentToolCall } from '@/api/types';
+import { formatTime } from '@/lib/format';
+import { useT } from '@/i18n';
 
 // Both entities.Strategy row IDs and BacktestRun IDs are surfaced back to
 // the model as machine-parseable "strategy_id=N"/"backtest_id=N" prefixes
@@ -19,6 +21,7 @@ function extractID(text: string | undefined, key: 'strategy_id' | 'backtest_id')
 const MAX_INLINE_LENGTH = 400;
 
 function Collapsible({ label, content }: { label: string; content: string }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > MAX_INLINE_LENGTH;
   const shown = expanded || !isLong ? content : content.slice(0, MAX_INLINE_LENGTH) + '…';
@@ -42,7 +45,7 @@ function Collapsible({ label, content }: { label: string; content: string }) {
           onClick={() => setExpanded((e) => !e)}
           className="mt-1 text-[10px] text-muted-foreground hover:text-foreground underline"
         >
-          {expanded ? 'Show less' : 'Show full output'}
+          {expanded ? t('common.showLess') : t('agents.showFullOutput')}
         </button>
       )}
     </div>
@@ -65,6 +68,7 @@ interface AgentToolCallCardProps {
 }
 
 export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardProps) {
+  const t = useT();
   const isError = !!call.error;
   const argsText = call.args ? JSON.stringify(call.args, null, 2) : '';
   const resultText = call.result || call.error || '';
@@ -91,17 +95,17 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
           <Wrench className="w-3.5 h-3.5 text-foreground shrink-0" />
         )}
         <span className="font-mono font-semibold text-foreground">{call.tool}</span>
-        {isError && <span className="text-[10px] uppercase text-destructive font-semibold">failed</span>}
+        {isError && <span className="text-[10px] uppercase text-destructive font-semibold">{t('agents.toolFailed')}</span>}
         {call.timestamp && (
           <span className="ml-auto text-[10px] text-muted-foreground font-mono">
-            {new Date(call.timestamp).toLocaleTimeString()}
+            {formatTime(call.timestamp)}
           </span>
         )}
       </div>
 
       {argsText && (
         <Collapsible
-          label={call.tool === 'save_strategy_script' ? 'Requested arguments (model-supplied, pre-clamp)' : 'Arguments'}
+          label={call.tool === 'save_strategy_script' ? t('agents.requestedArgs') : t('agents.arguments')}
           content={argsText}
         />
       )}
@@ -109,10 +113,10 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
         <Collapsible
           label={
             isError
-              ? 'Error'
+              ? t('agents.error')
               : call.tool === 'save_strategy_script'
-                ? 'Persisted strategy (applied, post safety-clamp)'
-                : 'Result'
+                ? t('agents.persistedStrategy')
+                : t('agents.result')
           }
           content={resultText}
         />
@@ -125,7 +129,7 @@ export function AgentToolCallCard({ call, onApplyToEditor }: AgentToolCallCardPr
             className="inline-flex items-center gap-1.5 text-[11px] bg-primary hover:bg-primary text-primary-foreground font-semibold rounded px-2.5 py-1"
           >
             <FileDiff className="w-3 h-3" />
-            Apply to editor
+            {t('agents.applyToEditor')}
           </button>
         </div>
       )}

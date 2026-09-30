@@ -9,6 +9,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/repository/agentplatform"
+	"go-trade-bot/internal/i18n"
 )
 
 // promptMemoryKinds are the memory kinds shown in the system prompt:
@@ -98,6 +99,7 @@ func (u AgentUseCase) buildSystemPrompt(ctx context.Context, houseRules string, 
 		persona += " Your goal:\n" + req.Agent.Goal
 	}
 	sections = append(sections, persona)
+	sections = append(sections, languageLine(u.runLocale(ctx, req), isScheduledTrigger(req.Trigger)))
 
 	strategyIDs, bound := u.contextStrategyIDs(ctx, req)
 	// Strategy details are only looked up when the platform is wired;
@@ -116,6 +118,39 @@ func (u AgentUseCase) buildSystemPrompt(ctx context.Context, houseRules string, 
 	}
 	sections = append(sections, strategyAuthoringDoc)
 	return strings.Join(sections, "\n\n")
+}
+
+// languageLine is the i18n-02 §2 instruction placed right after the
+// persona: the reply language, plus - for unattended runs - the language of
+// report text and notification messages (Settings.DefaultLocale).
+func languageLine(loc i18n.Locale, unattended bool) string {
+	line := fmt.Sprintf("Always answer in %s (%s). Keep code, tool arguments, symbols and identifiers unchanged.", loc.LanguageName(), loc)
+	if unattended {
+		line += fmt.Sprintf(" Write report text and notification messages in %s.", loc.LanguageName())
+	}
+	return line
+}
+
+// runLocale is the run's reply language (i18n-02 §2): unattended runs
+// (cron/manual/event/market/chain) always use Settings.DefaultLocale; chat
+// and MCP runs use req.Locale when it is a supported locale (the chat
+// handler resolves it from the user, then Accept-Language), else the
+// default.
+func (u AgentUseCase) runLocale(ctx context.Context, req RunRequest) i18n.Locale {
+	if !isScheduledTrigger(req.Trigger) {
+		if loc, ok := i18n.Parse(req.Locale); ok {
+			return loc
+		}
+	}
+	return u.defaultLocale(ctx)
+}
+
+// defaultLocale is Settings.DefaultLocale through u.Locales (en when unset).
+func (u AgentUseCase) defaultLocale(ctx context.Context) i18n.Locale {
+	if u.Locales == nil {
+		return i18n.Default
+	}
+	return u.Locales.DefaultLocale(ctx)
 }
 
 func (u AgentUseCase) loadStrategies(ctx context.Context, ids []uint) map[uint]entities.Strategy {

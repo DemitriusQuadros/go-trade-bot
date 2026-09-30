@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MoreVertical } from 'lucide-react';
+import { Check, ChevronRight, MoreVertical } from 'lucide-react';
+import { useT } from '@/i18n';
 
 export interface DropdownMenuItem {
   label: string;
@@ -16,6 +17,12 @@ export interface DropdownMenuItem {
   // Visually separates this item from the ones above it (e.g. Delete at
   // the bottom of an otherwise-neutral action list).
   separatorBefore?: boolean;
+  // Shows a check mark (e.g. the active language in a submenu).
+  checked?: boolean;
+  // A nested list, expanded inline under this item when clicked.
+  submenu?: DropdownMenuItem[];
+  // Stable React key when the label can change (translated labels).
+  id?: string;
 }
 
 interface DropdownMenuProps {
@@ -39,11 +46,14 @@ const TRIGGER_DEFAULT_CLASS =
 export function DropdownMenu({
   items,
   align = 'right',
-  label = 'Actions',
+  label,
   trigger,
   triggerClassName = TRIGGER_DEFAULT_CLASS,
 }: DropdownMenuProps) {
+  const t = useT();
+  const menuLabel = label ?? t('common.actions');
   const [open, setOpen] = useState(false);
+  const [openSub, setOpenSub] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,10 +83,10 @@ export function DropdownMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        aria-label={label}
+        aria-label={menuLabel}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={trigger ? label : undefined}
+        title={trigger ? menuLabel : undefined}
         className={triggerClassName}
       >
         {trigger ?? <MoreVertical className="w-4 h-4" />}
@@ -91,6 +101,49 @@ export function DropdownMenu({
           }`}
         >
           {items.map((item) => {
+            const key = item.id ?? item.label;
+            if (item.submenu) {
+              const expanded = openSub === key;
+              return (
+                <React.Fragment key={key}>
+                  {item.separatorBefore && <div className="my-1 border-t border-border" />}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={expanded}
+                    onClick={() => setOpenSub(expanded ? null : key)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors text-popover-foreground hover:bg-accent/60"
+                  >
+                    {item.icon && <span className="shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">{item.icon}</span>}
+                    <span className="whitespace-nowrap">{item.label}</span>
+                    <ChevronRight className={`ml-auto w-3 h-3 opacity-60 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                  </button>
+                  {expanded && (
+                    <div role="menu" aria-label={item.label} className="pb-1">
+                      {item.submenu.map((sub) => (
+                        <button
+                          key={sub.id ?? sub.label}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={!!sub.checked}
+                          disabled={sub.disabled}
+                          onClick={() => {
+                            setOpen(false);
+                            setOpenSub(null);
+                            sub.onClick?.();
+                          }}
+                          className="w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 text-xs text-left transition-colors text-popover-foreground hover:bg-accent/60 disabled:opacity-40"
+                        >
+                          <span className="whitespace-nowrap">{sub.label}</span>
+                          {sub.checked && <Check className="ml-auto w-3 h-3 text-primary" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            }
             const itemClass = `w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               item.destructive ? 'text-destructive hover:bg-destructive/10' : 'text-popover-foreground hover:bg-accent/60'
             }`;
@@ -98,13 +151,14 @@ export function DropdownMenu({
               <>
                 {item.icon && <span className="shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">{item.icon}</span>}
                 <span className="whitespace-nowrap">{item.label}</span>
+                {item.checked && <Check className="ml-auto w-3 h-3 text-primary" />}
                 {item.trailingIcon && (
                   <span className="ml-auto pl-2 shrink-0 opacity-60 [&>svg]:w-3 [&>svg]:h-3">{item.trailingIcon}</span>
                 )}
               </>
             );
             return (
-              <React.Fragment key={item.label}>
+              <React.Fragment key={key}>
                 {item.separatorBefore && <div className="my-1 border-t border-border" />}
                 {item.href && !item.disabled ? (
                   <a
@@ -112,7 +166,7 @@ export function DropdownMenu({
                     href={item.href}
                     target={item.external ? '_blank' : undefined}
                     rel={item.external ? 'noopener noreferrer' : undefined}
-                    aria-label={item.external ? `${item.label} (opens in new tab)` : undefined}
+                    aria-label={item.external ? t('common.opensNewTab', { label: item.label }) : undefined}
                     onClick={() => {
                       setOpen(false);
                       item.onClick?.();

@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAgents, useChatTranscript, useSendAgentMessage } from '@/hooks/queries';
 import { useEditorBridge } from '@/context/EditorBridgeContext';
 import { ChatContextKey, Turn, runToTurn, strategyContextKey, strategyIdOfKey } from '@/lib/chatTurn';
+import { tr } from '@/i18n';
 
 // One chat, two views (Phase D-02 §3). Agent mode (/agent) and the Code-mode
 // dock both read this provider, so switching modes or routes never loses a
@@ -196,7 +197,7 @@ export function ChatSessionProvider({ children }: { children: React.ReactNode })
           // auth-01 contract (reconciled): 409 {"error":"user_budget_exceeded","message":...}
           if (err instanceof ApiError && err.status === 409) {
             updateTurn(turnId, {
-              blocked: apiErrorMessage(err, 'This agent is paused.'),
+              blocked: apiErrorMessage(err, tr('chat.agentPausedFallback')),
               blockedCode: apiErrorCode(err) ?? undefined,
             });
             return;

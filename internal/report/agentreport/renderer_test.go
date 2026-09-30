@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go-trade-bot/internal/i18n"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -224,7 +226,7 @@ func TestFirstSummary(t *testing.T) {
 }
 
 func TestUnifiedDiff(t *testing.T) {
-	lines, note := unifiedDiff("a\nb\nc\n", "a\nc\nd\n")
+	lines, note := unifiedDiff(i18n.EN, "a\nb\nc\n", "a\nc\nd\n")
 	assert.Empty(t, note)
 	var kinds []string
 	for _, l := range lines {
@@ -232,7 +234,7 @@ func TestUnifiedDiff(t *testing.T) {
 	}
 	assert.Equal(t, []string{"ctx:a", "del:b", "ctx:c", "add:d"}, kinds)
 
-	_, note = unifiedDiff("same\n", "same\n")
+	_, note = unifiedDiff(i18n.EN, "same\n", "same\n")
 	assert.Equal(t, "No changes.", note)
 }
 

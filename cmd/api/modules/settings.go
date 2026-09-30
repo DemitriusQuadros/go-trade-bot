@@ -5,6 +5,7 @@ import (
 	repository "go-trade-bot/app/repository/settings"
 	usecase "go-trade-bot/app/usecase/settings"
 	"go-trade-bot/internal/exchange"
+	"go-trade-bot/internal/i18n"
 	"go-trade-bot/internal/notifier"
 
 	"go.uber.org/fx"
@@ -27,8 +28,18 @@ var SettingsModule = fx.Module("settings",
 		usecase.NewUseCase,
 		asSettingsHandlerUseCase,
 		handler.NewSettingsHandler,
+		provideDefaultLocaleSource,
 	),
+	// i18n-02 §4: trade-event webhooks sent by cmd/api (e.g. a manual
+	// position close) use Settings.DefaultLocale.
+	fx.Invoke(func(n *notifier.SwappableNotifier, src i18n.Source) { n.SetLocaleSource(src) }),
 )
+
+// provideDefaultLocaleSource is Settings.DefaultLocale, cached 60 s
+// (i18n-02): agent runs, report snapshots and notifications.
+func provideDefaultLocaleSource(r repository.Repository) i18n.Source {
+	return repository.NewDefaultLocaleSource(r)
+}
 
 func asSettingsRepository(r repository.Repository) usecase.Repository { return r }
 

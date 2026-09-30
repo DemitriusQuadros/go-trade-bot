@@ -5,6 +5,7 @@ import { useChatSession } from '@/context/ChatSessionContext';
 import { Spinner } from '@/components/ui/Spinner';
 import { ChatTurn } from './ChatTurn';
 import { ApplyTarget, ChatDensity } from './types';
+import { useT } from '@/i18n';
 
 // The shared transcript of the current conversation context (Phase D-02 §6):
 // server-hydrated turns (with "Load earlier" at the top), then this
@@ -21,6 +22,7 @@ export function ChatTranscript({
   /** Classes for the inner reading column (e.g. a max-width in Agent mode). */
   columnClassName?: string;
 }) {
+  const t = useT();
   const s = useChatSession();
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -67,21 +69,21 @@ export function ChatTranscript({
               className="inline-flex items-center gap-1.5 bg-secondary hover:bg-accent text-foreground rounded border border-border text-xs py-1 px-3 disabled:opacity-50"
             >
               {s.loadingEarlier ? <Spinner size="sm" /> : <History className="w-3.5 h-3.5" />}
-              Load earlier
+              {t('chat.loadEarlier')}
             </button>
           </div>
         )}
 
         {s.historyLoading && (
           <div role="status" className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-2">
-            <Spinner size="sm" /> Loading conversation…
+            <Spinner size="sm" /> {t('chat.loadingConversation')}
           </div>
         )}
 
         {s.historyError != null && (
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
-            <span>Earlier conversations couldn't be loaded: {apiErrorMessage(s.historyError)}</span>
+            <span>{t('chat.historyFailed', { error: apiErrorMessage(s.historyError) })}</span>
           </div>
         )}
 
@@ -89,20 +91,20 @@ export function ChatTranscript({
           <Divider
             label={
               s.hydratedInModelContext
-                ? 'Earlier conversations'
-                : "Earlier conversations (not in the agent's context)"
+                ? t('chat.earlier')
+                : t('chat.earlierOutOfContext')
             }
           />
         )}
 
-        {s.hydratedTurns.map((t) => (
-          <ChatTurn key={t.id} turn={t} density={density} apply={apply} />
+        {s.hydratedTurns.map((turn) => (
+          <ChatTurn key={turn.id} turn={turn} density={density} apply={apply} />
         ))}
 
-        {s.hydratedTurns.length > 0 && s.liveTurns.length > 0 && <Divider label="This session" />}
+        {s.hydratedTurns.length > 0 && s.liveTurns.length > 0 && <Divider label={t('chat.thisSession')} />}
 
-        {s.liveTurns.map((t) => (
-          <ChatTurn key={t.id} turn={t} density={density} apply={apply} />
+        {s.liveTurns.map((turn) => (
+          <ChatTurn key={turn.id} turn={turn} density={density} apply={apply} />
         ))}
 
         {empty && !s.historyLoading && emptyState}

@@ -613,10 +613,13 @@ func (u AgentUseCase) proposePromotionTool() Tool {
 				Content: truncate(fmt.Sprintf("Promotion proposal #%d filed by agent %q: replace this strategy's code with challenger #%d's (awaiting operator approval). Gate passed: %v. Rationale: %s",
 					p.ID, agent.Name, challenger.ID, ev.Gate.Passed, in.Rationale), maxJournalChars),
 			})
+			gatePassed := notifier.Bool(ev.Gate.Passed)
+			if early {
+				gatePassed = notifier.T("proposal.promotion.early", gatePassed)
+			}
 			notified := u.notifyProposal(ctx, agent, p, champion, "warning",
-				fmt.Sprintf("Promotion proposal #%d: %s", p.ID, champion.Name),
-				fmt.Sprintf("Agent %q proposes promoting challenger #%d into %q (gate passed: %v%s). Review and approve or reject in the web UI.",
-					agent.Name, challenger.ID, champion.Name, ev.Gate.Passed, map[bool]string{true: ", EARLY", false: ""}[early]))
+				notifier.T("proposal.promotion.title", p.ID, champion.Name),
+				notifier.T("proposal.promotion.message", agent.Name, challenger.ID, champion.Name, gatePassed))
 
 			return compactJSON(map[string]any{
 				"proposal_id": p.ID, "status": p.Status, "early": early, "gate_passed": ev.Gate.Passed,
@@ -628,7 +631,7 @@ func (u AgentUseCase) proposePromotionTool() Tool {
 
 // notifyProposal sends a link-only notification via the agent's webhook
 // targets. Reports whether anything was sent.
-func (u AgentUseCase) notifyProposal(ctx context.Context, agent entities.Agent, p entities.StrategyChangeProposal, target entities.Strategy, severity, title, message string) bool {
+func (u AgentUseCase) notifyProposal(ctx context.Context, agent entities.Agent, p entities.StrategyChangeProposal, target entities.Strategy, severity string, title, message *notifier.Text) bool {
 	if u.Notifier == nil || u.Platform == nil || len(agent.WebhookTargetIDs) == 0 {
 		return false
 	}
@@ -642,9 +645,9 @@ func (u AgentUseCase) notifyProposal(ctx context.Context, agent entities.Agent, 
 		ids = append(ids, *p.ChallengerStrategyID)
 	}
 	for _, e := range u.Notifier.SendToTargets(ctx, targets, notifier.AgentMessage{
-		AgentName: agent.Name, Severity: severity, Title: title, Message: message,
+		AgentName: agent.Name, Severity: severity,
 		Link: u.ProposalURL(p.ID), StrategyIDs: ids, Timestamp: u.now().UTC(),
-	}) {
+	}.WithText(title, message)) {
 		log.Printf("agent: proposal %d notification: %v", p.ID, e)
 	}
 	return true

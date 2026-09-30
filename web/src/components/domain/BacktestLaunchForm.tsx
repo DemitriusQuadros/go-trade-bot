@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api, apiErrorMessage } from '@/api/client';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import { Play, Calendar, AlertCircle } from 'lucide-react';
+import { useT } from '@/i18n';
 
 interface BacktestLaunchFormProps {
   strategyId: number;
@@ -18,6 +19,7 @@ interface BacktestLaunchFormProps {
 // pure cross-strategy run history/browser - it links here rather than
 // re-implementing this form.
 export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: BacktestLaunchFormProps) {
+  const t = useT();
   const [symbol, setSymbol] = useState(initialSymbol || 'BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [initialCapital, setInitialCapital] = useState(10000);
@@ -82,7 +84,7 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
           });
       onLaunched(res.id);
     } catch (err: any) {
-      setError(apiErrorMessage(err, 'Failed to execute backtest simulation'));
+      setError(apiErrorMessage(err, t('backtest.launchFailed')));
     } finally {
       setLaunching(false);
     }
@@ -99,7 +101,7 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="form-group mb-0">
-          <label className="form-label">Asset Pair (Symbol)</label>
+          <label className="form-label">{t('backtest.assetPair')}</label>
           <input
             type="text"
             required
@@ -111,24 +113,24 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
         </div>
         <div className="form-group mb-0">
           <label className="form-label flex items-center gap-1.5">
-            Candle Timeframe
-            <HelpTooltip>Resolution of candles evaluated for signals</HelpTooltip>
+            {t('backtest.timeframe')}
+            <HelpTooltip>{t('backtest.timeframeHelp')}</HelpTooltip>
           </label>
           <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} className="form-select text-xs">
-            <option value="1m">1 Minute (1m)</option>
-            <option value="5m">5 Minutes (5m)</option>
-            <option value="15m">15 Minutes (15m)</option>
-            <option value="1h">1 Hour (1h)</option>
-            <option value="4h">4 Hours (4h)</option>
-            <option value="1d">1 Day (1d)</option>
+            <option value="1m">{t('backtest.tf1m')}</option>
+            <option value="5m">{t('backtest.tf5m')}</option>
+            <option value="15m">{t('backtest.tf15m')}</option>
+            <option value="1h">{t('backtest.tf1h')}</option>
+            <option value="4h">{t('backtest.tf4h')}</option>
+            <option value="1d">{t('backtest.tf1d')}</option>
           </select>
         </div>
       </div>
 
       <div className="form-group mb-0">
         <label className="form-label flex items-center gap-1.5">
-          Initial Capital (USD)
-          <HelpTooltip>Starting simulation account balance</HelpTooltip>
+          {t('backtest.initialCapital')}
+          <HelpTooltip>{t('backtest.initialCapitalHelp')}</HelpTooltip>
         </label>
         <input
           type="number"
@@ -145,7 +147,7 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-foreground" />
-            <span>Historical Time Range</span>
+            <span>{t('backtest.timeRange')}</span>
           </span>
           <div className="flex items-center gap-1.5">
             {[1, 3, 6, 12].map((m) => (
@@ -155,18 +157,18 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
                 onClick={() => handlePreset(m)}
                 className="px-2 py-0.5 bg-secondary hover:bg-accent rounded text-[10px] text-muted-foreground font-medium"
               >
-                {m === 12 ? '1Y' : `${m}M`}
+                {m === 12 ? t('backtest.presetYear') : t('backtest.presetMonths', { count: m })}
               </button>
             ))}
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="form-label text-[11px]">Start Date</label>
+            <label className="form-label text-[11px]">{t('backtest.startDate')}</label>
             <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-input text-xs" />
           </div>
           <div>
-            <label className="form-label text-[11px]">End Date</label>
+            <label className="form-label text-[11px]">{t('backtest.endDate')}</label>
             <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className="form-input text-xs" />
           </div>
         </div>
@@ -175,15 +177,15 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
       <div className="grid grid-cols-2 gap-3">
         <div className="form-group mb-0">
           <label className="form-label flex items-center gap-1.5">
-            Slippage (%)
-            <HelpTooltip>Adverse slippage percentage applied to simulated order executions</HelpTooltip>
+            {t('backtest.slippage')}
+            <HelpTooltip>{t('backtest.slippageHelp')}</HelpTooltip>
           </label>
           <input type="number" step="0.01" min="0" value={slippagePct} onChange={(e) => setSlippagePct(Number(e.target.value))} className="form-input text-xs font-mono" />
         </div>
         <div className="form-group mb-0">
           <label className="form-label flex items-center gap-1.5">
-            Fee Rate (%)
-            <HelpTooltip>Simulated broker commission fee rate per executed trade</HelpTooltip>
+            {t('backtest.feeRate')}
+            <HelpTooltip>{t('backtest.feeRateHelp')}</HelpTooltip>
           </label>
           <input type="number" step="0.005" min="0" value={feePct} onChange={(e) => setFeePct(Number(e.target.value))} className="form-input text-xs font-mono" />
         </div>
@@ -193,10 +195,10 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              Walk-Forward Out-of-Sample Validation
-              <HelpTooltip>Sequentially rolls train and test windows forward through time to test out-of-sample robustness</HelpTooltip>
+              {t('backtest.walkForwardTitle')}
+              <HelpTooltip>{t('backtest.walkForwardHelp')}</HelpTooltip>
             </span>
-            <p className="text-[11px] text-muted-foreground">Sequentially roll train/test windows to detect overfitting</p>
+            <p className="text-[11px] text-muted-foreground">{t('backtest.walkForwardSubtitle')}</p>
           </div>
           <input
             type="checkbox"
@@ -208,15 +210,15 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
         {isWalkForward && (
           <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border/30">
             <div>
-              <label className="form-label text-[10px]">Train Months</label>
+              <label className="form-label text-[10px]">{t('backtest.trainMonths')}</label>
               <input type="number" min="1" value={trainMonths} onChange={(e) => setTrainMonths(Number(e.target.value))} className="form-input text-xs font-mono" />
             </div>
             <div>
-              <label className="form-label text-[10px]">Test Months</label>
+              <label className="form-label text-[10px]">{t('backtest.testMonths')}</label>
               <input type="number" min="1" value={testMonths} onChange={(e) => setTestMonths(Number(e.target.value))} className="form-input text-xs font-mono" />
             </div>
             <div>
-              <label className="form-label text-[10px]">Step Months</label>
+              <label className="form-label text-[10px]">{t('backtest.stepMonths')}</label>
               <input type="number" min="1" value={stepMonths} onChange={(e) => setStepMonths(Number(e.target.value))} className="form-input text-xs font-mono" />
             </div>
           </div>
@@ -229,7 +231,7 @@ export function BacktestLaunchForm({ strategyId, initialSymbol, onLaunched }: Ba
         className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground rounded border border-primary py-2.5 flex items-center justify-center gap-2 font-semibold text-xs"
       >
         <Play className="w-4 h-4" />
-        <span>{launching ? 'Simulating Historical Ticks...' : 'Execute Backtest'}</span>
+        <span>{launching ? t('backtest.launching') : t('backtest.execute')}</span>
       </button>
     </form>
   );

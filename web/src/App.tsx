@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthGate } from '@/auth/AuthGate';
 import { RequireCapability } from '@/auth/RequireCapability';
 import { AuthProvider } from '@/context/AuthContext';
+import { LocaleSync } from '@/i18n/LocaleSync';
 import { Users } from '@/pages/Users';
 import { Profile } from '@/pages/Profile';
 import { Dashboard } from '@/pages/Dashboard';
@@ -57,6 +58,7 @@ export function App() {
 
   return (
     <AuthProvider>
+    <LocaleSync />
     <AuthGate>
       <BrowserRouter>
       <EditorBridgeProvider>

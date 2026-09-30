@@ -16,6 +16,8 @@ import {
   MarketTriggerDetail,
 } from '@/api/types';
 import { describeCron } from '@/lib/cron';
+import { formatNumber } from '@/lib/format';
+import { tr, type MessageKey } from '@/i18n';
 
 // Phase C trigger helpers (C-01 §1-§4, C-02). Display strings, defaults and
 // a defensive normaliser for the `triggers` JSON. Validation is the
@@ -34,53 +36,35 @@ export interface EventCatalogEntry {
   defaultWindowHours?: number;
 }
 
+// Labels/help come from the i18n catalog (triggers.event.<type>), read at
+// access time so they follow the UI language.
+const ev = (e: Omit<EventCatalogEntry, 'label' | 'help'>): EventCatalogEntry => {
+  const key = e.type.replace('.', '_');
+  return {
+    ...e,
+    get label() {
+      return tr(`triggers.event.${key}.label` as MessageKey);
+    },
+    get help() {
+      return tr(`triggers.event.${key}.help` as MessageKey);
+    },
+  };
+};
+
 export const EVENT_CATALOG: EventCatalogEntry[] = [
-  {
-    type: 'position.opened',
-    label: 'A position was opened',
-    help: 'Fires whenever a bound strategy opens a position.',
-    defaultCooldown: 15,
-  },
-  {
-    type: 'position.closed',
-    label: 'A position was closed',
-    help: 'Fires whenever a bound strategy closes a position, for any reason - including stop-losses.',
-    defaultCooldown: 15,
-  },
-  {
-    type: 'stoploss.hit',
-    label: 'A stop-loss closed a position',
-    help: 'A position.closed whose exit reason is a stop-loss (real or simulated in dryrun).',
-    defaultCooldown: 15,
-  },
-  {
-    type: 'strategy.error',
-    label: 'A strategy cycle failed',
-    help: 'A strategy cycle returned an error (not a crash).',
-    defaultCooldown: 15,
-  },
-  {
-    type: 'strategy.panic',
-    label: 'A strategy crashed',
-    help: 'A strategy cycle panicked and was recovered by the engine.',
-    defaultCooldown: 15,
-  },
-  {
+  ev({ type: 'position.opened', defaultCooldown: 15 }),
+  ev({ type: 'position.closed', defaultCooldown: 15 }),
+  ev({ type: 'stoploss.hit', defaultCooldown: 15 }),
+  ev({ type: 'strategy.error', defaultCooldown: 15 }),
+  ev({ type: 'strategy.panic', defaultCooldown: 15 }),
+  ev({
     type: 'drawdown',
-    label: 'Drawdown crossed a threshold',
-    help: 'Checked every 5 minutes: peak-to-trough of realized PnL over the window, as a % of the strategy\'s starting notional, reached the threshold.',
     defaultCooldown: 240,
     needsThreshold: true,
     needsWindow: 'optional',
     defaultWindowHours: 24,
-  },
-  {
-    type: 'no_signal',
-    label: 'No position opened for a while',
-    help: 'Checked every 5 minutes: an enabled strategy has not opened a position within the window.',
-    defaultCooldown: 240,
-    needsWindow: 'required',
-  },
+  }),
+  ev({ type: 'no_signal', defaultCooldown: 240, needsWindow: 'required' }),
 ];
 
 export function eventLabel(type: string): string {
@@ -89,10 +73,14 @@ export function eventLabel(type: string): string {
 
 // --- Market rules (C-01 §3) --------------------------------------------------
 
-export const MARKET_KINDS: { kind: MarketRuleKind; label: string }[] = [
-  { kind: 'pct_move', label: 'Price move %' },
-  { kind: 'volatility_spike', label: 'Volatility spike ×' },
-];
+export const MARKET_KINDS: { kind: MarketRuleKind; readonly label: string }[] = (['pct_move', 'volatility_spike'] as MarketRuleKind[]).map(
+  (kind) => ({
+    kind,
+    get label() {
+      return tr(`triggers.marketKind.${kind}` as MessageKey);
+    },
+  }),
+);
 
 export const WINDOW_PRESETS: { label: string; minutes: number }[] = [
   { label: '15m', minutes: 15 },
@@ -120,15 +108,15 @@ export function describeMarketRule(r: {
   multiplier?: number;
   cooldown_minutes: number;
 }): string {
-  const sym = r.symbol.trim() || '<symbol>';
+  const sym = r.symbol.trim() || tr('triggers.symbolPlaceholder');
   const win = formatWindow(r.window_minutes);
   const cd = r.cooldown_minutes > 0 ? `${r.cooldown_minutes}m` : `${MARKET_DEFAULT_COOLDOWN}m`;
   if (r.kind === 'volatility_spike') {
     const m = r.multiplier && r.multiplier > 0 ? `${r.multiplier}×` : '?×';
-    return `Fires when ${sym} volatility (ATR) over ${win} is ≥${m} its 24h baseline, at most once per ${cd}`;
+    return tr('triggers.describeVol', { symbol: sym, window: win, mult: m, cooldown: cd });
   }
   const pct = r.threshold_pct && r.threshold_pct > 0 ? `${r.threshold_pct}%` : '?%';
-  return `Fires when ${sym} moves ≥${pct} within ${win}, at most once per ${cd}`;
+  return tr('triggers.describeMove', { symbol: sym, pct, window: win, cooldown: cd });
 }
 
 export function newRuleId(): string {
@@ -143,11 +131,12 @@ export function newRuleId(): string {
 
 // --- Chains (C-01 §4) ----------------------------------------------------------
 
-export const CHAIN_ON_OPTIONS: { on: ChainOn; label: string }[] = [
-  { on: 'report', label: 'writes a report' },
-  { on: 'notify', label: 'sends a notification' },
-  { on: 'success', label: 'finishes successfully' },
-];
+export const CHAIN_ON_OPTIONS: { on: ChainOn; readonly label: string }[] = (['report', 'notify', 'success'] as ChainOn[]).map((on) => ({
+  on,
+  get label() {
+    return tr(`triggers.chainOn.${on}` as MessageKey);
+  },
+}));
 
 export function chainOnLabel(on: string): string {
   return CHAIN_ON_OPTIONS.find((o) => o.on === on)?.label ?? on;
@@ -200,15 +189,15 @@ export function triggerSummary(agent: Agent): AgentTriggerSummary {
 export function triggerDetailLines(agent: Agent, agentName: (id: number) => string): string[] {
   const t = normalizeTriggers(agent.triggers);
   const lines: string[] = [];
-  t.cron.forEach((c) => lines.push(`Schedule: ${describeCron(c)} UTC (${c})`));
+  t.cron.forEach((c) => lines.push(tr('triggers.lineSchedule', { desc: describeCron(c), spec: c })));
   t.events.forEach((e) => {
     const extra: string[] = [];
     if (e.threshold_pct) extra.push(`≥${e.threshold_pct}%`);
-    if (e.window_hours) extra.push(`${e.window_hours}h window`);
-    lines.push(`Event: ${e.type}${extra.length ? ` (${extra.join(', ')})` : ''}`);
+    if (e.window_hours) extra.push(tr('triggers.lineWindow', { hours: e.window_hours }));
+    lines.push(tr('triggers.lineEvent', { type: e.type, extra: extra.length ? ` (${extra.join(', ')})` : '' }));
   });
-  t.market.forEach((m) => lines.push(`Market: ${describeMarketRule(m)}`));
-  t.chain_from.forEach((c) => lines.push(`Chained: after ${agentName(c.agent_id)} ${chainOnLabel(c.on)}`));
+  t.market.forEach((m) => lines.push(tr('triggers.lineMarket', { desc: describeMarketRule(m) })));
+  t.chain_from.forEach((c) => lines.push(tr('triggers.lineChain', { agent: agentName(c.agent_id), on: chainOnLabel(c.on) })));
   return lines;
 }
 
@@ -233,8 +222,7 @@ export function runTriggerInfo(run: Pick<AgentRun, 'trigger' | 'trigger_detail'>
 }
 
 function signedPct(v: number): string {
-  const rounded = Math.round(v * 100) / 100;
-  return `${rounded > 0 ? '+' : ''}${rounded}%`;
+  return `${formatNumber(v, { maxDigits: 2, signed: true })}%`;
 }
 
 // One-line market detail: "BTCUSDT +3.4% in 60m" / "ETHUSDT 2.1× vol in 1h".
@@ -242,9 +230,9 @@ export function describeMarketDetail(d: MarketTriggerDetail): string {
   const sym = d.symbol ?? '?';
   const win = d.window_minutes ? `${d.window_minutes}m` : '?';
   if (d.kind === 'volatility_spike') {
-    const m = d.observed_multiplier != null ? `${Math.round(d.observed_multiplier * 100) / 100}×` : '?×';
-    return `${sym} ${m} volatility in ${win}`;
+    const m = d.observed_multiplier != null ? `${formatNumber(d.observed_multiplier, { maxDigits: 2 })}×` : '?×';
+    return tr('triggers.detailVol', { symbol: sym, mult: m, window: win });
   }
   const pct = d.observed_pct != null ? signedPct(d.observed_pct) : '?%';
-  return `${sym} ${pct} in ${win}`;
+  return tr('triggers.detailMove', { symbol: sym, pct, window: win });
 }

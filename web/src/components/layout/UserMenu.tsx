@@ -1,14 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, UserRound } from 'lucide-react';
+import { ChevronDown, Languages, LogOut, UserRound } from 'lucide-react';
+import { LOCALES, LOCALE_NATIVE, useLocale, useT } from '@/i18n';
 import { DropdownMenu } from '@/components/ui/DropdownMenu';
 import { useAuth } from '@/context/AuthContext';
 
-const STRINGS = {
-  menuLabel: 'Account menu',
-  profile: 'Profile',
-  signOut: 'Sign out',
-};
 
 const TRIGGER =
   'flex items-center gap-1.5 px-1.5 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 text-xs transition-colors';
@@ -31,21 +27,29 @@ export function UserAvatar({ name, className = '' }: { name?: string; className?
 }
 
 // Header user menu (auth-02 §4): avatar initial + display name, with
-// Profile and Sign out.
+// Profile, Language (submenu) and Sign out.
 export function UserMenu() {
   const { me, logout } = useAuth();
   const navigate = useNavigate();
+  const t = useT();
+  const { locale, setLocale } = useLocale();
   if (!me) return null;
   const name = me.display_name || me.username;
 
   return (
     <DropdownMenu
       align="right"
-      label={STRINGS.menuLabel}
+      label={t('nav.accountMenu')}
       triggerClassName={TRIGGER}
       items={[
-        { label: STRINGS.profile, icon: <UserRound />, onClick: () => navigate('/profile') },
-        { label: STRINGS.signOut, icon: <LogOut />, onClick: () => void logout(), separatorBefore: true },
+        { id: 'profile', label: t('nav.profile'), icon: <UserRound />, onClick: () => navigate('/profile') },
+        {
+          id: 'language',
+          label: t('nav.language'),
+          icon: <Languages />,
+          submenu: LOCALES.map((l) => ({ id: l, label: LOCALE_NATIVE[l], checked: l === locale, onClick: () => setLocale(l) })),
+        },
+        { id: 'signout', label: t('nav.signOut'), icon: <LogOut />, onClick: () => void logout(), separatorBefore: true },
       ]}
       trigger={
         <span className="flex items-center gap-1.5" data-testid="user-menu">
