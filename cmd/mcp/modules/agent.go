@@ -25,6 +25,7 @@ import (
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/report/agentreport"
 
+	"github.com/hibiken/asynq"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 )
@@ -84,6 +85,8 @@ var AgentModule = fx.Module("agent",
 			// Phase B-01: gated deploys, challengers, proposals (acting as
 			// the default agent, like every MCP tool call).
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
+			uc.Inspector = asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.Redis.Addr})
+			uc.ExecutionReader = strategy_repo.NewStrategyRepository(db)
 			uc.Provider = cfg.Agent.Provider
 			if cfg.Agent.Provider == "anthropic" {
 				uc.ModelName = cfg.Agent.AnthropicModel

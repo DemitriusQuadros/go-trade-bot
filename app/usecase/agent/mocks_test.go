@@ -95,6 +95,14 @@ func (m *mockAgentRepository) ListRunsFiltered(ctx context.Context, f repoagent.
 	return args.Get(0).([]entities.AgentRun), args.Error(1)
 }
 
+func (m *mockAgentRepository) LastRunByAgent(ctx context.Context, agentID uint) (*entities.AgentRun, error) {
+	args := m.Called(ctx, agentID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entities.AgentRun), args.Error(1)
+}
+
 // --- agent.StrategyUseCase (local interface) ---
 
 type mockStrategyUseCase struct {

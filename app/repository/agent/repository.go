@@ -37,6 +37,8 @@ type Repository interface {
 	// ListRunsFiltered is ListRuns with every filter of GET /agent/runs
 	// (Phase D-01 §1): newest first ("id DESC"), all filters ANDed.
 	ListRunsFiltered(ctx context.Context, f RunFilter) ([]entities.AgentRun, error)
+	// LastRunByAgent returns the agent's newest run, or nil if it has none.
+	LastRunByAgent(ctx context.Context, agentID uint) (*entities.AgentRun, error)
 }
 
 // RunFilter selects AgentRun rows for ListRunsFiltered. Zero values mean

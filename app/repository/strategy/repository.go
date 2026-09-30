@@ -165,3 +165,26 @@ func (r StrategyRepository) GetScriptVersions(ctx context.Context, strategyID ui
 	err := r.db.WithContext(ctx).Where("strategy_id = ?", strategyID).Order("created_at desc").Find(&versions).Error
 	return versions, err
 }
+
+// GetLatestExecutions returns the most recent execution record for each strategy,
+// keyed by strategy ID. Used by scheduler health monitoring.
+func (r StrategyRepository) GetLatestExecutions(ctx context.Context) (map[uint]entities.StrategyExecution, error) {
+	var execs []entities.StrategyExecution
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT se.* FROM strategy_executions se
+		INNER JOIN (
+			SELECT strategy_id, MAX(executed_at) as max_exec
+			FROM strategy_executions
+			GROUP BY strategy_id
+		) latest ON se.strategy_id = latest.strategy_id AND se.executed_at = latest.max_exec
+	`).Scan(&execs).Error
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[uint]entities.StrategyExecution, len(execs))
+	for _, e := range execs {
+		m[e.StrategyID] = e
+	}
+	return m, nil
+}
+

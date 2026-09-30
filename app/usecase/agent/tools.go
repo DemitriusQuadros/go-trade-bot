@@ -58,6 +58,7 @@ func (u AgentUseCase) buildToolRegistry() []Tool {
 		withPermission(u.getOpenPositionsTool(), entities.PermRead),
 		withPermission(u.getPerformanceSnapshotsTool(), entities.PermRead),
 		withPermission(u.getCandleCoverageTool(), entities.PermRead),         // read - fix-02 B2
+		withPermission(u.getSchedulerHealthTool(), entities.PermRead),        // read - scheduler, queue & strategy health
 		withPermission(u.runBacktestTool(), entities.PermBacktest),           // writes a BacktestRun only, never a Strategy row
 		withPermission(u.listOptimizationsTool(), entities.PermRead),         // read
 		withPermission(u.runOptimizationTool(), entities.PermOptimize),       // writes an OptimizationRun only, never a Strategy row

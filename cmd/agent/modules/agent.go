@@ -29,6 +29,7 @@ import (
 	"go-trade-bot/internal/notifier"
 	"go-trade-bot/internal/report/agentreport"
 
+	"github.com/hibiken/asynq"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 )
@@ -117,6 +118,8 @@ var AgentModule = fx.Module("agent",
 			// same guarded launcher the declarative ChainFrom path uses.
 			uc.Chain = chain
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
+			uc.Inspector = asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.Redis.Addr})
+			uc.ExecutionReader = strategy_repo.NewStrategyRepository(db)
 			return uc
 		},
 	),

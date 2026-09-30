@@ -243,6 +243,10 @@ type AgentUseCase struct {
 	ForwardTest ClosedSignalReader
 	Validator   ScriptValidator
 	Clock       func() time.Time
+
+	// Schedulers & queue health monitoring (get_scheduler_health tool).
+	Inspector       AsynqInspector
+	ExecutionReader StrategyExecutionReader
 }
 
 // ReportRenderer validates and renders report blocks (internal/report/agentreport).

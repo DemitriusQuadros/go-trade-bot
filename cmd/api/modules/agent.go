@@ -28,6 +28,7 @@ import (
 	"go-trade-bot/internal/modelprovider"
 	"go-trade-bot/internal/notifier"
 
+	"github.com/hibiken/asynq"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 )
@@ -125,6 +126,8 @@ var AgentModule = fx.Module("agent",
 			uc.Locales = locales // i18n-02: default locale for runs and report snapshots
 			// Phase B-01: gated deploys, challengers, proposals (chat).
 			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
+			uc.Inspector = asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.Redis.Addr})
+			uc.ExecutionReader = strategy_repo.NewStrategyRepository(db)
 			return uc
 		},
 		func(uc *agentusecase.AgentUseCase) agenthandler.UseCase { return uc },

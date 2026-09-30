@@ -410,6 +410,20 @@ func (r *fakeRunRepo) ListRuns(context.Context, int, *uint) ([]entities.AgentRun
 func (r *fakeRunRepo) ListRunsFiltered(context.Context, repoagent.RunFilter) ([]entities.AgentRun, error) {
 	return nil, nil
 }
+func (r *fakeRunRepo) LastRunByAgent(_ context.Context, agentID uint) (*entities.AgentRun, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var newest *entities.AgentRun
+	for _, run := range r.runs {
+		if run.AgentID != nil && *run.AgentID == agentID {
+			if newest == nil || run.ID > newest.ID {
+				cp := run
+				newest = &cp
+			}
+		}
+	}
+	return newest, nil
+}
 
 // fakeStrategies is an agent.StrategyUseCase whose strategies 1..99 exist
 // as testing/dryrun unless overridden; it records writes.

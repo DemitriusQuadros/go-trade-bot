@@ -91,6 +91,7 @@ func TestRun_PermissionFilteredRegistry(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"list_strategies", "get_strategy", "list_backtests", "get_backtest", "get_open_positions", "get_performance_snapshots",
 		"get_candle_coverage", // fix-02 B2, read
+		"get_scheduler_health",
 		"list_optimizations", "get_optimization_results",
 		"read_memory", "write_journal", "list_reports", "write_report",
 		"list_proposals", "get_deploy_gate_config", // Phase B, always granted (read-only)
