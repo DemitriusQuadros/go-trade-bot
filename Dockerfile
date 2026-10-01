@@ -1,14 +1,19 @@
-FROM golang:1.25 as builder
+# Stage 1: Build the React frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /web
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
 
+# Stage 2: Build the Go binary
+FROM golang:1.25 AS builder
 WORKDIR /app
-
 COPY go.mod go.sum ./
 RUN go mod download
-
 COPY . .
+COPY --from=frontend-builder /web/dist/ ./cmd/api/webui/dist/
 
-# TARGET selects the binary under cmd/: api | worker | mcp | agent
-# (docker-compose sets it per service).
 ARG TARGET
 
 # Discovered building cmd/mcp on a low-memory host (observed: 2 CPU / ~2GB
@@ -28,6 +33,7 @@ ENV GOFLAGS=${GOFLAGS}
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/app ./cmd/$TARGET
 
+# Stage 3: Runtime
 FROM alpine:latest
 
 WORKDIR /root/
