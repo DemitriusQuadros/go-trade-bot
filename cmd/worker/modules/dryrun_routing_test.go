@@ -298,8 +298,8 @@ func TestWorkerDryRunCycle_SimulatedEntryAndPersistedStop(t *testing.T) {
 	assert.InDelta(t, float64(order.InvestedAmount)*0.001, order.EntryFee, 1e-3)
 	assert.Empty(t, s.real.placed)
 	acc := s.account(t)
-	assert.Equal(t, float32(1000), acc.Amount, "simulated fills never touch the real account")
-	assert.Equal(t, int64(2), acc.AvailableOrders)
+	assert.Equal(t, float32(499.5), acc.Amount, "simulated fills deduct from virtual account")
+	assert.Equal(t, int64(1), acc.AvailableOrders)
 	require.Len(t, s.notes.ofType(notifier.EventPositionOpened), 1)
 
 	// Cycle 2: a closed candle above the stop - no trigger, watermark persisted.
@@ -341,7 +341,7 @@ func TestWorkerDryRunCycle_SimulatedEntryAndPersistedStop(t *testing.T) {
 	assert.Len(t, s.notes.ofType(notifier.EventPositionOpened), 1)
 
 	assert.Empty(t, s.real.placed, "no real order was ever placed")
-	assert.Equal(t, float32(1000), s.account(t).Amount)
+	assert.InDelta(t, 988.02, float64(s.account(t).Amount), 1e-2, "simulated stop loss credits remaining capital minus loss and broker fees")
 }
 
 // AC3: live cycles (ceiling live, testnet false) still place real orders on

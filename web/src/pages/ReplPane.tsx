@@ -11,7 +11,7 @@ import { TraceRecord } from '@/api/types';
 import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { WorkbenchContext } from './WorkbenchShell';
 import { useIsDarkMode } from '@/hooks/useIsDarkMode';
-import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw, RefreshCw } from 'lucide-react';
+import { Play, Terminal, AlertCircle, CheckCircle2, XCircle, RotateCcw, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { formatTime } from '@/lib/format';
 import { useT } from '@/i18n';
 
@@ -57,7 +57,7 @@ export function ReplPane() {
 function ReplPaneInner() {
   const t = useT();
   const ctx = useOutletContext<WorkbenchContext>();
-  const { setReplTrace, setReplResult, setActiveTraceSource, draft, appendConsoleEntry } = ctx;
+  const { setReplTrace, setReplResult, setActiveTraceSource, draft, appendConsoleEntry, zenMode, setZenMode } = ctx;
   const isDark = useIsDarkMode();
 
   // source/symbol/timeframe/windowCandles/history/selectedHistoryId stay
@@ -247,6 +247,16 @@ function ReplPaneInner() {
           defaultOpen
           action={
             <>
+              <button
+                type="button"
+                onClick={() => setZenMode(zenMode === 'editor' ? 'none' : 'editor')}
+                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-secondary/40"
+                title={t('workbench.fullscreenEditorTitle')}
+                data-testid="repl-zen-btn"
+              >
+                {zenMode === 'editor' ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                <span>{zenMode === 'editor' ? t('workbench.exitZenModeShort') : t('workbench.zenModeEditorShort')}</span>
+              </button>
               <button
                 onClick={handleEvaluateNow}
                 className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"

@@ -1,4 +1,5 @@
 config.yml
+*.tar.gz
 .vscode
 .claude/
 .DS_Store

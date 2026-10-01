@@ -19,3 +19,6 @@ scrape_configs:
   - job_name: 'go-console'
     static_configs:
       - targets: ['host.docker.internal:9192']
+  - job_name: 'go-agent'
+    static_configs:
+      - targets: ['host.docker.internal:9194']

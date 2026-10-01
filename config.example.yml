@@ -17,7 +17,7 @@ REDIS:
   ADDR: localhost:6379
 
 PROMETHEUS:
-  ADDRESS: localhost:9090
+  ADDRESS: localhost:9095
 
 # Process-wide execution-mode ceiling: backtest | dryrun | paper | live.
 # Unset = dryrun (the safest tier). A strategy only trades live when BOTH its
@@ -31,9 +31,9 @@ TESTNET: false
 
 # Simulated fills for dryrun strategies.
 DRY_RUN:
-  SLIPPAGE_PCT: 0      # % applied to market fills and simulated stops (default 0)
-  FEE_PCT: 0.1         # % fee per fill (default 0.1)
-  FILL_DELAY: 0s       # default 0s
+  SLIPPAGE_PCT: 0.05   # % applied to market fills and simulated stops (default 0.05)
+  FEE_PCT: 0.075       # % fee per fill (median crypto rate: 0.075% Binance BNB rate)
+  FILL_DELAY: 50ms     # simulated execution latency
 
 # Outbound trade-event webhook (optional; empty = disabled).
 WEBHOOK_URL: ""

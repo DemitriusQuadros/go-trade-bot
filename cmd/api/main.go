@@ -22,6 +22,7 @@ import (
 	strategy "go-trade-bot/app/handler/web/strategy"
 	usershandler "go-trade-bot/app/handler/web/users"
 	webhooktargets "go-trade-bot/app/handler/web/webhooktargets"
+	accountrepo "go-trade-bot/app/repository/account"
 	agentrepo "go-trade-bot/app/repository/agent"
 	"go-trade-bot/app/repository/agentplatform"
 	proposalrepo "go-trade-bot/app/repository/proposal"
@@ -264,6 +265,11 @@ func Migrate(db *gorm.DB) error {
 	}
 	// Seed the empty house-rules row (idempotent, fix-02 B4).
 	if err := agentrepo.NewGormRepository(db).EnsureInstruction(context.Background()); err != nil {
+		return err
+	}
+
+	// Seed default accounts (idempotent, ensures dryrun and live accounts exist).
+	if err := accountrepo.NewAccountRepository(db).EnsureDefaultAccounts(); err != nil {
 		return err
 	}
 

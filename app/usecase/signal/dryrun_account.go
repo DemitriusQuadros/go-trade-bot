@@ -18,11 +18,16 @@ func NewDryRunAccount(inner AccountUseCase) DryRunAccount {
 	return DryRunAccount{inner: inner}
 }
 
-// DeductOrder is a no-op for simulated fills.
-func (a DryRunAccount) DeductOrder(float32) error { return nil }
+// DeductOrder updates the virtual dry-run account balance and slots.
+func (a DryRunAccount) DeductOrder(entryPrice float32) error {
+	return a.inner.DeductOrder(entryPrice)
+}
 
-// AddOrder is a no-op for simulated fills.
-func (a DryRunAccount) AddOrder(float32) error { return nil }
+// AddOrder credits the returned capital and net profit (with fees deducted)
+// back to the virtual dry-run account.
+func (a DryRunAccount) AddOrder(exitPrice float32) error {
+	return a.inner.AddOrder(exitPrice)
+}
 
 // GetDisponibleAmout reads the real account's per-order amount.
 func (a DryRunAccount) GetDisponibleAmout() (float32, error) { return a.inner.GetDisponibleAmout() }

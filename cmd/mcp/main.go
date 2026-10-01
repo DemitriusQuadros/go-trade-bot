@@ -18,6 +18,7 @@ import (
 
 	"go-trade-bot/app/entities"
 	agentrepo "go-trade-bot/app/repository/agent"
+	accountrepo "go-trade-bot/app/repository/account"
 	"go-trade-bot/app/repository/agentplatform"
 	proposalrepo "go-trade-bot/app/repository/proposal"
 	"go-trade-bot/app/strategies"
@@ -134,6 +135,9 @@ func Migrate(db *gorm.DB) error {
 	}
 	// Seed the default "Copilot" agent persona (idempotent).
 	if _, err := agentplatform.NewGormRepository(db).EnsureDefaultAgent(context.Background()); err != nil {
+		return err
+	}
+	if err := accountrepo.NewAccountRepository(db).EnsureDefaultAccounts(); err != nil {
 		return err
 	}
 	// Seed the empty house-rules row (idempotent, fix-02 B4).

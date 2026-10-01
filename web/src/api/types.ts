@@ -1,13 +1,33 @@
 // web/src/api/types.ts
 
-// --- Account -----------------------------------------------------------
 export interface Account {
   id?: number;
+  mode?: 'dryrun' | 'live' | 'paper';
   amount: number;
+  initial_amount?: number;
+  locked_amount?: number;
+  max_allocation?: number;
   available_orders?: number;
   currency?: string;
+  last_synced_at?: string;
   created_at?: string;
   updated_at?: string;
+  accounts?: Record<string, Account>;
+}
+
+export interface UpdateDryRunAccountRequest {
+  amount: number;
+  available_orders: number;
+  currency: string;
+}
+
+export interface UpdateLiveAccountRequest {
+  max_allocation: number;
+  available_orders: number;
+}
+
+export interface SyncAccountRequest {
+  mode?: string;
 }
 
 // --- Strategy ------------------------------------------------------------
@@ -87,6 +107,7 @@ export interface Signal {
   symbol: string;
   strategy_id: number;
   status: SignalStatus;
+  mode?: StrategyMode | string;
   orders: Order[];
   created_at: string;
   updated_at: string;

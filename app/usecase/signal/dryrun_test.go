@@ -73,8 +73,10 @@ func TestReconcile_SimulatedStopReportsSimulatedExitReason(t *testing.T) {
 	mockRepo := new(mocks.SignalRepository)
 	inner := new(mocks.ExchangeClient)
 	notify := new(mocks.NotificationSender)
+	mockAccount := new(mocks.AccountUseCase)
+	mockAccount.On("AddOrder", mock.Anything).Return(nil).Once()
 	dry := exchange.NewDryRunExchange(inner, 0, nil)
-	signalUC := usecase.NewSignalUseCase(mockRepo, usecase.NewDryRunAccount(new(mocks.AccountUseCase)), dry, notify, nil, nil)
+	signalUC := usecase.NewSignalUseCase(mockRepo, usecase.NewDryRunAccount(mockAccount), dry, notify, nil, nil)
 
 	dry.TriggerStop("SIM-STOP-1-2", 1, 95, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	mockRepo.On("GetOpenSignals", "BTCUSDT", uint(1)).Return(entities.Signal{ID: 9, Status: entities.Open, Orders: []entities.Order{
@@ -95,10 +97,12 @@ func TestReconcile_SimulatedStopReportsSimulatedExitReason(t *testing.T) {
 	inner.AssertNotCalled(t, "CancelOrder", mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestDryRunAccount_ReadsRealAccountButNeverWrites(t *testing.T) {
+func TestDryRunAccount_DelegatesToVirtualAccount(t *testing.T) {
 	inner := new(mocks.AccountUseCase)
 	inner.On("CanOpenOrder").Return(true, nil).Once()
 	inner.On("GetDisponibleAmout").Return(float32(250), nil).Once()
+	inner.On("DeductOrder", float32(100)).Return(nil).Once()
+	inner.On("AddOrder", float32(100)).Return(nil).Once()
 	acc := usecase.NewDryRunAccount(inner)
 
 	ok, err := acc.CanOpenOrder()
@@ -110,7 +114,5 @@ func TestDryRunAccount_ReadsRealAccountButNeverWrites(t *testing.T) {
 	assert.NoError(t, acc.DeductOrder(100))
 	assert.NoError(t, acc.AddOrder(100))
 
-	inner.AssertNotCalled(t, "DeductOrder", mock.Anything)
-	inner.AssertNotCalled(t, "AddOrder", mock.Anything)
 	inner.AssertExpectations(t)
 }

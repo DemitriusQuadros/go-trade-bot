@@ -3,6 +3,9 @@ import { api } from '@/api/client';
 import { 
   StrategyCreateRequest, 
   StrategyUpdateRequest, 
+  UpdateDryRunAccountRequest,
+  UpdateLiveAccountRequest,
+  SyncAccountRequest, 
   RunBacktestRequest, 
   WalkForwardRequest,
   CreateOptimizationRequest,
@@ -71,10 +74,50 @@ export const QUERY_KEYS = {
   users: ['users'],
 };
 
-export function useAccount() {
+export function useAccount(mode?: string) {
   return useQuery({
-    queryKey: QUERY_KEYS.account,
-    queryFn: ({ signal }) => api.getAccount({ signal }),
+    queryKey: mode ? [...QUERY_KEYS.account, mode] : QUERY_KEYS.account,
+    queryFn: ({ signal }) => api.getAccount({ signal, mode }),
+  });
+}
+
+export function useUpdateDryRunAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateDryRunAccountRequest) => api.updateDryRunAccount(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.account });
+    },
+  });
+}
+
+export function useResetDryRunAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resetDryRunAccount(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.account });
+    },
+  });
+}
+
+export function useUpdateLiveAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateLiveAccountRequest) => api.updateLiveAccount(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.account });
+    },
+  });
+}
+
+export function useSyncAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data?: SyncAccountRequest) => api.syncAccount(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.account });
+    },
   });
 }
 

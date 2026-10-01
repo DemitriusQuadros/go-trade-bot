@@ -1,6 +1,9 @@
 // web/src/api/client.ts
 import { ScriptVersion, 
   Account,
+  UpdateDryRunAccountRequest,
+  UpdateLiveAccountRequest,
+  SyncAccountRequest,
   Strategy,
   StrategyCreateRequest,
   StrategyUpdateRequest,
@@ -192,8 +195,16 @@ export const api = {
     request<T>('DELETE', path, undefined, opts),
 
   // Account
-  getAccount: (opts?: { signal?: AbortSignal }) =>
-    api.get<Account>('/account', opts),
+  getAccount: (opts?: { signal?: AbortSignal; mode?: string }) =>
+    api.get<Account>(opts?.mode ? `/account?mode=${opts.mode}` : '/account', opts),
+  updateDryRunAccount: (data: UpdateDryRunAccountRequest) =>
+    api.put<Account>('/account/dryrun', data),
+  resetDryRunAccount: () =>
+    api.post<Account>('/account/dryrun/reset', {}),
+  updateLiveAccount: (data: UpdateLiveAccountRequest) =>
+    api.put<Account>('/account/live', data),
+  syncAccount: (data?: SyncAccountRequest) =>
+    api.post<Account>('/account/sync', data ?? {}),
 
   // Strategies
   getStrategies: (opts?: { signal?: AbortSignal }) =>

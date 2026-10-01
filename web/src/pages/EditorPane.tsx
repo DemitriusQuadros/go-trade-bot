@@ -15,7 +15,7 @@ import {
   toStrategyConfiguration,
   WorkbenchContext,
 } from './WorkbenchShell';
-import { Save, Rocket, CheckCircle2, AlertCircle, Code2, RotateCcw, RefreshCw } from 'lucide-react';
+import { Save, Rocket, CheckCircle2, AlertCircle, Code2, RotateCcw, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { useT } from '@/i18n';
 
 const LIVE_REFRESH_MS = 5000;
@@ -35,7 +35,7 @@ export function EditorPane() {
   const t = useT();
   const navigate = useNavigate();
   const ctx = useOutletContext<WorkbenchContext>();
-  const { draft, setDraft, setEditorTrace, setActiveTraceSource, appendConsoleEntry, readOnly } = ctx;
+  const { draft, setDraft, setEditorTrace, setActiveTraceSource, appendConsoleEntry, readOnly, zenMode, setZenMode } = ctx;
   // auth-02 §4: the live preview (fast-rerun) needs `backtest`; non-admins
   // only create/save backtest drafts.
   const { can } = useAuth();
@@ -324,77 +324,161 @@ export function EditorPane() {
     // current view mode (Script/Split/Chart) gives this pane, instead of
     // stopping at a fixed pixel height regardless of available room.
     <div className="h-full flex flex-col gap-4">
-      {/* Was md:flex-row - a viewport-width breakpoint that fires regardless
-          of how narrow this container actually is once squeezed into
-          WorkbenchShell's side panel, wrapping this whole row into a
-          jumbled mess. Always-stacked, and the hint text is trimmed since
-          this panel is narrow by design now (full detail: it auto-runs
-          600ms after typing stops). */}
-      <div className="flex flex-col gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <Code2 className="w-3.5 h-3.5 text-foreground shrink-0" />
-            <span className="text-[11px] text-muted-foreground" title={t('workbench.autoRunTitle')}>
-              {t('workbench.autoRun')}
-            </span>
+      {zenMode === 'editor' ? (
+        /* VS Code Style Zen Mode Top Bar */
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 border-b border-border/60 shrink-0 font-sans">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary">
+              <Code2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-foreground">
+                  {isEdit ? draft.name || t('workbench.strategyNumber', { id: draft.strategyId }) : t('workbench.titleNew')}
+                </span>
+                <span className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold bg-secondary/80 text-foreground border border-border/60">
+                  {t('workbench.scriptFile')}
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                    draft.mode === 'live'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : draft.mode === 'dryrun'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                  }`}
+                >
+                  {draft.mode}
+                </span>
+                <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-accent/40 text-muted-foreground border border-border/40">
+                  {cycleTimeframe(draft.cycleMinutes)}
+                </span>
+              </div>
+            </div>
           </div>
-          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">
-            <input
-              type="checkbox"
-              checked={liveRefresh}
-              onChange={(e) => setLiveRefresh(e.target.checked)}
-            />
-            <span>{t('workbench.liveRefresh', { seconds: LIVE_REFRESH_MS / 1000 })}</span>
-          </label>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {canPreview && (!readOnly || isEdit) && (
-          <button
-            onClick={handleRunFullBacktest}
-            disabled={createMutation.isPending || updateMutation.isPending}
-            className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
-            title={t('workbench.runBacktestTitle')}
-          >
-            <Rocket className="w-3.5 h-3.5 text-accent-foreground" />
-            <span>{readOnly ? t('workbench.openBacktest') : t('workbench.runBacktest')}</span>
-          </button>
-          )}
-          {readOnly ? null : isEdit ? (
-            <button
-              onClick={() => saveStrategy()}
-              disabled={updateMutation.isPending}
-              title="Ctrl+S / ⌘S"
-              className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>{updateMutation.isPending ? t('common.saving') : t('workbench.saveChanges')}</span>
-            </button>
-          ) : (
-            <>
+
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground mr-1">
+              <input
+                type="checkbox"
+                checked={liveRefresh}
+                onChange={(e) => setLiveRefresh(e.target.checked)}
+              />
+              <span>{t('workbench.liveRefresh', { seconds: LIVE_REFRESH_MS / 1000 })}</span>
+            </label>
+
+            {canPreview && (
               <button
-                onClick={() => saveStrategy(isAdmin ? 'disabled' : undefined)}
-                disabled={createMutation.isPending}
-                title="Ctrl+S / ⌘S"
-                className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+                type="button"
+                onClick={handleReRunNow}
+                title={t('workbench.rerunTitle')}
+                className="bg-card/40 hover:bg-secondary/60 text-foreground rounded border border-border/50 text-xs flex items-center gap-1.5 px-2.5 py-1.5"
               >
-                <Save className="w-3.5 h-3.5" />
-                <span>{t('workbench.saveDraft')}</span>
+                <RefreshCw className="w-3.5 h-3.5 text-primary" />
+                <span>{t('workbench.rerun')}</span>
               </button>
-              {/* Productive status is admin only (auth-01 §3). */}
-              {isAdmin && (
+            )}
+
+            {!readOnly && (
               <button
-                onClick={() => saveStrategy('productive')}
-                disabled={createMutation.isPending}
+                type="button"
+                onClick={() => saveStrategy(isEdit ? undefined : 'disabled')}
+                disabled={updateMutation.isPending || createMutation.isPending}
+                title="Ctrl+S / ⌘S"
+                data-testid="zen-save-btn"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground rounded border border-primary text-xs flex items-center gap-1.5 px-3 py-1.5 font-bold shadow-sm"
+              >
+                {updateMutation.isPending || createMutation.isPending ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                <span>{isEdit ? t('workbench.saveChanges') : t('workbench.saveDraft')}</span>
+                {/* i18n-ignore */}<kbd className="px-1 py-0.5 text-[9px] bg-black/20 rounded font-mono opacity-80">⌘S</kbd>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setZenMode('none')}
+              title={t('workbench.exitZenMode')}
+              data-testid="exit-editor-zen-btn"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-secondary hover:bg-secondary/80 text-foreground border border-border/60 transition-colors shadow-sm ml-1"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>{t('workbench.exitZenMode')}</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] bg-background border border-border/60 rounded font-mono text-muted-foreground ml-1">
+                Esc
+              </kbd>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <Code2 className="w-3.5 h-3.5 text-foreground shrink-0" />
+              <span className="text-[11px] text-muted-foreground" title={t('workbench.autoRunTitle')}>
+                {t('workbench.autoRun')}
+              </span>
+            </div>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">
+              <input
+                type="checkbox"
+                checked={liveRefresh}
+                onChange={(e) => setLiveRefresh(e.target.checked)}
+              />
+              <span>{t('workbench.liveRefresh', { seconds: LIVE_REFRESH_MS / 1000 })}</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {canPreview && (!readOnly || isEdit) && (
+            <button
+              onClick={handleRunFullBacktest}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+              title={t('workbench.runBacktestTitle')}
+            >
+              <Rocket className="w-3.5 h-3.5 text-accent-foreground" />
+              <span>{readOnly ? t('workbench.openBacktest') : t('workbench.runBacktest')}</span>
+            </button>
+            )}
+            {readOnly ? null : isEdit ? (
+              <button
+                onClick={() => saveStrategy()}
+                disabled={updateMutation.isPending}
+                title="Ctrl+S / ⌘S"
                 className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>{t('workbench.saveEnable')}</span>
+                <Save className="w-3.5 h-3.5" />
+                <span>{updateMutation.isPending ? t('common.saving') : t('workbench.saveChanges')}</span>
               </button>
-              )}
-            </>
-          )}
+            ) : (
+              <>
+                <button
+                  onClick={() => saveStrategy(isAdmin ? 'disabled' : undefined)}
+                  disabled={createMutation.isPending}
+                  title="Ctrl+S / ⌘S"
+                  className="bg-card/40 hover:bg-secondary/40 text-foreground rounded border border-border/40 text-xs flex items-center gap-1.5 px-3 py-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{t('workbench.saveDraft')}</span>
+                </button>
+                {isAdmin && (
+                <button
+                  onClick={() => saveStrategy('productive')}
+                  disabled={createMutation.isPending}
+                  className="bg-primary hover:bg-primary text-white rounded border border-primary text-xs flex items-center gap-1.5 px-4 py-1.5 font-bold"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{t('workbench.saveEnable')}</span>
+                </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {actionMessage && (
         <div
@@ -431,24 +515,21 @@ export function EditorPane() {
         </div>
       )}
 
-      {/* Metadata form and Lua editor are separate components (see
-          StrategyMetadataForm.tsx / LuaScriptEditor.tsx) in separate
-          CollapsibleSections - collapsing the metadata card here is what
-          actually maximizes the editor below it (flex-1 reclaims the
-          space), independent of WorkbenchShell's own Script/Split/Chart
-          view mode which controls horizontal space instead. */}
-      <CollapsibleSection id="workbench.editor.config" title={t('workbench.configSection')} defaultOpen className="shrink-0">
-        <StrategyMetadataForm
-          draft={draft}
-          setDraft={setDraft}
-          symbolInput={symbolInput}
-          setSymbolInput={setSymbolInput}
-          onAddSymbol={handleAddSymbol}
-          onRemoveSymbol={handleRemoveSymbol}
-          readOnly={readOnly}
-          draftOnlyModeStatus={!isAdmin}
-        />
-      </CollapsibleSection>
+      {/* Metadata form: hidden in Zen Mode so the editor gets 100% height */}
+      <div className={zenMode === 'editor' ? 'hidden' : 'shrink-0'}>
+        <CollapsibleSection id="workbench.editor.config" title={t('workbench.configSection')} defaultOpen>
+          <StrategyMetadataForm
+            draft={draft}
+            setDraft={setDraft}
+            symbolInput={symbolInput}
+            setSymbolInput={setSymbolInput}
+            onAddSymbol={handleAddSymbol}
+            onRemoveSymbol={handleRemoveSymbol}
+            readOnly={readOnly}
+            draftOnlyModeStatus={!isAdmin}
+          />
+        </CollapsibleSection>
+      </div>
 
       <CollapsibleSection
         id="workbench.editor.luaSource"
@@ -456,9 +537,20 @@ export function EditorPane() {
         subtitle={t('workbench.luaSubtitle')}
         defaultOpen
         fill
+        hideHeader={zenMode === 'editor'}
         className="flex-1 min-h-0"
         action={
           <>
+            <button
+              type="button"
+              onClick={() => setZenMode('editor')}
+              className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-secondary/40"
+              title={t('workbench.fullscreenEditorTitle')}
+              data-testid="enter-editor-zen-btn"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>{t('workbench.zenModeEditorShort')}</span>
+            </button>
             {canPreview && (
             <button
               onClick={handleReRunNow}
@@ -493,6 +585,30 @@ export function EditorPane() {
           readOnly={readOnly}
         />
       </CollapsibleSection>
+
+      {/* VS Code Style Status Bar in Zen Mode */}
+      {zenMode === 'editor' && (
+        <div className="flex items-center justify-between px-3 py-1 bg-secondary/40 border border-border/50 rounded-lg text-[11px] text-muted-foreground font-mono shrink-0 select-none">
+          <div className="flex items-center gap-2.5">
+            <span>Lua 5.1 (GopherLua)</span>
+            <span>•</span>
+            <span>{t('workbench.symbolLabel')} {draft.symbols.join(', ')}</span>
+            <span>•</span>
+            <span>{t('workbench.tfLabel')} {cycleTimeframe(draft.cycleMinutes)}</span>
+            {draft.stopLossPct != null && (
+              <>
+                <span>•</span>
+                <span>SL: {draft.stopLossPct}%</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            {/* i18n-ignore */}<span>UTF-8</span>
+            <span>•</span>
+            <span>{t('workbench.pressEscToExit')}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

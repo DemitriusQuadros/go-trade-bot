@@ -23,6 +23,7 @@ import { ApiError } from '@/api/client';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { HelpTooltip } from '@/components/ui/HelpTooltip';
+import { CapitalManagementSection } from '@/components/domain/CapitalManagementSection';
 import { WebhookTargetsSection } from '@/components/domain/WebhookTargetsSection';
 import { DeployGateSection } from '@/components/domain/DeployGateSection';
 import { useLocation } from 'react-router-dom';
@@ -58,7 +59,7 @@ export function Settings() {
     mode: 'dryrun',
     testnet: true,
     webhook_url: '',
-    dry_run: { slippage_pct: 0.1, fee_pct: 0.1, fill_delay_ms: 50 },
+    dry_run: { slippage_pct: 0.05, fee_pct: 0.075, fill_delay_ms: 50 },
     prometheus_url: '',
     grafana_url: '',
     asynqmon_url: '',
@@ -91,7 +92,7 @@ export function Settings() {
         mode: loadedSettings.mode,
         testnet: loadedSettings.testnet,
         webhook_url: loadedSettings.webhook_url || '',
-        dry_run: loadedSettings.dry_run || { slippage_pct: 0.1, fee_pct: 0.1, fill_delay_ms: 50 },
+        dry_run: loadedSettings.dry_run || { slippage_pct: 0.05, fee_pct: 0.075, fill_delay_ms: 50 },
         prometheus_url: loadedSettings.prometheus_url || '',
         grafana_url: loadedSettings.grafana_url || '',
         asynqmon_url: loadedSettings.asynqmon_url || '',
@@ -342,7 +343,7 @@ export function Settings() {
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.005"
                   min="0"
                   value={formState.dry_run.fee_pct}
                   onChange={(e) =>
@@ -488,6 +489,9 @@ export function Settings() {
           <span>{t('settings.save')}</span>
         </button>
       </div>
+
+      {/* Capital & Account Management - Controls virtual money in dryrun or Binance live sync */}
+      <CapitalManagementSection />
 
       {/* Agent notification targets - saved per target (own dialog), not by
           the Save Settings button above. Deep-linked as

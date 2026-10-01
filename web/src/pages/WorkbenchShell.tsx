@@ -36,6 +36,9 @@ import {
   Lock,
   Copy,
   Loader2,
+  Maximize2,
+  Minimize2,
+  Activity,
 } from 'lucide-react';
 import { formatTime } from '@/lib/format';
 import { useT } from '@/i18n';
@@ -231,6 +234,8 @@ export interface WorkbenchContext {
   /** This user may not change this strategy (auth-02 §4): editor read-only,
    * no Save buttons. */
   readOnly: boolean;
+  zenMode: 'none' | 'editor' | 'chart';
+  setZenMode: (m: 'none' | 'editor' | 'chart') => void;
 }
 
 interface WorkbenchShellProps {
@@ -285,6 +290,21 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
   const [selectedTraceRecord, setSelectedTraceRecord] = useState<TraceRecord | null>(null);
   const [contentView, setContentView] = usePersistedEnum<ContentView>('workbench.contentView', CONTENT_VIEWS, 'split');
   const [consolePanelOpen, setConsolePanelOpen] = usePersistedOpen('workbench.consolePanelOpen', true);
+  const [zenMode, setZenMode] = useState<'none' | 'editor' | 'chart'>('none');
+  const [showChartTickDetail, setShowChartTickDetail] = useState(false);
+
+  // Esc key listener to exit full screen / zen mode immediately (VS Code pattern)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && zenMode !== 'none') {
+        e.preventDefault();
+        e.stopPropagation();
+        setZenMode('none');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [zenMode]);
 
   // Zoom-out-loads-more-history wiring (see WorkbenchContext.registerLoadMoreHistory
   // doc comment above): a ref, not state, since the handler itself never needs
@@ -421,6 +441,8 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       hasMoreHistory,
       setHasMoreHistory,
       readOnly,
+      zenMode,
+      setZenMode,
     }),
     [
       readOnly,
@@ -436,6 +458,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
       registerLoadMoreHistory,
       loadingMoreHistory,
       hasMoreHistory,
+      zenMode,
     ]
   );
 
@@ -571,7 +594,7 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             "full width" only makes sense for exactly one side at a time;
             console stays a simple on/off since it's a bottom drawer, not
             competing for the same horizontal space. */}
-        <div className="ml-auto flex items-center gap-1 shrink-0">
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
           <div className="flex items-center bg-background border border-border/40 rounded overflow-hidden">
             <button
               onClick={() => setContentView('script')}
@@ -601,6 +624,41 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               <ChartCandlestick className="w-4 h-4" />
             </button>
           </div>
+
+          <div className="h-4 w-px bg-border/40 mx-0.5" />
+
+          {/* Full Screen Zen Mode (VS Code Experience) */}
+          <div className="flex items-center bg-background border border-border/40 rounded overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setZenMode(zenMode === 'editor' ? 'none' : 'editor')}
+              title={t('workbench.fullscreenEditorTitle')}
+              data-testid="zen-mode-editor-btn"
+              className={`p-1.5 flex items-center gap-1 ${
+                zenMode === 'editor'
+                  ? 'bg-primary text-primary-foreground font-semibold'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
+              }`}
+            >
+              <SquareCode className="w-4 h-4" />
+              <Maximize2 className="w-2.5 h-2.5 -ml-0.5 text-primary group-hover:text-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZenMode(zenMode === 'chart' ? 'none' : 'chart')}
+              title={t('workbench.fullscreenChartTitle')}
+              data-testid="zen-mode-chart-btn"
+              className={`p-1.5 border-l border-border/40 flex items-center gap-1 ${
+                zenMode === 'chart'
+                  ? 'bg-primary text-primary-foreground font-semibold'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/30'
+              }`}
+            >
+              <ChartCandlestick className="w-4 h-4" />
+              <Maximize2 className="w-2.5 h-2.5 -ml-0.5 text-primary group-hover:text-foreground" />
+            </button>
+          </div>
+
           <button
             onClick={() => setConsolePanelOpen((o) => !o)}
             title={consolePanelOpen ? t('workbench.hideConsole') : t('workbench.showConsole')}
@@ -675,26 +733,25 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               side can be dragged unusably thin. */}
           <div
             className={
-              layoutView === 'chart'
+              zenMode === 'editor'
+                ? 'fixed inset-0 z-[70] bg-background flex flex-col p-4 overflow-hidden'
+                : zenMode === 'chart'
+                ? 'hidden'
+                : layoutView === 'chart'
                 ? 'hidden'
                 : layoutView === 'script'
                 ? 'flex-1 min-w-0 overflow-y-auto pr-1'
                 : 'shrink-0 overflow-y-auto pr-1'
             }
-            style={layoutView === 'split' ? { width: effectiveSplitWidth } : undefined}
+            style={zenMode === 'none' && layoutView === 'split' ? { width: effectiveSplitWidth } : undefined}
           >
             <div className="workbench-outlet h-full">
               <Outlet context={ctx} />
             </div>
           </div>
 
-          {/* Drag handle - only meaningful (and rendered) in split mode,
-              where there are two panes to divide. A mousedown here tracks
-              window mousemove/mouseup to resize the side panel above;
-              SharedPriceChart's own ResizeObserver (fill mode) picks up the
-              chart's new width live as the divider moves, no extra wiring
-              needed on that side. */}
-          {layoutView === 'split' && (
+          {/* Drag handle - only meaningful (and rendered) in split mode */}
+          {zenMode === 'none' && layoutView === 'split' && (
             <div
               onMouseDown={handleDividerDown}
               title={t('workbench.dragResize')}
@@ -702,35 +759,144 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
             />
           )}
 
-          {/* Center: the chart - always mounted too (same reasoning: CSS
-              `hidden` in script-only mode preserves zoom/pan instead of
-              resetting it on every view-mode toggle). Fills whatever space
-              the side/bottom panels don't claim via SharedPriceChart's fill
-              mode (ResizeObserver-driven). */}
-          <div className={layoutView === 'script' ? 'hidden' : 'flex-1 min-w-0 flex flex-col gap-2'}>
-            <div className="px-1 text-[11px] text-muted-foreground uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
-              <span>{t('workbench.sharedChart', { source: activeTraceSource })}</span>
-              {loadingMoreHistory && (
-                <span className="normal-case text-foreground font-normal tracking-normal flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  {t('workbench.loadingHistory')}
-                </span>
-              )}
-              {!loadingMoreHistory && !hasMoreHistory && activeTraceSource !== 'backtest' && (
-                <span className="normal-case text-muted-foreground font-normal tracking-normal">
-                  {t('workbench.fullHistory')}
-                </span>
-              )}
-            </div>
+          {/* Center: the chart */}
+          <div
+            className={
+              zenMode === 'chart'
+                ? 'fixed inset-0 z-[70] bg-background flex flex-col p-4 overflow-hidden'
+                : zenMode === 'editor'
+                ? 'hidden'
+                : layoutView === 'script'
+                ? 'hidden'
+                : 'flex-1 min-w-0 flex flex-col gap-2'
+            }
+          >
+            {zenMode === 'chart' ? (
+              /* Full Screen Chart Header (TradingView / VS Code experience) */
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 mb-2 border-b border-border/60 shrink-0 font-sans">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary">
+                    <ChartCandlestick className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-foreground">
+                        {isEdit ? draft.name || t('workbench.strategyNumber', { id: strategyId }) : t('workbench.titleNew')}
+                      </span>
+                      <span className="text-[11px] px-2 py-0.5 rounded font-mono font-bold bg-secondary/80 text-foreground border border-border/60">
+                        {draft.previewSymbol}
+                      </span>
+                      <span className="text-[11px] px-1.5 py-0.5 rounded font-mono bg-accent/40 text-muted-foreground border border-border/40">
+                        {cycleTimeframe(draft.cycleMinutes)}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider bg-primary/20 text-primary border border-primary/30">
+                        {activeTraceSource}
+                      </span>
+                    </div>
+                  </div>
+
+                  {draft.symbols.length > 1 && (
+                    <div className="ml-2 flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">{t('workbench.symbolsSwitch')}:</span>
+                      <select
+                        value={draft.previewSymbol}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, previewSymbol: e.target.value }))}
+                        className="bg-secondary text-foreground text-xs px-2 py-1 rounded border border-border focus:outline-none focus:border-primary font-mono"
+                      >
+                        {draft.symbols.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {loadingMoreHistory && (
+                    <span className="text-xs text-foreground flex items-center gap-1.5 ml-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
+                      <span>{t('workbench.loadingHistory')}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Real-time OHLCV Scrub bar when hovering candles */}
+                {selectedTraceRecord?.candle && (
+                  <div className="hidden lg:flex items-center gap-3 text-xs font-mono bg-card/60 px-3 py-1 rounded-md border border-border/40">
+                    <span className="text-muted-foreground">{formatTime(new Date(selectedTraceRecord.timestamp))}</span>
+                    <span><span className="text-muted-foreground">O:</span> {selectedTraceRecord.candle.o}</span>
+                    <span><span className="text-muted-foreground">H:</span> {selectedTraceRecord.candle.h}</span>
+                    <span><span className="text-muted-foreground">L:</span> {selectedTraceRecord.candle.l}</span>
+                    <span>
+                      <span className="text-muted-foreground">C:</span>{' '}
+                      <span className={selectedTraceRecord.candle.c >= selectedTraceRecord.candle.o ? 'text-success font-semibold' : 'text-destructive font-semibold'}>
+                        {selectedTraceRecord.candle.c}
+                      </span>
+                    </span>
+                    <span><span className="text-muted-foreground">V:</span> {selectedTraceRecord.candle.v}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowChartTickDetail((o) => !o)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
+                      showChartTickDetail
+                        ? 'bg-secondary text-foreground border-primary/40 font-semibold'
+                        : 'bg-card/40 text-muted-foreground hover:text-foreground border-border/50'
+                    }`}
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>{showChartTickDetail ? t('workbench.hideTickInspector') : t('workbench.showTickInspector')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setZenMode('none')}
+                    title={t('workbench.exitZenMode')}
+                    data-testid="exit-chart-zen-btn"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-secondary hover:bg-secondary/80 text-foreground border border-border/60 transition-colors shadow-sm"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>{t('workbench.exitZenMode')}</span>
+                    <kbd className="px-1.5 py-0.5 text-[10px] bg-background border border-border/60 rounded font-mono text-muted-foreground ml-1">
+                      Esc
+                    </kbd>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Regular Chart Header */
+              <div className="px-1 text-[11px] text-muted-foreground uppercase font-semibold tracking-wide shrink-0 flex items-center gap-2">
+                <span>{t('workbench.sharedChart', { source: activeTraceSource })}</span>
+                {loadingMoreHistory && (
+                  <span className="normal-case text-foreground font-normal tracking-normal flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    {t('workbench.loadingHistory')}
+                  </span>
+                )}
+                {!loadingMoreHistory && !hasMoreHistory && activeTraceSource !== 'backtest' && (
+                  <span className="normal-case text-muted-foreground font-normal tracking-normal">
+                    {t('workbench.fullHistory')}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setZenMode('chart')}
+                  title={t('workbench.fullscreenChartTitle')}
+                  className="ml-auto text-[11px] normal-case text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-secondary/40 font-normal"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>{t('workbench.zenModeChartShort')}</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 min-h-0">
               <SharedPriceChart
                 trace={activeTrace}
                 fill
                 onScrub={setSelectedTraceRecord}
                 symbol={draft.previewSymbol}
-                // A finished backtest already holds its full requested date
-                // range (no bounded preview window to widen), so only wire
-                // the zoom-out-loads-more-history behavior for Editor/REPL.
                 onNeedMoreHistory={
                   activeTraceSource !== 'backtest' ? () => loadMoreHistoryHandlerRef.current?.() : undefined
                 }
@@ -738,20 +904,27 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
                 hasMoreHistory={hasMoreHistory}
               />
             </div>
-            <div className="shrink-0 max-h-40 overflow-y-auto">
-              <CollapsibleSection id="workbench.tickDetail" title={t('workbench.tickDetail')} defaultOpen>
-                <TraceAnnotationPanel record={selectedTraceRecord} />
-              </CollapsibleSection>
-            </div>
+
+            {/* Tick detail panel */}
+            {zenMode === 'chart' ? (
+              showChartTickDetail && (
+                <div className="shrink-0 max-h-48 overflow-y-auto border-t border-border/60 pt-2 animate-in slide-in-from-bottom-2 duration-150">
+                  <TraceAnnotationPanel record={selectedTraceRecord} />
+                </div>
+              )
+            ) : (
+              <div className="shrink-0 max-h-40 overflow-y-auto">
+                <CollapsibleSection id="workbench.tickDetail" title={t('workbench.tickDetail')} defaultOpen>
+                  <TraceAnnotationPanel record={selectedTraceRecord} />
+                </CollapsibleSection>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Bottom panel: console, spans the full width under both the side
-            panel and the chart - collapses to zero height via
-            consolePanelOpen (the top-bar toggle). CollapsibleSection here is
-            a SEPARATE, finer-grained per-component hide, independent of
-            that top-bar one. */}
-        {consolePanelOpen && (
+            panel and the chart */}
+        {zenMode === 'none' && consolePanelOpen && (
           <div className="shrink-0 max-h-48 overflow-y-auto">
             <CollapsibleSection id="workbench.console" title={t('workbench.console')} defaultOpen>
               <ConsolePanel entries={consoleLog} />
@@ -759,10 +932,8 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
           </div>
         )}
 
-        {/* Shared per-strategy agent memory (agents platform A-03 §9) -
-            only once the strategy exists. Collapsed by default so it
-            doesn't take space from the chart until asked for. */}
-        {strategyId != null && (
+        {/* Shared per-strategy agent memory */}
+        {zenMode === 'none' && strategyId != null && (
           <div className="shrink-0 max-h-64 overflow-y-auto">
             <AgentNotesPanel strategyId={strategyId} />
           </div>

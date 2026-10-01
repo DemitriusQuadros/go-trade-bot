@@ -3,6 +3,7 @@
 package mocks
 
 import (
+	"context"
 	entities "go-trade-bot/app/entities"
 
 	mock "github.com/stretchr/testify/mock"
@@ -52,6 +53,176 @@ func (_m *UseCase) GetAccount() (entities.Account, error) {
 
 	if rf, ok := ret.Get(1).(func() error); ok {
 		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetAccountByMode provides a mock function with given fields: mode
+func (_m *UseCase) GetAccountByMode(mode entities.AccountMode) (entities.Account, error) {
+	ret := _m.Called(mode)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAccountByMode")
+	}
+
+	var r0 entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func(entities.AccountMode) (entities.Account, error)); ok {
+		return rf(mode)
+	}
+	if rf, ok := ret.Get(0).(func(entities.AccountMode) entities.Account); ok {
+		r0 = rf(mode)
+	} else {
+		r0 = ret.Get(0).(entities.Account)
+	}
+
+	if rf, ok := ret.Get(1).(func(entities.AccountMode) error); ok {
+		r1 = rf(mode)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetAllAccounts provides a mock function with no fields
+func (_m *UseCase) GetAllAccounts() ([]entities.Account, error) {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAllAccounts")
+	}
+
+	var r0 []entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func() ([]entities.Account, error)); ok {
+		return rf()
+	}
+	if rf, ok := ret.Get(0).(func() []entities.Account); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Account)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UpdateDryRunCapital provides a mock function
+func (_m *UseCase) UpdateDryRunCapital(amount float32, availableOrders int64, currency string) (entities.Account, error) {
+	ret := _m.Called(amount, availableOrders, currency)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateDryRunCapital")
+	}
+
+	var r0 entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func(float32, int64, string) (entities.Account, error)); ok {
+		return rf(amount, availableOrders, currency)
+	}
+	if rf, ok := ret.Get(0).(func(float32, int64, string) entities.Account); ok {
+		r0 = rf(amount, availableOrders, currency)
+	} else {
+		r0 = ret.Get(0).(entities.Account)
+	}
+
+	if rf, ok := ret.Get(1).(func(float32, int64, string) error); ok {
+		r1 = rf(amount, availableOrders, currency)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ResetDryRunCapital provides a mock function
+func (_m *UseCase) ResetDryRunCapital() (entities.Account, error) {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetDryRunCapital")
+	}
+
+	var r0 entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func() (entities.Account, error)); ok {
+		return rf()
+	}
+	if rf, ok := ret.Get(0).(func() entities.Account); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(entities.Account)
+	}
+
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UpdateLiveAllocation provides a mock function
+func (_m *UseCase) UpdateLiveAllocation(maxAllocation float32, availableOrders int64) (entities.Account, error) {
+	ret := _m.Called(maxAllocation, availableOrders)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateLiveAllocation")
+	}
+
+	var r0 entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func(float32, int64) (entities.Account, error)); ok {
+		return rf(maxAllocation, availableOrders)
+	}
+	if rf, ok := ret.Get(0).(func(float32, int64) entities.Account); ok {
+		r0 = rf(maxAllocation, availableOrders)
+	} else {
+		r0 = ret.Get(0).(entities.Account)
+	}
+
+	if rf, ok := ret.Get(1).(func(float32, int64) error); ok {
+		r1 = rf(maxAllocation, availableOrders)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SyncExchangeBalance provides a mock function
+func (_m *UseCase) SyncExchangeBalance(ctx context.Context, mode entities.AccountMode) (entities.Account, error) {
+	ret := _m.Called(ctx, mode)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SyncExchangeBalance")
+	}
+
+	var r0 entities.Account
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, entities.AccountMode) (entities.Account, error)); ok {
+		return rf(ctx, mode)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entities.AccountMode) entities.Account); ok {
+		r0 = rf(ctx, mode)
+	} else {
+		r0 = ret.Get(0).(entities.Account)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, entities.AccountMode) error); ok {
+		r1 = rf(ctx, mode)
 	} else {
 		r1 = ret.Error(1)
 	}
