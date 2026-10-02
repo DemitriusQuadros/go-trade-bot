@@ -88,6 +88,16 @@ var ScriptingMetrics = []metrics.MetricConfig{
 
 // DryRunMetrics (fix-01): simulated dryrun orders are counted here and never
 // in order_execution_* (the dryrun SignalUseCase has no collector).
+// CandleDataMetrics: the candle-dataset reconciler (docs/specs/candle-data).
+var CandleDataMetrics = []metrics.MetricConfig{
+	{Name: "candle_chunks", Help: "Candle chunks by status across all datasets.", Type: metrics.Gauge, LabelNames: []string{"status"}},
+	{Name: "candle_missing_candles", Help: "Candles missing between the desired range and the coverage ledger.", Type: metrics.Gauge, LabelNames: []string{"symbol", "timeframe"}},
+	{Name: "candle_sync_lag_seconds", Help: "Seconds between now and the end of covered candle history.", Type: metrics.Gauge, LabelNames: []string{"symbol", "timeframe"}},
+	{Name: "candle_chunk_runs_total", Help: "Candle chunk executions by result (ok|failed|dead).", Type: metrics.Counter, LabelNames: []string{"result"}},
+	{Name: "candle_source_fallbacks_total", Help: "Times a candle source failed or fell short and the chain moved on.", Type: metrics.Counter, LabelNames: []string{"source"}},
+	{Name: "candle_chunk_duration_seconds", Help: "Wall time of one candle chunk execution.", Type: metrics.Histogram, Buckets: prometheus.ExponentialBuckets(0.5, 2, 12)},
+}
+
 var DryRunMetrics = []metrics.MetricConfig{
 	{
 		Name:       exchange.MetricDryRunSimulatedOrders,
@@ -141,6 +151,7 @@ var MetricsModule = fx.Module("metrics",
 			},
 		}
 		cfgs = append(cfgs, Phase1Metrics...)
+		cfgs = append(cfgs, CandleDataMetrics...)
 		cfgs = append(cfgs, Phase2Metrics...)
 		cfgs = append(cfgs, Phase3Metrics...)
 		cfgs = append(cfgs, ScriptingMetrics...)

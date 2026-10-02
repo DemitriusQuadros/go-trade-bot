@@ -53,8 +53,6 @@ func NewTestContext() (*TestContext, error) {
 		&entities.OptimizationRun{},
 		&entities.StrategyPerformanceSnapshot{},
 		&entities.StrategyPerformance{},
-		&entities.ImportJob{},
-		&entities.ImportSchedule{},
 		&entities.Settings{},
 		&entities.ScriptState{},
 	)

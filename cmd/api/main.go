@@ -11,7 +11,7 @@ import (
 	authhandler "go-trade-bot/app/handler/web/auth"
 	backtest "go-trade-bot/app/handler/web/backtest"
 	broker "go-trade-bot/app/handler/web/broker"
-	candleimport "go-trade-bot/app/handler/web/candleimport"
+	candledatahandler "go-trade-bot/app/handler/web/candledata"
 	optimize "go-trade-bot/app/handler/web/optimize"
 	performancehistory "go-trade-bot/app/handler/web/performancehistory"
 	proposalshandler "go-trade-bot/app/handler/web/proposals"
@@ -72,7 +72,7 @@ func appOptions() fx.Option {
 		modules.OptimizeModule,
 		modules.PerformanceHistoryModule,
 		modules.RealtimeModule,
-		modules.CandleImportModule,
+		modules.CandleDataModule,
 		modules.SettingsModule,
 		modules.ScriptModule,
 		modules.AgentModule,
@@ -190,7 +190,7 @@ var routeConstructors = []any{
 	optimize.NewOptimizeHandler,
 	performancehistory.NewHandler,
 	realtime.NewRealtimeHandler,
-	candleimport.NewCandleImportHandler,
+	candledatahandler.NewHandler,
 	settings.NewSettingsHandler,
 	scripthandler.NewScriptHandler,
 	agenthandler.NewAgentHandlerWithUsers,
@@ -226,13 +226,14 @@ func Migrate(db *gorm.DB) error {
 		&entities.Order{},
 		&entities.Account{},
 		&entities.Candle{},
+		&entities.CandleDataset{},
+		&entities.CandleSegment{},
+		&entities.CandleChunk{},
 		&entities.BacktestRun{},
 		&entities.OptimizationRun{},
 		&entities.StrategyPerformanceSnapshot{},
 		&entities.Settings{},
 		&entities.ScriptVersion{},
-		&entities.ImportJob{},
-		&entities.ImportSchedule{},
 		&entities.ScriptState{},
 		&entities.AgentInstruction{},
 		&entities.AgentRun{},

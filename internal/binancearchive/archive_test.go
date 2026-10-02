@@ -3,10 +3,7 @@ package binancearchive
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -35,34 +32,19 @@ func withTestBaseURL(t *testing.T, url string) {
 	t.Cleanup(func() { baseURL = original })
 }
 
-func TestFetchMonth_ParsesCandlesAndSkipsHeaderRow(t *testing.T) {
+func TestParseZipCSV_SkipsHeaderRowAndParsesOHLCV(t *testing.T) {
 	// Real data.binance.vision rows: open_time,open,high,low,close,volume,close_time,quote_volume,trades,taker_buy_base,taker_buy_quote,ignore
 	csvContent := "open_time,open,high,low,close,volume,close_time,quote_volume,trades,taker_buy_base,taker_buy_quote,ignore\n" +
 		"1700000000000,100.5,101.2,99.8,100.9,12.34,1700000059999,1234.5,10,6.0,600.0,0\n" +
 		"1700000060000,100.9,102.0,100.5,101.5,20.1,1700000119999,2000.0,15,10.0,1000.0,0\n"
-	zipBytes := buildZip(t, "BTCUSDT-1m-2023-11.csv", csvContent)
 
-	var gotPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(zipBytes)
-	}))
-	defer server.Close()
-	withTestBaseURL(t, server.URL)
-
-	candles, err := FetchMonth(context.Background(), server.Client(), "BTCUSDT", "1m", time.Date(2023, 11, 1, 0, 0, 0, 0, time.UTC))
+	candles, err := parseZipCSV(buildZip(t, "BTCUSDT-1m-2023-11.csv", csvContent), "BTCUSDT", "1m")
 	if err != nil {
-		t.Fatalf("FetchMonth returned error: %v", err)
-	}
-	wantPath := "/BTCUSDT/1m/BTCUSDT-1m-2023-11.zip"
-	if gotPath != wantPath {
-		t.Errorf("requested path = %q, want %q", gotPath, wantPath)
+		t.Fatalf("parseZipCSV returned error: %v", err)
 	}
 	if len(candles) != 2 {
 		t.Fatalf("expected 2 candles (header row skipped), got %d", len(candles))
 	}
-
 	first := candles[0]
 	if first.Symbol != "BTCUSDT" || first.Timeframe != "1m" {
 		t.Errorf("unexpected symbol/timeframe: %+v", first)
@@ -70,43 +52,11 @@ func TestFetchMonth_ParsesCandlesAndSkipsHeaderRow(t *testing.T) {
 	if first.Open != 100.5 || first.High != 101.2 || first.Low != 99.8 || first.Close != 100.9 || first.Volume != 12.34 {
 		t.Errorf("unexpected OHLCV: %+v", first)
 	}
-	wantOpenTime := time.UnixMilli(1700000000000).UTC()
-	if !first.OpenTime.Equal(wantOpenTime) {
-		t.Errorf("OpenTime = %v, want %v", first.OpenTime, wantOpenTime)
+	if want := time.UnixMilli(1700000000000).UTC(); !first.OpenTime.Equal(want) {
+		t.Errorf("OpenTime = %v, want %v", first.OpenTime, want)
 	}
-
-	second := candles[1]
-	if second.OpenTime.Before(first.OpenTime) {
-		t.Errorf("candles out of order: %v before %v", second.OpenTime, first.OpenTime)
-	}
-}
-
-func TestFetchMonth_404ReturnsNilNil(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-	withTestBaseURL(t, server.URL)
-
-	candles, err := FetchMonth(context.Background(), server.Client(), "BTCUSDT", "1m", time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC))
-	if err != nil {
-		t.Fatalf("expected nil error on 404 (treated as 'skip this month'), got %v", err)
-	}
-	if candles != nil {
-		t.Fatalf("expected nil candles on 404, got %v", candles)
-	}
-}
-
-func TestFetchMonth_ServerErrorReturnsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	withTestBaseURL(t, server.URL)
-
-	_, err := FetchMonth(context.Background(), server.Client(), "BTCUSDT", "1m", time.Date(2023, 11, 1, 0, 0, 0, 0, time.UTC))
-	if err == nil {
-		t.Fatal("expected an error for a non-200/404 response, got nil")
+	if candles[1].OpenTime.Before(first.OpenTime) {
+		t.Errorf("candles out of order")
 	}
 }
 

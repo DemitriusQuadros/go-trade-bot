@@ -52,9 +52,9 @@ func (u AgentUseCase) getCandleCoverageTool() Tool {
 			}
 			if len(cov) == 0 {
 				if symbol != "" {
-					return fmt.Sprintf("no candles stored for %s - import history first (POST /api/candles/import)", symbol), nil
+					return fmt.Sprintf("no candles stored for %s - add a dataset first (Candle Data page, POST /api/candle-datasets)", symbol), nil
 				}
-				return "no candles stored for any symbol - import history first (POST /api/candles/import)", nil
+				return "no candles stored for any symbol - add a dataset first (Candle Data page, POST /api/candle-datasets)", nil
 			}
 			var b strings.Builder
 			for _, c := range cov {

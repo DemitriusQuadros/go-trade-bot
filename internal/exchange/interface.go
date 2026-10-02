@@ -33,7 +33,7 @@ type ExchangeClient interface {
 // HistoricalKlineFetcher is a narrow capability interface, deliberately NOT
 // folded into ExchangeClient above: fetching an explicit historical date
 // range only ever makes sense for a one-shot/scheduled deep backfill against
-// the real exchange (app/usecase/candleimport), never for the live trading
+// the real exchange (internal/candlesource's REST source), never for the live trading
 // engine or the backtest simulator (app/engine.SimulatedFillExchange, which
 // only ever wants "N candles before simulated time asOf" from locally stored
 // data - "a historical range fetch from Binance" is meaningless there).

@@ -59,9 +59,9 @@ func (s *SwappableExchangeClient) ListKline(ctx context.Context, symbol, interva
 // implementation if it has one (BinanceAdapter/BinanceTestnetAdapter both
 // do). This makes SwappableExchangeClient itself satisfy
 // exchange.HistoricalKlineFetcher via type assertion at the call site
-// (app/usecase/candleimport), same as if it were talking to a BinanceAdapter
-// directly - candleimport is wired through this Swappable wrapper in the API
-// process's fx graph (cmd/api/modules/candleimport.go), not a raw adapter.
+// (cmd/{api,worker}/modules/candledata.go), same as if it were talking to a
+// BinanceAdapter directly - the candle-dataset reconciler is wired through this
+// Swappable wrapper in each process's fx graph, not a raw adapter.
 func (s *SwappableExchangeClient) ListKlineRange(ctx context.Context, symbol, interval string, startTime, endTime time.Time, limit int) ([]Candle, error) {
 	current := *s.current.Load()
 	fetcher, ok := current.(HistoricalKlineFetcher)

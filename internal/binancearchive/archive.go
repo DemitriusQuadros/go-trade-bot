@@ -3,73 +3,33 @@
 // zip dumps per symbol/interval, going back to each symbol's listing date.
 // This is the fast path for a one-time deep historical backfill: no REST
 // rate limits, no pagination, months of 1m data in seconds per file. For
-// ongoing/incremental imports (today onward), see app/usecase/candleimport
-// instead, which talks to the live Binance kline REST API.
+// ongoing/incremental loading (today onward) the reconciler uses the daily
+// archive and the live Binance kline REST API (internal/candlesource).
 package binancearchive
 
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"time"
 
 	"go-trade-bot/app/entities"
 )
 
-// var, not const: archive_test.go overrides this to point at an
-// httptest.Server so FetchMonth's HTTP/404 handling can be tested without a
-// live network call.
+// var, not const: tests override this to point at an httptest.Server so the
+// download/verify path (FetchVerified) can be tested without a live network call.
 var baseURL = "https://data.binance.vision/data/spot/monthly/klines"
 
 // MonthURL returns the data.binance.vision monthly klines archive URL for
 // the given symbol/interval/month. `interval` must be a Binance interval
 // code (1m, 15m, 1h, ...) - the same strings this codebase already uses
-// elsewhere (see app/usecase/candleimport's parseTimeframeDuration).
+// elsewhere (see app/usecase/candledata's ParseTimeframe).
 func MonthURL(symbol, interval string, month time.Time) string {
 	monthStr := month.Format("2006-01")
 	return fmt.Sprintf("%s/%s/%s/%s-%s-%s.zip", baseURL, symbol, interval, symbol, interval, monthStr)
-}
-
-// FetchMonth downloads and parses one monthly kline archive for (symbol,
-// interval, month). Returns (nil, nil) - not an error - when the archive
-// doesn't exist (HTTP 404): a symbol not yet listed that month, or the
-// current/most recent month not archived yet. Callers should treat that as
-// "skip this month", not a failure.
-func FetchMonth(ctx context.Context, httpClient *http.Client, symbol, interval string, month time.Time) ([]entities.Candle, error) {
-	url := MonthURL(symbol, interval, month)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d fetching %s", resp.StatusCode, url)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response body for %s: %w", url, err)
-	}
-
-	candles, err := parseZipCSV(body, symbol, interval)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return candles, nil
 }
 
 // parseZipCSV parses the single CSV file inside a monthly kline zip. Column

@@ -93,3 +93,8 @@ AGENT_RUNTIME:
 # Base URL used in agent report deep links sent to webhooks
 # (<API_BASE_URL>/agents/reports/<id>). Behind a tunnel: https://<your host>.
 API_BASE_URL: http://localhost:8080
+
+# Candle datasets (reconciler inside cmd/worker; see docs/specs/candle-data)
+CANDLE_DATA:
+  CONCURRENCY: 2        # workers on the dedicated candle queues (never competes with trading cycles)
+  WEIGHT_BUDGET: 3000   # Binance request weight per minute the importer may use across all replicas (limit 6000/IP)

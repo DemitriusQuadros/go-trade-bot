@@ -50,6 +50,7 @@ type Configuration struct {
 	Console              ConsoleConfig
 	Agent                Agent
 	AgentRuntime         AgentRuntime
+	CandleData           CandleData
 }
 
 // AuthConfig is the AUTH.* block (auth-01 §4). All keys optional.
@@ -79,6 +80,39 @@ type CFAccessConfig struct {
 
 // Enabled reports whether both values are set.
 func (c CFAccessConfig) Enabled() bool { return c.TeamDomain != "" && c.AUD != "" }
+
+// CandleData configures the candle-dataset reconciler running inside
+// cmd/worker (docs/specs/candle-data). Read leniently with defaults.
+type CandleData struct {
+	// Concurrency is the asynq worker count of the dedicated candle server
+	// (queues candles_live + candles), separate from the trading server so a
+	// long backfill can never delay a strategy cycle. CANDLE_DATA.CONCURRENCY,
+	// default 2.
+	Concurrency int
+	// WeightBudget is how much Binance request weight per minute the
+	// reconciler may spend across all worker replicas (the limit is 6000 per
+	// IP and trading shares it). CANDLE_DATA.WEIGHT_BUDGET, default 3000.
+	WeightBudget int
+}
+
+const (
+	DefaultCandleDataConcurrency  = 2
+	DefaultCandleDataWeightBudget = 3000
+)
+
+func loadCandleData() CandleData {
+	c := CandleData{
+		Concurrency:  viper.GetInt("CANDLE_DATA.CONCURRENCY"),
+		WeightBudget: viper.GetInt("CANDLE_DATA.WEIGHT_BUDGET"),
+	}
+	if c.Concurrency <= 0 {
+		c.Concurrency = DefaultCandleDataConcurrency
+	}
+	if c.WeightBudget <= 0 {
+		c.WeightBudget = DefaultCandleDataWeightBudget
+	}
+	return c
+}
 
 // AgentRuntime configures the cmd/agent binary (agents-platform A-02 §1).
 // Read leniently with defaults - absent keys never block any binary.
@@ -325,6 +359,7 @@ func NewConfiguration() *Configuration {
 			GeminiModel:    agentGeminiModel,
 		},
 		AgentRuntime: agentRuntime,
+		CandleData:   loadCandleData(),
 	}
 }
 

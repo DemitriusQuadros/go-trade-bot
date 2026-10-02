@@ -2,17 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	internalapi "go-trade-bot/app/handler/internalapi"
-	candleimport_tasks "go-trade-bot/app/handler/tasks/candleimport"
 	optimize_tasks "go-trade-bot/app/handler/tasks/optimize"
 	performance_tasks "go-trade-bot/app/handler/tasks/performancehistory"
 	handler "go-trade-bot/app/handler/tasks/strategy"
 	candle_repo "go-trade-bot/app/repository/candle"
-	candleimport_repo "go-trade-bot/app/repository/candleimport"
 	settings_repo "go-trade-bot/app/repository/settings"
 	repository "go-trade-bot/app/repository/strategy"
 	"go-trade-bot/app/strategies"
@@ -33,7 +30,6 @@ import (
 
 	"go-trade-bot/app/strategies/script"
 
-	candleimport_worker "go-trade-bot/app/workers/candleimport"
 	accountrepo "go-trade-bot/app/repository/account"
 	optimize_worker "go-trade-bot/app/workers/optimize"
 	tasks "go-trade-bot/app/workers/strategy"
@@ -152,8 +148,6 @@ func RegisterHandlers(
 	notifySender notifier.NotificationSender,
 	optimizeProcessor *optimize_tasks.OptimizeProcessor,
 	snapshotProcessor *performance_tasks.SnapshotProcessor,
-	candleImportTaskHandler *candleimport_tasks.TaskHandler,
-	candleImportRepo candleimport_repo.Repository,
 	db *gorm.DB,
 	swappableExchange *exchange.SwappableExchangeClient,
 	swappableNotifier *notifier.SwappableNotifier,
@@ -235,33 +229,6 @@ func RegisterHandlers(
 
 			if _, err := scheduler.Register("0 0 * * *", asynq.NewTask(performance_tasks.SnapshotTask, nil)); err != nil {
 				log.Printf("failed to register daily performance snapshot cron entry: %v", err)
-			}
-
-			// Candle import (Spec backend-04/platform-self-service): one-off
-			// import jobs and recurring cron-scheduled imports, on the same
-			// shared mux/scheduler as everything else - this module used to
-			// wire itself onto a shared *asynq.ServeMux that never existed as
-			// an fx-provided type; moved here to match the one place this
-			// codebase actually constructs and wires its asynq mux.
-			mux.Handle(candleimport_worker.TaskImportExecute, middleware.AsynqConfigMiddleware(
-				asynq.HandlerFunc(candleImportTaskHandler.HandleImportExecute),
-				cfg,
-				collector,
-			))
-			mux.Handle(candleimport_worker.TaskRecurringImport, middleware.AsynqConfigMiddleware(
-				asynq.HandlerFunc(candleImportTaskHandler.HandleRecurringImport),
-				cfg,
-				collector,
-			))
-			if schedules, err := candleImportRepo.ListEnabledSchedules(ctx); err != nil {
-				log.Printf("failed to load enabled candle import schedules: %v", err)
-			} else {
-				for _, sched := range schedules {
-					payload, _ := json.Marshal(sched)
-					if _, err := scheduler.Register(sched.CronSpec, asynq.NewTask(candleimport_worker.TaskRecurringImport, payload)); err != nil {
-						log.Printf("failed to register candle import schedule %q: %v", sched.CronSpec, err)
-					}
-				}
 			}
 
 			go func() {
@@ -365,14 +332,10 @@ func StartMetricsServer(cfg *config.Configuration) {
 
 }
 
-func main() {
-	// Spec 10 AC#1/#2: the mode guard is checked before the fx.App is even
-	// constructed, using a standalone Configuration built the same way
-	// ConfigurationModule builds it for the DI graph - a hard startup
-	// failure here must happen regardless of what fx would have wired.
-	assertModeGuard(config.NewConfiguration())
-
-	app := fx.New(
+// appOptions is the full fx graph (extracted so a test can fx.ValidateApp it:
+// a missing provider otherwise only surfaces at process startup).
+func appOptions() fx.Option {
+	return fx.Options(
 		modules.ConfigurationModule,
 		modules.DbModule,
 		modules.MetricsModule,
@@ -385,7 +348,7 @@ func main() {
 		modules.EngineModule,
 		modules.AccountModule,
 		modules.CandleModule,
-		modules.CandleImportModule,
+		modules.CandleDataModule,
 		modules.BacktestModule,
 		modules.OptimizeModule,
 		modules.PerformanceHistoryModule,
@@ -398,7 +361,18 @@ func main() {
 		fx.Invoke(RegisterScriptStrategy),
 		fx.Invoke(MigrateSignalTables),
 		fx.Invoke(RegisterHandlers),
+		fx.Invoke(RegisterCandleData),
 	)
+}
+
+func main() {
+	// Spec 10 AC#1/#2: the mode guard is checked before the fx.App is even
+	// constructed, using a standalone Configuration built the same way
+	// ConfigurationModule builds it for the DI graph - a hard startup
+	// failure here must happen regardless of what fx would have wired.
+	assertModeGuard(config.NewConfiguration())
+
+	app := fx.New(appOptions())
 
 	app.Run()
 }

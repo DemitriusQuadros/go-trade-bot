@@ -16,8 +16,7 @@ const CapPublic = "public"
 //	admin (GET)        /settings, /webhook-targets, /deploy-gate, /users
 //	backtest           POST /backtest, POST /backtest/walkforward,
 //	                   POST /backtest/{id}/montecarlo, POST /optimize,
-//	                   POST /script/repl, POST /script/fast-rerun,
-//	                   POST /candles/import
+//	                   POST /script/repl, POST /script/fast-rerun
 //	edit_drafts        POST /strategy, PUT /strategy/{id}, DELETE /strategy/{id},
 //	                   POST /strategy/{id}/versions/{versionId}/revert,
 //	                   POST /strategies/{id}/memory, DELETE /backtest/{id}
@@ -25,7 +24,7 @@ const CapPublic = "public"
 //	approve_proposals  POST /proposals/{id}/approve|reject
 //	admin              every other write: settings, deploy gate, kill switch,
 //	                   agent persona CRUD/pause/run, strategy status/mode,
-//	                   strategy enqueue, signal close, candle schedules,
+//	                   strategy enqueue, signal close, candle datasets,
 //	                   webhook targets (incl. /test), POST /account, /users*
 //	public             /auth/login, /auth/logout, GET|PATCH /auth/me
 //	                   (the handlers check the session themselves)

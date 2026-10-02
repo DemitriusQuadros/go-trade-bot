@@ -32,8 +32,14 @@ func NewCandleRepository(db *gorm.DB) CandleRepository {
 	return CandleRepository{db: db}
 }
 
+// upsertBatchSize keeps every INSERT under Postgres's 65,535 bind-parameter
+// limit (8 columns per row) - a single Create of a 1m month (~44k rows) would
+// blow it.
+const upsertBatchSize = 2000
+
 // Upsert writes candles idempotently: a row matching (Symbol, Timeframe,
-// OpenTime) is updated in place (OHLCV overwritten), never duplicated.
+// OpenTime) is updated in place (OHLCV overwritten), never duplicated. Large
+// slices are written in bounded batches.
 func (r CandleRepository) Upsert(ctx context.Context, candles []entities.Candle) error {
 	if len(candles) == 0 {
 		return nil
@@ -42,7 +48,7 @@ func (r CandleRepository) Upsert(ctx context.Context, candles []entities.Candle)
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "symbol"}, {Name: "timeframe"}, {Name: "open_time"}},
 		DoUpdates: clause.AssignmentColumns([]string{"open", "high", "low", "close", "volume"}),
-	}).Create(&candles).Error
+	}).CreateInBatches(&candles, upsertBatchSize).Error
 }
 
 // RangeBefore returns up to `limit` candles for (symbol, timeframe) with
@@ -138,4 +144,28 @@ func (r CandleRepository) CountInRange(ctx context.Context, symbol, timeframe st
 		Where("symbol = ? AND timeframe = ? AND open_time >= ? AND open_time < ?", symbol, timeframe, from, to).
 		Count(&count).Error
 	return count, err
+}
+
+// ScanOpenTimes streams the stored open times for (symbol, timeframe) in
+// ascending order through fn (one-time ledger adoption; avoids loading
+// millions of rows into memory). Stops at the first error from fn.
+func (r CandleRepository) ScanOpenTimes(ctx context.Context, symbol, timeframe string, fn func(time.Time) error) error {
+	rows, err := r.db.WithContext(ctx).Model(&entities.Candle{}).
+		Select("open_time").
+		Where("symbol = ? AND timeframe = ?", symbol, timeframe).
+		Order("open_time ASC").Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t time.Time
+		if err := rows.Scan(&t); err != nil {
+			return err
+		}
+		if err := fn(t.UTC()); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }

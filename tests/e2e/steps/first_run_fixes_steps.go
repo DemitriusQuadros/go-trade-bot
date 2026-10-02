@@ -50,16 +50,4 @@ func RegisterFirstRunFixesSteps(sc *godog.ScenarioContext, tc *TestContext) {
 		}
 		return nil
 	})
-
-	sc.Step(`^an import schedule exists for symbol "([^"]*)" with cron_spec "([^"]*)"$`, func(symbol, cronSpec string) error {
-		sched := entities.ImportSchedule{
-			ID:        1,
-			Symbol:    symbol,
-			Timeframe: "15m",
-			CronSpec:  cronSpec,
-			Enabled:   true,
-			CreatedAt: time.Now(),
-		}
-		return tc.DB.Create(&sched).Error
-	})
 }

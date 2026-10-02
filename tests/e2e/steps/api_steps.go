@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"go-trade-bot/app/entities"
 
@@ -167,27 +166,6 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					symbol, _ := bodyMap["symbol"].(string)
 					tc.LastResponse = makeHTTPResponse(200)
 					tc.LastBody = []byte(fmt.Sprintf(`{"id":2,"strategy_id":1,"symbol":"%s","sharpe":1.5,"total_return_pct":12.0,"is_walk_forward":true}`, symbol))
-					return nil
-				}
-
-				if path == "/candles/schedule" || path == "/api/candles/schedule" {
-					symbol, _ := bodyMap["symbol"].(string)
-					timeframe, _ := bodyMap["timeframe"].(string)
-					cronSpec, _ := bodyMap["cron_spec"].(string)
-					enabled, _ := bodyMap["enabled"].(bool)
-
-					sched := entities.ImportSchedule{
-						ID:        1,
-						Symbol:    symbol,
-						Timeframe: timeframe,
-						CronSpec:  cronSpec,
-						Enabled:   enabled,
-						CreatedAt: time.Now(),
-					}
-					tc.DB.Create(&sched)
-
-					tc.LastResponse = makeHTTPResponse(201)
-					tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t,"last_run_at":null,"created_at":"2026-09-10T22:00:00Z"}`, symbol, timeframe, cronSpec, enabled))
 					return nil
 				}
 
@@ -370,16 +348,6 @@ func RegisterAPISteps(sc *godog.ScenarioContext, tc *TestContext) {
 					resp.Header.Set("Content-Type", "text/html; charset=utf-8")
 					tc.LastResponse = resp
 					tc.LastBody = []byte(`<!DOCTYPE html><html><body><h1>Backtest Report</h1></body></html>`)
-					return nil
-				}
-			}
-			if path == "/candles/schedule" || path == "/api/candles/schedule" {
-				var scheds []entities.ImportSchedule
-				tc.DB.Find(&scheds)
-				if len(scheds) > 0 {
-					s := scheds[0]
-					tc.LastResponse = makeHTTPResponse(200)
-					tc.LastBody = []byte(fmt.Sprintf(`[{"id":%d,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t,"last_run_at":null,"created_at":"2023-01-01T00:00:00Z"}]`, s.ID, s.Symbol, s.Timeframe, s.CronSpec, s.Enabled))
 					return nil
 				}
 			}

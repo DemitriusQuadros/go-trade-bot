@@ -267,7 +267,7 @@ func TestExtractToolRefs(t *testing.T) {
 		{
 			name:   "plain non-JSON result without ids",
 			tool:   "get_candle_coverage",
-			result: "no candles stored for any symbol - import history first (POST /api/candles/import)",
+			result: "no candles stored for any symbol - add a dataset first (Candle Data page, POST /api/candle-datasets)",
 			want:   []handler.ToolRef{},
 		},
 		{

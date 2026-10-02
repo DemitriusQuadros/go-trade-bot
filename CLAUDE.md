@@ -149,9 +149,8 @@ also call `agentplatform.EnsureDefaultAgent` (seeds the one `IsDefault` "Copilot
 
 There is no more `cmd/backtest` or `cmd/candleimport` (one-shot CLIs from Phase 2) — both were removed once
 their functionality was fully superseded by the API: backtests run via `POST /backtest`/`/backtest/walkforward`
-(`app/handler/web/backtest/`), and candle imports via `POST /candles/import` plus the recurring
-`/candles/schedule` CRUD (`app/handler/web/candleimport/`), neither of which the CLIs ever had an equivalent
-for.
+(`app/handler/web/backtest/`), and candle history via the candle-dataset reconciler (`/api/candle-datasets`, see
+"Candle datasets" below), which also replaced the later `POST /candles/import` + `/candles/schedule` importer.
 
 ### Application Layer (`app/`)
 
@@ -374,6 +373,35 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   - Prompts (`app/usecase/agent/prompts.go` `BuildTriggerInput`) phrase event/market/chain runs; the operating
     context shows the trigger detail and, for chains, depth and path.
 
+- **Candle datasets (reconciler)** - spec `docs/specs/candle-data/candle-dataset-reconciler-design.md`. Candle history
+  is no longer "imported" by range: a `CandleDataset` (symbol, timeframe, optional start, `keep_live`, `paused`)
+  declares what to keep, and `app/usecase/candledata.Service` converges stored data toward it. A **coverage ledger**
+  (`CandleSegment`: `loaded` | `known_gap` ranges with source + file checksum) records what is verified; the pure
+  planner (`Plan`) turns `desired - ledger` into month-bounded **chunks** (`CandleChunk`, one asynq task each, the
+  chunk table is the progress source of truth). Backfill, live top-up, hole repair and downtime recovery are the same
+  operation. `Runner` walks a Binance-only source chain per chunk (`internal/candlesource`: `archive_monthly` ->
+  `archive_daily` -> `rest`; archive zips are SHA-256 verified and fail closed, REST is the only *authoritative*
+  source so only it can turn an empty answer into a `known_gap`): invalid/short results fall through to the next source,
+  only the still-missing sub-range is refetched, writes are batched (`candle.Repository.Upsert` uses
+  `CreateInBatches` - a 1m month exceeds Postgres's 65,535 bind-parameter limit otherwise). No other venue ever fills
+  gaps. Runs in **cmd/worker** on its own asynq server (`RegisterCandleData`, queues `candles_live` weight 3 +
+  `candles` weight 1, `CANDLE_DATA.CONCURRENCY` default 2) so a backfill never competes with trading cycles; a
+  minute-by-minute `candledata:sweep` (Unique cron) reaps chunks whose heartbeat expired (`StaleAfter` 3 min),
+  reconciles every non-paused dataset, re-enqueues pending chunks (task id `candle-chunk:<id>` makes that idempotent)
+  and publishes `candle_chunks{status}`, `candle_missing_candles`, `candle_sync_lag_seconds`,
+  `candle_chunk_runs_total{result}`, `candle_source_fallbacks_total{source}`. Binance weight is budgeted across replicas
+  by `internal/weightlimit` (Redis fixed window, `CANDLE_DATA.WEIGHT_BUDGET` default 3000/min; a 418/429 trips a shared
+  ban). A chunk is retried up to 5 attempts, then parked `dead` until `RetryFailed`. cmd/api only plans/enqueues
+  (`modules.CandleDataModule`, Runner nil) and serves `GET/POST /api/candle-datasets`, `GET|DELETE /{id}`,
+  `POST /{id}/pause|resume|retry-failed|reconcile`, `GET /{id}/chunks` (reads `view`, writes `admin`); creating a
+  dataset first **adopts** already-stored candles into the ledger. The frontend `/candles` page (`pages/CandleImport.tsx`)
+  is the datasets UI (per-dataset pause/resume/retry only). Timeframes 3d/1w are rejected (Binance aligns them
+  differently). Migrate lists in api/mcp/agent include the three new entities. The **old importer is gone**
+  (`app/usecase/candleimport`, `/candles/import`, `/candles/schedule`, `ImportJob`/`ImportSchedule` entities and their
+  e2e features were removed); the orphaned `import_jobs`/`import_schedules` tables are not dropped by AutoMigrate and can be
+  dropped by hand. `candle_import_lag_seconds` (worker lag monitor, used by `alerting/rules.yml`) is unrelated and stays.
+  `cmd/api` and `cmd/worker` each have an `fx.ValidateApp` test. Not yet verified against a live Redis/Postgres stack.
+
 There is no more `app/services/algorithm/` (deleted in Phase 1 — that's where Grid/Bollinger/Scalping used
 to live as hardcoded switch cases) and no more `internal/broker/` (replaced by `internal/exchange/`, below).
 
@@ -555,8 +583,8 @@ Algorithm-specific parameters are stored as JSONB in `Strategy.StrategyConfigura
 - Phase B scope is strict for chat too: the default Copilot can only change strategies bound to it or that it
   created, so chat edits of operator-created drafts now need a binding.
 - The deploy gate needs >= 90% candle coverage over the lookback (6 months by default) at the gate timeframe;
-  with the known ~1000-candle import limit most gates fail with `insufficient_history` (-> proposal) until
-  history is imported.
+  most gates fail with `insufficient_history` (-> proposal) until the symbol/timeframe has a loaded candle
+  dataset (`/candles`).
 - Budget alerts dedupe per agent per UTC day across processes via `AgentUsage.BudgetAlertSent`.
 - The model price table in `internal/modelprovider/pricing.go` must be updated by hand.
 - Phase C: `notifier.EventDrawdownAlert` (`drawdown.alert`) is still never emitted by the worker; `drawdown`

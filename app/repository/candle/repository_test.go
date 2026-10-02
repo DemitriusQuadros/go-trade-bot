@@ -239,3 +239,47 @@ func TestCandleRepository_TimeframeIsolation(t *testing.T) {
 	assert.Equal(t, "15m", res15m[0].Timeframe)
 	assert.Equal(t, 150.0, res15m[0].Volume)
 }
+
+// A 1m month is ~44,640 rows; one multi-row INSERT of that many 8-column rows
+// would exceed Postgres's 65,535 bind-parameter limit (SQLite's default limit
+// is lower still), so Upsert must write in bounded batches.
+func TestCandleRepository_Upsert_LargeSliceIsBatched(t *testing.T) {
+	db := setupTestDB(t)
+	repo := candle.NewCandleRepository(db)
+	ctx := context.Background()
+
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	const n = 45000
+	rows := make([]entities.Candle, n)
+	for i := range rows {
+		rows[i] = entities.Candle{Symbol: "BTCUSDT", Timeframe: "1m", OpenTime: t0.Add(time.Duration(i) * time.Minute),
+			Open: 1, High: 2, Low: 1, Close: 1, Volume: 1}
+	}
+
+	require.NoError(t, repo.Upsert(ctx, rows))
+
+	count, err := repo.Count(ctx, "BTCUSDT", "1m")
+	require.NoError(t, err)
+	assert.Equal(t, int64(n), count)
+}
+
+func TestCandleRepository_ScanOpenTimes_AscendingAndStoppable(t *testing.T) {
+	db := setupTestDB(t)
+	repo := candle.NewCandleRepository(db)
+	ctx := context.Background()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var rows []entities.Candle
+	for _, i := range []int{2, 0, 1} {
+		rows = append(rows, entities.Candle{Symbol: "BTCUSDT", Timeframe: "1h", OpenTime: t0.Add(time.Duration(i) * time.Hour), Open: 1, High: 1, Low: 1, Close: 1})
+	}
+	rows = append(rows, entities.Candle{Symbol: "ETHUSDT", Timeframe: "1h", OpenTime: t0, Open: 1, High: 1, Low: 1, Close: 1})
+	require.NoError(t, repo.Upsert(ctx, rows))
+
+	var got []time.Time
+	require.NoError(t, repo.ScanOpenTimes(ctx, "BTCUSDT", "1h", func(ts time.Time) error { got = append(got, ts); return nil }))
+	assert.Equal(t, []time.Time{t0, t0.Add(time.Hour), t0.Add(2 * time.Hour)}, got)
+
+	stop := assert.AnError
+	err := repo.ScanOpenTimes(ctx, "BTCUSDT", "1h", func(time.Time) error { return stop })
+	assert.ErrorIs(t, err, stop)
+}

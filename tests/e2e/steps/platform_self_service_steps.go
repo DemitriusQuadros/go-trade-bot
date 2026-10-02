@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"go-trade-bot/app/entities"
 
@@ -171,73 +170,6 @@ func RegisterPlatformSelfServiceSteps(sc *godog.ScenarioContext, tc *TestContext
 			Status:       entities.Disabled,
 		}
 		return tc.DB.Create(&strat).Error
-	})
-
-	// Candle Import Steps
-	sc.Step(`^I trigger a candle import via POST to "/candles/import" with body:$`, func(docString *godog.DocString) error {
-		job := entities.ImportJob{
-			ID:        "candleimport:abc123",
-			Status:    entities.ImportJobPending,
-			CreatedAt: time.Now(),
-		}
-		tc.DB.Create(&job)
-
-		tc.LastResponse = makeHTTPResponse(202)
-		tc.LastBody = []byte(`{"job_id":"candleimport:abc123","status":"pending"}`)
-		return nil
-	})
-
-	sc.Step(`^I poll the candle import job status for the created job$`, func() error {
-		var job entities.ImportJob
-		if err := tc.DB.First(&job, "id = ?", "candleimport:abc123").Error; err == nil {
-			job.Status = entities.ImportJobCompleted
-			now := time.Now()
-			job.CompletedAt = &now
-			job.ResultJSON = datatypes.JSON([]byte(`{"per_pair":[{"symbol":"BTCUSDT","timeframe":"1m","candles_imported":1440}]}`))
-			tc.DB.Save(&job)
-		}
-
-		tc.LastResponse = makeHTTPResponse(200)
-		tc.LastBody = []byte(`{"job_id":"candleimport:abc123","status":"completed","result":{"per_pair":[{"symbol":"BTCUSDT","timeframe":"1m","candles_imported":1440}]}}`)
-		return nil
-	})
-
-	sc.Step(`^the job status should become "([^"]*)"$`, func(expectedStatus string) error {
-		if !containsSubstring(string(tc.LastBody), fmt.Sprintf(`"status":"%s"`, expectedStatus)) {
-			return fmt.Errorf("expected job status %s, got %s", expectedStatus, string(tc.LastBody))
-		}
-		return nil
-	})
-
-	sc.Step(`^the import result should contain imported candles for symbol "([^"]*)"$`, func(symbol string) error {
-		if !containsSubstring(string(tc.LastBody), symbol) {
-			return fmt.Errorf("expected import result to contain symbol %s", symbol)
-		}
-		return nil
-	})
-
-	sc.Step(`^I create a recurring import schedule via POST to "/candles/schedule" with body:$`, func(docString *godog.DocString) error {
-		var body map[string]interface{}
-		_ = json.Unmarshal([]byte(docString.Content), &body)
-
-		symbol, _ := body["symbol"].(string)
-		timeframe, _ := body["timeframe"].(string)
-		cronSpec, _ := body["cron_spec"].(string)
-		enabled, _ := body["enabled"].(bool)
-
-		sched := entities.ImportSchedule{
-			ID:        1,
-			Symbol:    symbol,
-			Timeframe: timeframe,
-			CronSpec:  cronSpec,
-			Enabled:   enabled,
-			CreatedAt: time.Now(),
-		}
-		tc.DB.Create(&sched)
-
-		tc.LastResponse = makeHTTPResponse(201)
-		tc.LastBody = []byte(fmt.Sprintf(`{"id":1,"symbol":"%s","timeframe":"%s","cron_spec":"%s","enabled":%t}`, symbol, timeframe, cronSpec, enabled))
-		return nil
 	})
 
 	// Settings & Hot-Swap Steps
