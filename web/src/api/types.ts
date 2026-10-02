@@ -424,57 +424,66 @@ export interface DrainTimeoutErrorBody {
   message: string;
 }
 
-// --- Candle Import & Scheduling --------------------------------------------
-export type CandleImportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+// --- Candle datasets (reconciler) ------------------------------------------
+export type CandleDatasetState = 'paused' | 'failed' | 'converging' | 'live' | 'idle';
 
-export type CandleImportSource = 'rest' | 'archive';
-
-export interface CandleImportRequest {
-  symbols: string[];
-  timeframes: string[];
-  from: string;   // RFC3339
-  to: string;     // RFC3339
-  // 'rest' (default, omit to get this) walks the live Binance kline REST
-  // API - correct for incremental/ongoing sync, but slow for a deep
-  // historical range. 'archive' bulk-downloads Binance's public
-  // data.binance.vision monthly kline dumps instead - no rate limits,
-  // months of history in seconds per file, at month granularity.
-  source?: CandleImportSource;
+export interface CandleRange {
+  from: string; // RFC3339, half-open [from, to)
+  to: string;
 }
 
-export interface CandleImportPairResult {
-  symbol: string;
-  timeframe: string;
-  candles_imported: number;
-  gaps_detected: number;
-  error: string;
+export interface CandleChunkCounts {
+  pending: number;
+  running: number;
+  done: number;
+  failed: number;
+  dead: number;
 }
 
-export interface CandleImportResult {
-  per_pair: CandleImportPairResult[];
-}
-
-export interface CandleImportJob {
-  job_id: string;
-  status: CandleImportJobStatus;
-  result: CandleImportResult | null;
-  error: string | null;
-}
-
-export interface ImportSchedule {
+export interface CandleDataset {
   id: number;
   symbol: string;
   timeframe: string;
-  cron_spec: string;
-  enabled: boolean;
-  last_run_at: string | null;
+  start: string | null; // null = from the symbol's listing
+  keep_live: boolean;
+  paused: boolean;
+  state: CandleDatasetState;
+  desired: CandleRange | null;
+  loaded: CandleRange[];
+  known_gaps: CandleRange[];
+  missing: CandleRange[];
+  ranges_truncated: boolean;
+  desired_candles: number;
+  missing_candles: number;
+  progress_pct: number;
+  lag_seconds: number;
+  chunks: CandleChunkCounts;
+  last_error: string;
+  listing_error?: string;
   created_at: string;
 }
 
-export interface ImportScheduleCreateRequest {
+export interface CandleDatasetCreateRequest {
   symbol: string;
   timeframe: string;
-  cron_spec: string;
+  start?: string; // YYYY-MM-DD or RFC3339; omit = from listing
+  keep_live: boolean;
+}
+
+export type CandleChunkStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
+
+export interface CandleChunk {
+  id: number;
+  from: string;
+  to: string;
+  purpose: 'backfill' | 'tail' | 'repair';
+  status: CandleChunkStatus;
+  attempts: number;
+  source_used: string;
+  row_count: number;
+  last_error: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 // --- Strategy Scripting & Trace (frontend-01, frontend-02) -----------------

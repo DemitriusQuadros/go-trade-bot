@@ -10,10 +10,8 @@ import {
   WalkForwardRequest,
   CreateOptimizationRequest,
   PlatformSettingsUpdateRequest,
-  CandleImportRequest,
-  CandleImportJobStatus,
-  ImportScheduleCreateRequest,
-  ImportSchedule,
+  CandleDatasetCreateRequest,
+  CandleChunkStatus,
   FastRerunRequest,
   AgentHistoryTurn,
   AgentRequest,
@@ -44,8 +42,8 @@ export const QUERY_KEYS = {
   optimizationStatus: (id: number) => ['optimization', 'status', id],
   optimizationResults: (id: number) => ['optimization', 'results', id],
   settings: ['settings'],
-  candleImportJob: (jobId: string | null) => ['candleImportJob', jobId],
-  importSchedules: ['importSchedules'],
+  candleDatasets: ['candleDatasets'],
+  candleChunks: (id: number | null, status?: CandleChunkStatus) => ['candleDatasets', id, 'chunks', status ?? 'all'],
   agentRuns: (strategyId?: number) => ['agentRuns', strategyId],
   agentRun: (id: number) => ['agentRuns', 'detail', id],
   chatTranscript: (contextKey: string) => ['agentRuns', 'chat', contextKey],
@@ -421,64 +419,51 @@ export function useUpdateSettings() {
   });
 }
 
-// Candle Import & Scheduling
-const TERMINAL_IMPORT_STATUSES: CandleImportJobStatus[] = ['completed', 'failed'];
-
-export function useStartCandleImport() {
-  return useMutation({
-    mutationFn: (req: CandleImportRequest) => api.startCandleImport(req),
-  });
-}
-
-export function useCandleImportJob(jobId: string | null) {
+// Candle datasets: poll fast while anything is converging, slowly otherwise.
+export function useCandleDatasets() {
   return useQuery({
-    queryKey: QUERY_KEYS.candleImportJob(jobId),
-    queryFn: ({ signal }) => api.getCandleImportJob(jobId as string, { signal }),
-    enabled: jobId !== null,
+    queryKey: QUERY_KEYS.candleDatasets,
+    queryFn: ({ signal }) => api.listCandleDatasets({ signal }),
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && TERMINAL_IMPORT_STATUSES.includes(status) ? false : 2000;
+      const busy = query.state.data?.some(
+        (d) => d.state === 'converging' || d.chunks.running > 0 || d.chunks.pending > 0,
+      );
+      return busy ? 2500 : 30000;
     },
   });
 }
 
-export function useImportSchedules() {
+export function useCandleChunks(id: number | null, status?: CandleChunkStatus) {
   return useQuery({
-    queryKey: QUERY_KEYS.importSchedules,
-    queryFn: ({ signal }) => api.listImportSchedules({ signal }),
+    queryKey: QUERY_KEYS.candleChunks(id, status),
+    queryFn: ({ signal }) => api.listCandleChunks(id as number, status, { signal }),
+    enabled: id !== null,
+    refetchInterval: 5000,
   });
 }
 
-export function useCreateImportSchedule() {
+function useCandleDatasetMutation<V, R = unknown>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ImportScheduleCreateRequest) => api.createImportSchedule(req),
+    mutationFn: fn,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.candleDatasets });
     },
   });
 }
 
-export function usePatchImportSchedule(id: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (patch: Partial<Pick<ImportSchedule, 'enabled' | 'cron_spec'>>) =>
-      api.patchImportSchedule(id, patch),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
-    },
-  });
-}
-
-export function useDeleteImportSchedule() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => api.deleteImportSchedule(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.importSchedules });
-    },
-  });
-}
+export const useCreateCandleDataset = () =>
+  useCandleDatasetMutation((req: CandleDatasetCreateRequest) => api.createCandleDataset(req));
+export const usePauseCandleDataset = () =>
+  useCandleDatasetMutation((id: number) => api.pauseCandleDataset(id));
+export const useResumeCandleDataset = () =>
+  useCandleDatasetMutation((id: number) => api.resumeCandleDataset(id));
+export const useRetryFailedCandleDataset = () =>
+  useCandleDatasetMutation((id: number) => api.retryFailedCandleDataset(id));
+export const useReconcileCandleDataset = () =>
+  useCandleDatasetMutation((id: number) => api.reconcileCandleDataset(id));
+export const useDeleteCandleDataset = () =>
+  useCandleDatasetMutation((id: number) => api.deleteCandleDataset(id));
 
 // Strategy Scripting & REPL (frontend-02)
 export function useFastRerun() {

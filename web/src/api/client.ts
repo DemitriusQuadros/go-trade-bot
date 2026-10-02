@@ -22,10 +22,10 @@ import { ScriptVersion,
   PlatformSettings,
   PlatformSettingsUpdateRequest,
   PlatformSettingsUpdateResponse,
-  CandleImportRequest,
-  CandleImportJob,
-  ImportSchedule,
-  ImportScheduleCreateRequest,
+  CandleDataset,
+  CandleDatasetCreateRequest,
+  CandleChunk,
+  CandleChunkStatus,
   FastRerunRequest,
   FastRerunResponse,
   ReplRequest,
@@ -244,19 +244,20 @@ export const api = {
   updateSettings: (data: PlatformSettingsUpdateRequest) =>
     api.put<PlatformSettingsUpdateResponse>('/settings', data),
 
-  // Candle Import & Scheduling
-  startCandleImport: (req: CandleImportRequest) =>
-    api.post<{ job_id: string; status: 'pending' }>('/candles/import', req),
-  getCandleImportJob: (jobId: string, opts?: { signal?: AbortSignal }) =>
-    api.get<CandleImportJob>(`/candles/import/${jobId}`, opts),
-  listImportSchedules: (opts?: { signal?: AbortSignal }) =>
-    api.get<ImportSchedule[]>('/candles/schedule', opts),
-  createImportSchedule: (req: ImportScheduleCreateRequest) =>
-    api.post<ImportSchedule>('/candles/schedule', req),
-  patchImportSchedule: (id: number, patch: Partial<Pick<ImportSchedule, 'enabled' | 'cron_spec'>>) =>
-    api.patch<ImportSchedule>(`/candles/schedule/${id}`, patch),
-  deleteImportSchedule: (id: number) =>
-    api.delete<void>(`/candles/schedule/${id}`),
+  // Candle datasets (docs/specs/candle-data)
+  listCandleDatasets: (opts?: { signal?: AbortSignal }) =>
+    api.get<CandleDataset[]>('/candle-datasets', opts),
+  createCandleDataset: (req: CandleDatasetCreateRequest) =>
+    api.post<CandleDataset>('/candle-datasets', req),
+  pauseCandleDataset: (id: number) => api.post<CandleDataset>(`/candle-datasets/${id}/pause`),
+  resumeCandleDataset: (id: number) => api.post<CandleDataset>(`/candle-datasets/${id}/resume`),
+  retryFailedCandleDataset: (id: number) =>
+    api.post<CandleDataset>(`/candle-datasets/${id}/retry-failed`),
+  reconcileCandleDataset: (id: number) =>
+    api.post<CandleDataset>(`/candle-datasets/${id}/reconcile`),
+  deleteCandleDataset: (id: number) => api.delete<void>(`/candle-datasets/${id}`),
+  listCandleChunks: (id: number, status?: CandleChunkStatus, opts?: { signal?: AbortSignal }) =>
+    api.get<CandleChunk[]>(`/candle-datasets/${id}/chunks${status ? `?status=${status}` : ''}`, opts),
 
   // Signals / Positions
   getSignals: (status?: 'open' | 'closed', opts?: { signal?: AbortSignal }) => {
