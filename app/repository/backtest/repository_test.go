@@ -163,3 +163,52 @@ func TestBacktestRepository_Delete_NotFound(t *testing.T) {
 	err := repo.Delete(context.Background(), 999)
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
+
+// B-02: rows written before the status column existed (and any run created
+// without an explicit status) must read as done, not as an in-flight job.
+func TestBacktestRepository_StatusDefaultsToDone(t *testing.T) {
+	db := setupTestDB(t)
+	repo := backtest.NewBacktestRepository(db)
+	ctx := context.Background()
+
+	run := &entities.BacktestRun{StrategyID: 1, Symbol: "BTCUSDT", CreatedAt: time.Now().UTC()}
+	require.NoError(t, repo.Create(ctx, run))
+
+	got, err := repo.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entities.BacktestDone, got.Status)
+}
+
+func TestBacktestRepository_QueuedRunRoundTripsAndTransitions(t *testing.T) {
+	db := setupTestDB(t)
+	repo := backtest.NewBacktestRepository(db)
+	ctx := context.Background()
+
+	run := &entities.BacktestRun{
+		StrategyID:     1,
+		Symbol:         "SOLUSDT",
+		Timeframe:      "15m",
+		InitialCapital: 1000,
+		FillPolicyJSON: datatypes.JSON(`{}`),
+		Status:         entities.BacktestQueued,
+		CreatedAt:      time.Now().UTC(),
+	}
+	require.NoError(t, repo.Create(ctx, run))
+
+	got, err := repo.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entities.BacktestQueued, got.Status)
+	assert.Equal(t, "15m", got.Timeframe)
+
+	finished := time.Now().UTC().Truncate(time.Second)
+	got.Status = entities.BacktestFailed
+	got.ErrorMessage = "boom"
+	got.FinishedAt = &finished
+	require.NoError(t, repo.Update(ctx, got))
+
+	again, err := repo.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entities.BacktestFailed, again.Status)
+	assert.Equal(t, "boom", again.ErrorMessage)
+	require.NotNil(t, again.FinishedAt)
+}

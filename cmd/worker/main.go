@@ -6,6 +6,7 @@ import (
 	"go-trade-bot/app/engine"
 	"go-trade-bot/app/entities"
 	internalapi "go-trade-bot/app/handler/internalapi"
+	backtest_tasks "go-trade-bot/app/handler/tasks/backtest"
 	optimize_tasks "go-trade-bot/app/handler/tasks/optimize"
 	performance_tasks "go-trade-bot/app/handler/tasks/performancehistory"
 	handler "go-trade-bot/app/handler/tasks/strategy"
@@ -31,6 +32,7 @@ import (
 	"go-trade-bot/app/strategies/script"
 
 	accountrepo "go-trade-bot/app/repository/account"
+	backtest_worker "go-trade-bot/app/workers/backtest"
 	optimize_worker "go-trade-bot/app/workers/optimize"
 	tasks "go-trade-bot/app/workers/strategy"
 	"go-trade-bot/cmd/worker/modules"
@@ -147,6 +149,7 @@ func RegisterHandlers(
 	dryRun modules.DryRunEngine,
 	notifySender notifier.NotificationSender,
 	optimizeProcessor *optimize_tasks.OptimizeProcessor,
+	backtestProcessor *backtest_tasks.BacktestProcessor,
 	snapshotProcessor *performance_tasks.SnapshotProcessor,
 	db *gorm.DB,
 	swappableExchange *exchange.SwappableExchangeClient,
@@ -188,6 +191,15 @@ func RegisterHandlers(
 	// on the trading path; en on error).
 	swappableNotifier.SetLocaleSource(settings_repo.NewDefaultLocaleSource(settingsRepo))
 	settingsUseCase := settings_usecase.NewUseCase(settingsRepo, swappableExchange, swappableNotifier, processor, nil)
+	// B-02: the per-run backtest limit comes from the Settings page, read at
+	// the start of every run (a read error falls back to the default).
+	backtestProcessor.SetTimeoutSource(func(ctx context.Context) time.Duration {
+		st, err := settingsRepo.Get(ctx)
+		if err != nil || st == nil {
+			return 0
+		}
+		return st.BacktestTimeout()
+	})
 	if cfg.InternalBridgeSecret == "" {
 		log.Printf("WARNING: INTERNAL_BRIDGE_SECRET is not set - the internal settings-apply bridge (%s) "+
 			"is protected only by its loopback-only bind, with no shared-secret defense-in-depth. Set "+
@@ -213,6 +225,13 @@ func RegisterHandlers(
 			// exact same asynq server/mux, not a second queue mechanism.
 			mux.Handle(optimize_worker.OptimizeTask, middleware.AsynqConfigMiddleware(
 				asynq.HandlerFunc(optimizeProcessor.ProcessTask),
+				cfg,
+				collector,
+			))
+
+			// B-02: asynchronous backtests, same mechanism as optimize above.
+			mux.Handle(backtest_worker.BacktestTask, middleware.AsynqConfigMiddleware(
+				asynq.HandlerFunc(backtestProcessor.ProcessTask),
 				cfg,
 				collector,
 			))
@@ -351,6 +370,7 @@ func appOptions() fx.Option {
 		modules.CandleDataModule,
 		modules.BacktestModule,
 		modules.OptimizeModule,
+		modules.BacktestQueueModule,
 		modules.PerformanceHistoryModule,
 		modules.ScriptModule,
 		fx.Provide(

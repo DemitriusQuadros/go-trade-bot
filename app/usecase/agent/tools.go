@@ -457,7 +457,7 @@ func (u AgentUseCase) runBacktestTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name:        "run_backtest",
-			Description: "Run a backtest for an existing strategy and return a summary of results (trade count, PnL, Sharpe, max drawdown, and the tail of the trade log). Blocks until the backtest completes.",
+			Description: u.runBacktestDescription(),
 			InputSchema: runBacktestSchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -474,20 +474,52 @@ func (u AgentUseCase) runBacktestTool() Tool {
 				return "", fmt.Errorf("run_backtest: invalid end_date: %w", err)
 			}
 
-			run, err := u.Backtest.Run(ctx, backtestusecase.RunRequest{
+			req := backtestusecase.RunRequest{
 				StrategyID:     in.StrategyID,
 				Symbol:         in.Symbol,
 				Timeframe:      in.Timeframe,
 				StartDate:      start,
 				EndDate:        end,
 				InitialCapital: in.InitialCapital,
-			})
+			}
+			if u.runsBacktestsAsync() {
+				return u.enqueueBacktest(ctx, req)
+			}
+
+			run, err := u.Backtest.Run(ctx, req)
 			if err != nil {
 				return "", err // a real backtest error (e.g. no candle data) is fed back to the model as-is, so it can adjust dates/symbol
 			}
 			return summarizeBacktestForModel(run), nil
 		},
 	}
+}
+
+func (u AgentUseCase) runsBacktestsAsync() bool {
+	return u.BacktestQueue != nil && u.BacktestWorker != nil
+}
+
+func (u AgentUseCase) runBacktestDescription() string {
+	if u.runsBacktestsAsync() {
+		return "Start a backtest for an existing strategy. It runs asynchronously in the worker (long windows can take minutes), so this returns the run id with status=queued immediately - call get_backtest with that id until status is done (results) or failed (error message)."
+	}
+	return "Run a backtest for an existing strategy and return a summary of results (trade count, PnL, Sharpe, max drawdown, and the tail of the trade log). Blocks until the backtest completes."
+}
+
+// enqueueBacktest validates and stores a queued run, then hands it to the
+// worker. Validation errors (no candles, unknown strategy) are returned
+// as-is so the model can adjust; a queue failure marks the run failed rather
+// than leaving it queued forever.
+func (u AgentUseCase) enqueueBacktest(ctx context.Context, req backtestusecase.RunRequest) (string, error) {
+	run, err := u.BacktestQueue.Enqueue(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if err := u.BacktestWorker.EnqueueBacktestTask(run.ID); err != nil {
+		_ = u.BacktestQueue.MarkEnqueueFailed(ctx, run.ID, err)
+		return "", fmt.Errorf("run_backtest: created run %d but failed to enqueue it: %w", run.ID, err)
+	}
+	return fmt.Sprintf("backtest_id=%d status=%s\nThis runs asynchronously - call get_backtest with this id to check progress and read the results once status is done.", run.ID, run.Status), nil
 }
 
 // formatProfitFactorForModel renders the no-losing-trades case as "inf".
@@ -511,6 +543,14 @@ const maxBacktestSummaryTradeLines = 20
 // Sharpe, max drawdown, final equity) plus only the LAST 20 trade records -
 // never the full trace, to stay within a reasonable tool-result size.
 func summarizeBacktestForModel(run entities.BacktestRun) string {
+	// Async runs (B-02): until a run is done there are no metrics to show,
+	// and a failed run's only useful content is its error.
+	switch run.Status {
+	case entities.BacktestQueued, entities.BacktestRunning:
+		return fmt.Sprintf("backtest_id=%d strategy_id=%d status=%s symbol=%s\nNot finished yet - call get_backtest again shortly.", run.ID, run.StrategyID, run.Status, run.Symbol)
+	case entities.BacktestFailed:
+		return fmt.Sprintf("backtest_id=%d strategy_id=%d status=failed symbol=%s\nerror: %s", run.ID, run.StrategyID, run.Symbol, run.ErrorMessage)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "backtest_id=%d strategy_id=%d\nsymbol=%s\nsharpe=%.4f max_drawdown_pct=%.2f win_rate_pct=%.2f profit_factor=%s total_trades=%d total_return_pct=%.2f passed=%v initial_capital=%.2f\n",
 		run.ID, run.StrategyID, run.Symbol, run.Sharpe, run.MaxDrawdownPct, run.WinRatePct, formatProfitFactorForModel(run.ProfitFactor), run.TotalTrades, run.TotalReturnPct, run.Passed, run.InitialCapital)

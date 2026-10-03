@@ -30,6 +30,11 @@ type PlatformSettingsUpdateRequestDTO struct {
 	// the stored value (older clients don't send it); anything else is a
 	// 400 invalid_locale (checked by the handler before MergeInto).
 	DefaultLocale string `json:"default_locale"`
+	// BacktestTimeoutMinutes (B-02): per-run limit for asynchronous
+	// backtests. Omitted/0 keeps the stored value; otherwise it must be
+	// within entities.Min/MaxBacktestTimeoutMinutes (400
+	// invalid_backtest_timeout).
+	BacktestTimeoutMinutes int `json:"backtest_timeout_minutes"`
 }
 
 // resolveSecret implements the "omitted/empty/masked-placeholder means keep
@@ -68,8 +73,9 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		// agents_paused in the body is ignored): it is owned by
 		// PUT /agents/kill-switch, so a normal settings save can never flip
 		// it (and never has to assert confirm_live to do so).
-		AgentsPaused:  existing.AgentsPaused,
-		DefaultLocale: r.mergedDefaultLocale(existing.DefaultLocale),
+		AgentsPaused:           existing.AgentsPaused,
+		DefaultLocale:          r.mergedDefaultLocale(existing.DefaultLocale),
+		BacktestTimeoutMinutes: r.mergedBacktestTimeout(existing.BacktestTimeoutMinutes),
 	}
 }
 
@@ -91,4 +97,18 @@ func (r PlatformSettingsUpdateRequestDTO) ValidDefaultLocale() bool {
 	}
 	_, ok := i18n.Parse(r.DefaultLocale)
 	return ok
+}
+
+func (r PlatformSettingsUpdateRequestDTO) mergedBacktestTimeout(existing int) int {
+	if r.BacktestTimeoutMinutes == 0 {
+		return existing
+	}
+	return r.BacktestTimeoutMinutes
+}
+
+// ValidBacktestTimeout reports whether the request's backtest_timeout_minutes
+// is acceptable: omitted (0, keep existing) or within the allowed range.
+func (r PlatformSettingsUpdateRequestDTO) ValidBacktestTimeout() bool {
+	m := r.BacktestTimeoutMinutes
+	return m == 0 || (m >= entities.MinBacktestTimeoutMinutes && m <= entities.MaxBacktestTimeoutMinutes)
 }

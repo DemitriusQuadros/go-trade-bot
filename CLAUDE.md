@@ -210,6 +210,22 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   `Engine.PreCycle`), `montecarlo.go` (trade reordering for robustness testing). Has panic recovery per
   strategy cycle (`strategy_panics_total` metric + webhook alert).
 - **`app/workers/strategy/`** — Asynq client wrapper that enqueues a strategy for its next cycle.
+- **Asynchronous backtests (B-02)** — `BacktestRun` has `Status` (`queued|running|done|failed`, column default
+  `done` so pre-existing rows read as finished), `ErrorMessage`, `Timeframe`, `FillPolicyJSON`, `StartedAt`/
+  `FinishedAt`. `BacktestUseCase.Enqueue` validates like `Run` (strategy, symbol, candles in range) and stores a
+  queued row; `app/workers/backtest` enqueues task `backtest:execute` (default queue, `MaxRetry(0)`, 25 h
+  asynq backstop) and cmd/worker's `BacktestProcessor` calls `ExecuteQueued` under a per-run context timeout read from
+  `Settings.BacktestTimeoutMinutes` at the start of every run (default 120, allowed 5-1440, edited on the frontend
+  Settings page via `backtest_timeout_minutes` in GET/PUT `/settings`, 400 `invalid_backtest_timeout`; a timed-out run
+  is recorded `failed`, never saved as a partial `done` - `executeReplay` now surfaces a cancelled context), which updates the SAME row
+  queued -> running -> done|failed (a task for a run that is no longer queued is a no-op). `MarkEnqueueFailed`
+  marks a run failed when the queue hand-off fails. `Run` (synchronous) is unchanged and still used by the REST
+  `POST /backtest`, the optimizer and the deploy gate. Only **cmd/mcp** wires `AgentUseCase.BacktestQueue`/
+  `BacktestWorker`, so MCP `run_backtest` returns `backtest_id` + `status=queued` immediately and `get_backtest`
+  reports status/error until done; the in-app chat and agent runs (cmd/api, cmd/agent) leave them nil and keep
+  the blocking tool. The REST run DTO exposes `status`, `error_message`, `timeframe`, `started_at`, `finished_at`.
+  Not done yet: an async option on `POST /backtest`, and the frontend does not show queued/failed rows
+  differently from finished ones.
 - **Agents platform (Phase A)** — agents are configurable persona rows, not code:
   - `app/entities/agentplatform.go`: `Agent` (goal prompt, provider/model override, permissions, cron
     triggers, webhook target ids, daily budget, paused, `IsDefault`), `AgentStrategyBinding`,

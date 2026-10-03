@@ -43,7 +43,29 @@ type Settings struct {
 	// reports and webhook notifications. "" reads as "en". Written by the
 	// admin-only PUT /settings.
 	DefaultLocale string `gorm:"size:8;default:en"`
-	UpdatedAt     time.Time
+	// BacktestTimeoutMinutes is how long one asynchronous backtest may run
+	// before the worker cancels it and records it failed (B-02). 0 reads as
+	// DefaultBacktestTimeoutMinutes. Edited on the Settings page (admin) and
+	// read by cmd/worker at the start of each run, so a change applies to
+	// the next backtest without a restart.
+	BacktestTimeoutMinutes int `gorm:"default:120"`
+	UpdatedAt              time.Time
+}
+
+const (
+	DefaultBacktestTimeoutMinutes = 120
+	MinBacktestTimeoutMinutes     = 5
+	MaxBacktestTimeoutMinutes     = 24 * 60
+)
+
+// BacktestTimeout is the effective per-run limit: the stored value, or the
+// default when unset (0) or out of range.
+func (s Settings) BacktestTimeout() time.Duration {
+	m := s.BacktestTimeoutMinutes
+	if m < MinBacktestTimeoutMinutes || m > MaxBacktestTimeoutMinutes {
+		m = DefaultBacktestTimeoutMinutes
+	}
+	return time.Duration(m) * time.Minute
 }
 
 // ToConfiguration builds a *configuration.Configuration carrying just the

@@ -50,6 +50,11 @@ function humanizeSettingsError(err: unknown): string {
   return tr('settings.errGeneric');
 }
 
+// Mirror of entities.Min/MaxBacktestTimeoutMinutes (the backend validates too).
+const BACKTEST_TIMEOUT_MIN = 5;
+const BACKTEST_TIMEOUT_MAX = 1440;
+const BACKTEST_TIMEOUT_DEFAULT = 120;
+
 export function Settings() {
   const t = useT();
   const { data: loadedSettings, isLoading, isError, error: loadError } = usePlatformSettings();
@@ -65,6 +70,7 @@ export function Settings() {
     asynqmon_url: '',
     agents_asynqmon_url: '',
     default_locale: 'en',
+    backtest_timeout_minutes: BACKTEST_TIMEOUT_DEFAULT,
   });
 
   const [dirtySecrets, setDirtySecrets] = useState<Record<string, string>>({});
@@ -98,6 +104,7 @@ export function Settings() {
         asynqmon_url: loadedSettings.asynqmon_url || '',
         agents_asynqmon_url: loadedSettings.agents_asynqmon_url || '',
         default_locale: normalizeLocale(loadedSettings.default_locale) ?? 'en',
+        backtest_timeout_minutes: loadedSettings.backtest_timeout_minutes ?? BACKTEST_TIMEOUT_DEFAULT,
       });
       setDirtySecrets({});
     }
@@ -117,6 +124,16 @@ export function Settings() {
 
   const executeSubmit = async (payload: PlatformSettingsUpdateRequest) => {
     if (!loadedSettings) return;
+
+    const timeout = payload.backtest_timeout_minutes ?? BACKTEST_TIMEOUT_DEFAULT;
+    if (!Number.isInteger(timeout) || timeout < BACKTEST_TIMEOUT_MIN || timeout > BACKTEST_TIMEOUT_MAX) {
+      setPhase('error');
+      setSuccessMessage(null);
+      setErrorMessage(
+        t('settings.errBacktestTimeout', { min: BACKTEST_TIMEOUT_MIN, max: BACKTEST_TIMEOUT_MAX }),
+      );
+      return;
+    }
 
     const isRisky = isRiskBearingChange(loadedSettings, payload);
     setPhase(isRisky ? 'saving-risk' : 'saving-safe');
@@ -381,6 +398,39 @@ export function Settings() {
                 />
               </div>
             </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* B-02: limit for backtests that run asynchronously in cmd/worker. */}
+      <Card>
+        <CardHeader
+          title={t('settings.backtestTitle')}
+          subtitle={t('settings.backtestSubtitle')}
+        />
+        <div className="p-6 pt-0">
+          <div className="flex flex-col gap-1.5 max-w-xs">
+            <label htmlFor="settings-backtest-timeout" className="text-xs font-semibold text-foreground flex items-center gap-1">
+              {t('settings.backtestTimeout')}
+              <HelpTooltip>
+                {t('settings.backtestTimeoutHelp', { min: BACKTEST_TIMEOUT_MIN, max: BACKTEST_TIMEOUT_MAX })}
+              </HelpTooltip>
+            </label>
+            <input
+              id="settings-backtest-timeout"
+              type="number"
+              step="5"
+              min={BACKTEST_TIMEOUT_MIN}
+              max={BACKTEST_TIMEOUT_MAX}
+              value={formState.backtest_timeout_minutes ?? BACKTEST_TIMEOUT_DEFAULT}
+              onChange={(e) =>
+                setFormState({
+                  ...formState,
+                  backtest_timeout_minutes: parseInt(e.target.value, 10) || 0,
+                })
+              }
+              className="px-3 py-1.5 rounded bg-background border border-border text-xs text-foreground focus:outline-none focus:border-primary"
+            />
           </div>
         </div>
       </Card>

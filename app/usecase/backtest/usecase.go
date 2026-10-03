@@ -3,6 +3,7 @@ package backtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -139,11 +140,168 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		}
 	}()
 
+	strat, req, err := u.prepareRun(ctx, req)
+	if err != nil {
+		return entities.BacktestRun{}, err
+	}
+	strategyName = strat.Name
+
+	run, err := u.simulate(ctx, strat, req)
+	if err != nil {
+		return entities.BacktestRun{}, err
+	}
+	finished := time.Now().UTC()
+	run.Status = entities.BacktestDone
+	run.FinishedAt = &finished
+
+	if err := u.backtestRepo.Create(ctx, &run); err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to persist backtest run: %w", err)
+	}
+
+	// Not persisted (the association is already saved) - just lets the
+	// immediate response include the strategy's name without a second
+	// round trip to reload it via the repository's Preload("Strategy").
+	run.Strategy = strat
+
+	u.pruneReports(ctx, strat.ID)
+	return run, nil
+}
+
+// Enqueue validates req exactly like Run (so a bad strategy/symbol/range is
+// rejected immediately, not minutes later) and persists a queued
+// BacktestRun carrying every parameter the worker needs. The caller then
+// hands the returned run's ID to the asynq worker (B-02), which calls
+// ExecuteQueued.
+func (u *BacktestUseCase) Enqueue(ctx context.Context, req RunRequest) (entities.BacktestRun, error) {
+	strat, req, err := u.prepareRun(ctx, req)
+	if err != nil {
+		return entities.BacktestRun{}, err
+	}
+	fillPolicyBytes, _ := json.Marshal(req.FillPolicy)
+	run := entities.BacktestRun{
+		StrategyID:     strat.ID,
+		Symbol:         req.Symbol,
+		Timeframe:      req.Timeframe,
+		StartDate:      req.StartDate,
+		EndDate:        req.EndDate,
+		InitialCapital: req.InitialCapital,
+		FillPolicyJSON: datatypes.JSON(fillPolicyBytes),
+		Status:         entities.BacktestQueued,
+		CreatedAt:      time.Now().UTC(),
+	}
+	if err := u.backtestRepo.Create(ctx, &run); err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to persist queued backtest run: %w", err)
+	}
+	run.Strategy = strat
+	return run, nil
+}
+
+// MarkEnqueueFailed records that a run stored by Enqueue could not be handed
+// to the queue, so it is not left queued forever. No-op unless still queued.
+func (u *BacktestUseCase) MarkEnqueueFailed(ctx context.Context, runID uint, cause error) error {
+	run, err := u.backtestRepo.GetByID(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if run.Status != entities.BacktestQueued {
+		return nil
+	}
+	finished := time.Now().UTC()
+	run.Status = entities.BacktestFailed
+	run.ErrorMessage = "could not enqueue: " + cause.Error()
+	run.FinishedAt = &finished
+	return u.backtestRepo.Update(ctx, run)
+}
+
+// ExecuteQueued runs a backtest previously stored by Enqueue and records the
+// outcome on the SAME row: queued -> running -> done | failed. A run that is
+// no longer queued (a redelivered task, or one already finished) is skipped
+// without error so asynq never executes the same backtest twice. A run
+// failure is persisted as failed and also returned so the worker can log it.
+func (u *BacktestUseCase) ExecuteQueued(ctx context.Context, runID uint) error {
+	startTimer := time.Now()
+	strategyName := "unknown"
+	defer func() {
+		if u.collector != nil {
+			u.collector.ObserveHistogram("backtest_run_duration_seconds", map[string]string{"strategy": strategyName, "is_walk_forward": "false"}, time.Since(startTimer).Seconds())
+		}
+	}()
+
+	queued, err := u.backtestRepo.GetByID(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("failed to load backtest run %d: %w", runID, err)
+	}
+	if queued.Status != entities.BacktestQueued {
+		return nil
+	}
+
+	started := time.Now().UTC()
+	queued.Status = entities.BacktestRunning
+	queued.StartedAt = &started
+	if err := u.backtestRepo.Update(ctx, queued); err != nil {
+		return fmt.Errorf("failed to mark backtest run %d running: %w", runID, err)
+	}
+
+	fail := func(cause error) error {
+		if errors.Is(cause, context.DeadlineExceeded) {
+			cause = fmt.Errorf("backtest timed out (raise the backtest timeout in Settings): %w", cause)
+		}
+		finished := time.Now().UTC()
+		queued.Status = entities.BacktestFailed
+		queued.ErrorMessage = cause.Error()
+		queued.FinishedAt = &finished
+		if uErr := u.backtestRepo.Update(context.WithoutCancel(ctx), queued); uErr != nil {
+			return fmt.Errorf("%w (and failed to record the failure: %v)", cause, uErr)
+		}
+		return cause
+	}
+
+	strat, err := u.strategyRepo.GetByID(ctx, queued.StrategyID)
+	if err != nil {
+		return fail(fmt.Errorf("failed to load strategy %d: %w", queued.StrategyID, err))
+	}
+	strategyName = strat.Name
+
+	var fillPolicy engine.FillPolicy
+	if len(queued.FillPolicyJSON) > 0 {
+		_ = json.Unmarshal(queued.FillPolicyJSON, &fillPolicy)
+	}
+	result, err := u.simulate(ctx, strat, RunRequest{
+		StrategyID:     queued.StrategyID,
+		Symbol:         queued.Symbol,
+		Timeframe:      queued.Timeframe,
+		StartDate:      queued.StartDate,
+		EndDate:        queued.EndDate,
+		InitialCapital: queued.InitialCapital,
+		FillPolicy:     fillPolicy,
+	})
+	if err != nil {
+		return fail(err)
+	}
+
+	finished := time.Now().UTC()
+	result.ID = queued.ID
+	result.Status = entities.BacktestDone
+	result.StartedAt = queued.StartedAt
+	result.FinishedAt = &finished
+	result.CreatedAt = queued.CreatedAt
+	result.FillPolicyJSON = queued.FillPolicyJSON
+	if err := u.backtestRepo.Update(ctx, result); err != nil {
+		return fail(fmt.Errorf("failed to persist backtest run: %w", err))
+	}
+	u.pruneReports(ctx, strat.ID)
+	return nil
+}
+
+// prepareRun applies the request defaults, loads the strategy and checks the
+// replay range holds candles. Shared by Run (sync) and Enqueue (async) so
+// both reject bad input the same way.
+func (u *BacktestUseCase) prepareRun(ctx context.Context, req RunRequest) (entities.Strategy, RunRequest, error) {
 	if req.StrategyID == 0 {
-		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
+		return entities.Strategy{}, req, fmt.Errorf("strategy_id is required")
 	}
 	if req.Symbol == "" {
-		return entities.BacktestRun{}, fmt.Errorf("symbol is required")
+		return entities.Strategy{}, req, fmt.Errorf("symbol is required")
 	}
 	if req.Timeframe == "" {
 		req.Timeframe = "1m"
@@ -154,14 +312,19 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 
 	strat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
 	if err != nil {
-		return entities.BacktestRun{}, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
+		return entities.Strategy{}, req, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
 	}
-	strategyName = strat.Name
 
 	if err := u.requireCandles(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate); err != nil {
-		return entities.BacktestRun{}, err
+		return entities.Strategy{}, req, err
 	}
+	return strat, req, nil
+}
 
+// simulate replays req against strat and returns the (unpersisted) result
+// row: metrics, trade log, trace and HTML report. req must already have
+// gone through prepareRun.
+func (u *BacktestUseCase) simulate(ctx context.Context, strat entities.Strategy, req RunRequest) (entities.BacktestRun, error) {
 	var executionTrace []script.TraceRecord
 	tradeLog, err := u.executeReplay(ctx, strat, req.Symbol, req.Timeframe, req.StartDate, req.EndDate, req.InitialCapital, req.FillPolicy, &executionTrace)
 	if err != nil {
@@ -211,18 +374,19 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		dbProfitFactor = math.MaxFloat64
 	}
 
-	run := entities.BacktestRun{
-		StrategyID:     strat.ID,
-		Symbol:         req.Symbol,
-		StartDate:      req.StartDate,
-		EndDate:        req.EndDate,
-		IsWalkForward:  false,
-		Sharpe:         metrics.SharpeRatio,
-		MaxDrawdownPct: metrics.MaxDrawdownPct,
-		WinRatePct:     metrics.WinRatePct,
-		ProfitFactor:   dbProfitFactor,
-		TotalTrades:    metrics.TotalTrades,
-		TotalReturnPct: metrics.TotalReturnPct,
+	return entities.BacktestRun{
+		StrategyID:         strat.ID,
+		Symbol:             req.Symbol,
+		Timeframe:          req.Timeframe,
+		StartDate:          req.StartDate,
+		EndDate:            req.EndDate,
+		IsWalkForward:      false,
+		Sharpe:             metrics.SharpeRatio,
+		MaxDrawdownPct:     metrics.MaxDrawdownPct,
+		WinRatePct:         metrics.WinRatePct,
+		ProfitFactor:       dbProfitFactor,
+		TotalTrades:        metrics.TotalTrades,
+		TotalReturnPct:     metrics.TotalReturnPct,
 		Passed:             passed,
 		HTMLReportPath:     htmlPath,
 		TradeLogJSON:       datatypes.JSON(tradeLogBytes),
@@ -230,19 +394,7 @@ func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.Bac
 		ExecutionTraceJSON: executionTraceBytes,
 		InitialCapital:     req.InitialCapital,
 		CreatedAt:          time.Now().UTC(),
-	}
-
-	if err := u.backtestRepo.Create(ctx, &run); err != nil {
-		return entities.BacktestRun{}, fmt.Errorf("failed to persist backtest run: %w", err)
-	}
-
-	// Not persisted (the association is already saved) - just lets the
-	// immediate response include the strategy's name without a second
-	// round trip to reload it via the repository's Preload("Strategy").
-	run.Strategy = strat
-
-	u.pruneReports(ctx, strat.ID)
-	return run, nil
+	}, nil
 }
 
 // RunWalkForward loads the strategy by ID and delegates to
@@ -371,6 +523,8 @@ func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat e
 		StartDate:      req.StartDate,
 		EndDate:        req.EndDate,
 		IsWalkForward:  true,
+		Status:         entities.BacktestDone,
+		Timeframe:      req.Timeframe,
 		Sharpe:         metrics.SharpeRatio,
 		MaxDrawdownPct: metrics.MaxDrawdownPct,
 		WinRatePct:     metrics.WinRatePct,
@@ -629,7 +783,15 @@ func (u *BacktestUseCase) executeReplay(
 	}
 
 	driver := engine.NewReplayDriver(replayFeed, simExchange, eng, stratImpl, strat, symbol, strategies.ModeBacktest, signalRepo)
-	return driver.Run(ctx)
+	tradeLog, err := driver.Run(ctx)
+	// ReplayDriver.Run stops quietly when ctx ends and returns the trades
+	// found so far. That partial log must never be saved as a finished
+	// backtest (a timed-out or cancelled run would otherwise read as done
+	// with silently truncated results), so surface the cancellation.
+	if err == nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return tradeLog, err
 }
 
 // requireCandles fails a backtest loudly (a 400 validation error) when the

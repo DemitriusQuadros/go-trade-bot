@@ -20,6 +20,7 @@ import (
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	signalusecase "go-trade-bot/app/usecase/signal"
 	strategyusecase "go-trade-bot/app/usecase/strategy"
+	backtestworker "go-trade-bot/app/workers/backtest"
 	optimizeworker "go-trade-bot/app/workers/optimize"
 	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/modelprovider"
@@ -52,6 +53,11 @@ var AgentModule = fx.Module("agent",
 		},
 		func(o *optimizeusecase.OptimizeUseCase) agentusecase.OptimizeUseCase { return o },
 		func(w optimizeworker.OptimizeWorker) agentusecase.OptimizeWorker { return w },
+		// B-02: run_backtest over MCP is asynchronous - the connector/proxy
+		// in front of cmd/mcp times out on long windows.
+		backtestworker.NewBacktestWorker,
+		func(w backtestworker.BacktestWorker) agentusecase.BacktestWorker { return w },
+		func(u *backtestusecase.BacktestUseCase) agentusecase.BacktestQueue { return u },
 		func(
 			model modelprovider.ModelProvider,
 			repo repoagent.Repository,
@@ -61,6 +67,8 @@ var AgentModule = fx.Module("agent",
 			snapshot agentusecase.PerformanceSnapshotUseCase,
 			optimize agentusecase.OptimizeUseCase,
 			optimizeWorker agentusecase.OptimizeWorker,
+			backtestWorker agentusecase.BacktestWorker,
+			backtestQueue agentusecase.BacktestQueue,
 			cfg *configuration.Configuration,
 			db *gorm.DB,
 			bt *backtestusecase.BacktestUseCase,
@@ -69,6 +77,8 @@ var AgentModule = fx.Module("agent",
 			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
 			uc.Optimize = optimize
 			uc.OptimizeWorker = optimizeWorker
+			uc.BacktestWorker = backtestWorker
+			uc.BacktestQueue = backtestQueue
 			// Agents platform (A-02 §5 "MCP"): the memory/report tools are
 			// exposed over MCP and act as the DEFAULT agent (its permissions
 			// filter the registered tools; write_report attributes to it).

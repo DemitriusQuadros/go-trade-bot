@@ -144,6 +144,20 @@ type BacktestUseCase interface {
 	ListByStrategy(ctx context.Context, strategyID uint) ([]entities.BacktestRun, error)
 }
 
+// BacktestQueue and BacktestWorker are the optional async half of
+// run_backtest (B-02), mirroring OptimizeUseCase/OptimizeWorker: Enqueue
+// stores a queued run, the worker hands it to cmd/worker. When both are set
+// run_backtest returns the run id immediately instead of blocking; callers
+// that sit behind a gateway timeout (cmd/mcp) wire them.
+type BacktestQueue interface {
+	Enqueue(ctx context.Context, req backtestusecase.RunRequest) (entities.BacktestRun, error)
+	MarkEnqueueFailed(ctx context.Context, runID uint, cause error) error
+}
+
+type BacktestWorker interface {
+	EnqueueBacktestTask(runID uint) error
+}
+
 type SignalUseCase interface {
 	GetOpenSignals(ctx context.Context) ([]entities.Signal, error) // read-only in Phase 1
 }
@@ -190,8 +204,13 @@ type AgentUseCase struct {
 	// wiring optimization keep working unchanged - set post-construction,
 	// same as Provider/ModelName below, rather than widening
 	// NewAgentUseCase's signature.
-	Optimize              OptimizeUseCase
-	OptimizeWorker        OptimizeWorker
+	Optimize       OptimizeUseCase
+	OptimizeWorker OptimizeWorker
+	// BacktestQueue/BacktestWorker are optional: when both are nil
+	// run_backtest blocks until the replay completes (the in-app chat and
+	// agent runs); when both are set it queues the run and returns its id.
+	BacktestQueue         BacktestQueue
+	BacktestWorker        BacktestWorker
 	MaxToolLoopIterations int // interactive-trigger cap (chat_ui, mcp_tool); 0 = DefaultMaxToolLoopIterations
 	// UnattendedMaxToolLoopIterations is the cap for every other trigger;
 	// 0 = DefaultUnattendedMaxToolLoopIterations. Agent.MaxIterations > 0

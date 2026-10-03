@@ -393,6 +393,9 @@ export interface PlatformSettings {
   // i18n-02 §1: language for unattended agent output and webhook notifications.
   // i18n-02 contract (reconciled): field name `default_locale`, values 'en' | 'es' | 'pt-BR', default 'en'.
   default_locale?: string;
+  // B-02: per-run limit (minutes) for asynchronous backtests - the effective
+  // value, never 0.
+  backtest_timeout_minutes?: number;
 }
 
 export interface PlatformSettingsUpdateRequest {
@@ -412,6 +415,8 @@ export interface PlatformSettingsUpdateRequest {
   agents_asynqmon_url?: string;
   // i18n-02 contract (reconciled): admin-editable in PUT /settings.
   default_locale?: string;
+  // B-02: 5-1440; omitted keeps the stored value.
+  backtest_timeout_minutes?: number;
 }
 
 export interface PlatformSettingsUpdateResponse {

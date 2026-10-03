@@ -62,28 +62,35 @@ func (dto WalkForwardRequestDTO) ToUseCase() usecase.WalkForwardRequest {
 }
 
 type BacktestRunResponse struct {
-	ID             uint                          `json:"id"`
-	StrategyID     uint                          `json:"strategy_id"`
-	StrategyName   string                        `json:"strategy_name"`
-	Symbol         string                        `json:"symbol"`
-	StartDate      time.Time                     `json:"start_date"`
-	EndDate        time.Time                     `json:"end_date"`
-	IsWalkForward  bool                          `json:"is_walk_forward"`
-	Sharpe         float64                       `json:"sharpe"`
-	MaxDrawdownPct float64                       `json:"max_drawdown_pct"`
-	WinRatePct     float64                       `json:"win_rate_pct"`
-	ProfitFactor   any                           `json:"profit_factor"`
-	TotalTrades    int                           `json:"total_trades"`
-	TotalReturnPct float64                       `json:"total_return_pct"`
-	Passed         bool                          `json:"passed"`
-	HTMLReportPath string                        `json:"html_report_path"`
+	ID             uint                           `json:"id"`
+	StrategyID     uint                           `json:"strategy_id"`
+	StrategyName   string                         `json:"strategy_name"`
+	Symbol         string                         `json:"symbol"`
+	StartDate      time.Time                      `json:"start_date"`
+	EndDate        time.Time                      `json:"end_date"`
+	IsWalkForward  bool                           `json:"is_walk_forward"`
+	Sharpe         float64                        `json:"sharpe"`
+	MaxDrawdownPct float64                        `json:"max_drawdown_pct"`
+	WinRatePct     float64                        `json:"win_rate_pct"`
+	ProfitFactor   any                            `json:"profit_factor"`
+	TotalTrades    int                            `json:"total_trades"`
+	TotalReturnPct float64                        `json:"total_return_pct"`
+	Passed         bool                           `json:"passed"`
+	HTMLReportPath string                         `json:"html_report_path"`
 	EquityCurve    []metrics_provider.EquityPoint `json:"equity_curve"`
-	TradeLog       any                           `json:"trade_log,omitempty"`
+	TradeLog       any                            `json:"trade_log,omitempty"`
 	// ExecutionTrace is the per-cycle script execution trace (backend-07),
 	// included only under the same opt-in flag as TradeLog and only when the
 	// run actually persisted one (script strategies).
-	ExecutionTrace any       `json:"execution_trace,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ExecutionTrace any `json:"execution_trace,omitempty"`
+	// Status is queued|running|done|failed (B-02); rows from before async
+	// runs existed read as done. ErrorMessage is set only when failed.
+	Status       string     `json:"status"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	Timeframe    string     `json:"timeframe,omitempty"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunResponse {
@@ -109,7 +116,15 @@ func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunRe
 		Passed:         run.Passed,
 		HTMLReportPath: run.HTMLReportPath,
 		EquityCurve:    []metrics_provider.EquityPoint{},
+		Status:         string(run.Status),
+		ErrorMessage:   run.ErrorMessage,
+		Timeframe:      run.Timeframe,
+		StartedAt:      run.StartedAt,
+		FinishedAt:     run.FinishedAt,
 		CreatedAt:      run.CreatedAt,
+	}
+	if res.Status == "" {
+		res.Status = string(entities.BacktestDone)
 	}
 
 	if len(run.MetricsJSON) > 0 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"go-trade-bot/app/entities"
@@ -68,6 +69,17 @@ func (h *SettingsHandler) PutSettings(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "invalid_locale",
 			"message": "default_locale must be one of en, es, pt-BR",
+		})
+		return
+	}
+
+	if !req.ValidBacktestTimeout() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "invalid_backtest_timeout",
+			"message": fmt.Sprintf("backtest_timeout_minutes must be between %d and %d",
+				entities.MinBacktestTimeoutMinutes, entities.MaxBacktestTimeoutMinutes),
 		})
 		return
 	}

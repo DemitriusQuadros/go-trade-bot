@@ -2,6 +2,7 @@ package settings
 
 import (
 	"strings"
+	"time"
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/internal/i18n"
@@ -64,6 +65,8 @@ type SettingsResponseDTO struct {
 	AgentsPaused bool `json:"agents_paused"`
 	// DefaultLocale (i18n-02 §1): "en" | "es" | "pt-BR" (never empty).
 	DefaultLocale string `json:"default_locale"`
+	// BacktestTimeoutMinutes is the EFFECTIVE per-run limit (never 0).
+	BacktestTimeoutMinutes int `json:"backtest_timeout_minutes"`
 }
 
 func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
@@ -80,12 +83,13 @@ func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
 			FeePct:      s.DryRunFeePct,
 			FillDelayMs: s.DryRunFillDelayMs,
 		},
-		PrometheusURL:     s.PrometheusURL,
-		GrafanaURL:        s.GrafanaURL,
-		AsynqmonURL:       s.AsynqmonURL,
-		AgentsAsynqmonURL: s.AgentsAsynqmonURL,
-		AgentsPaused:      s.AgentsPaused,
-		DefaultLocale:     string(i18n.ParseOr(s.DefaultLocale, i18n.Default)),
+		PrometheusURL:          s.PrometheusURL,
+		GrafanaURL:             s.GrafanaURL,
+		AsynqmonURL:            s.AsynqmonURL,
+		AgentsAsynqmonURL:      s.AgentsAsynqmonURL,
+		AgentsPaused:           s.AgentsPaused,
+		DefaultLocale:          string(i18n.ParseOr(s.DefaultLocale, i18n.Default)),
+		BacktestTimeoutMinutes: int(s.BacktestTimeout() / time.Minute),
 	}
 }
 

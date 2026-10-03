@@ -6,6 +6,18 @@ import (
 	"gorm.io/datatypes"
 )
 
+// BacktestStatus is the lifecycle of a BacktestRun. Synchronous runs are
+// persisted straight as done; asynchronous runs (B-02) start queued, are
+// flipped to running by the worker and end as done or failed.
+type BacktestStatus string
+
+const (
+	BacktestQueued  BacktestStatus = "queued"
+	BacktestRunning BacktestStatus = "running"
+	BacktestDone    BacktestStatus = "done"
+	BacktestFailed  BacktestStatus = "failed"
+)
+
 type BacktestRun struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	StrategyID     uint           `json:"strategy_id"`
@@ -38,6 +50,15 @@ type BacktestRun struct {
 	// gate run evaluated when that source was a CANDIDATE (not the
 	// strategy's saved source) - agents-platform Phase B. Empty for every
 	// run on the strategy's own saved source.
-	CandidateSourceHash string    `json:"candidate_source_hash,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
+	CandidateSourceHash string `json:"candidate_source_hash,omitempty"`
+	// Status/ErrorMessage/Timeframe/FillPolicyJSON/StartedAt/FinishedAt
+	// support asynchronous runs (B-02). The column default keeps every row
+	// written before this field existed reading as done.
+	Status         BacktestStatus `json:"status" gorm:"size:16;not null;default:done;index"`
+	ErrorMessage   string         `json:"error_message,omitempty"`
+	Timeframe      string         `json:"timeframe"`
+	FillPolicyJSON datatypes.JSON `json:"-" gorm:"type:jsonb"`
+	StartedAt      *time.Time     `json:"started_at,omitempty"`
+	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
