@@ -129,6 +129,13 @@ func NewMonitoringHandler(cfg *configuration.Configuration) http.Handler {
 		PrometheusAddress: cfg.Prometheus.Address,
 	})
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, AsynqmonRootPath, http.StatusTemporaryRedirect)
+			return
+		}
+		http.NotFound(w, r)
+	})
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle(mon.RootPath(), mon)
 	mux.Handle(mon.RootPath()+"/", mon)

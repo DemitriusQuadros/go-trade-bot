@@ -333,6 +333,9 @@ func StartMetricsServer(cfg *config.Configuration) {
 	})
 
 	r := mux.NewRouter()
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/tasks/monitoring", http.StatusTemporaryRedirect)
+	})
 	r.PathPrefix(h.RootPath()).Handler(h)
 	// Spec 11: this /metrics route never existed on the worker process despite
 	// prometheus.yml's "go-worker" job scraping :9191 since it was written -

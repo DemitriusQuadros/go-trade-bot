@@ -28,8 +28,14 @@ type httpTransport struct {
 // (internal/middleware.RequireAuth) - no separate, weaker auth scheme for
 // this binary (AC#4).
 func startHTTP(mcpServer *mcp.Server, cfg *configuration.Configuration) (*httpTransport, error) {
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
-	protected := middleware.RequireAuth(cfg, handler.ServeHTTP)
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, &mcp.StreamableHTTPOptions{
+		DisableLocalhostProtection: true,
+	})
+	hostRewriter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "localhost"
+		handler.ServeHTTP(w, r)
+	})
+	protected := middleware.RequireAuth(cfg, hostRewriter.ServeHTTP)
 
 	srv := &http.Server{Addr: defaultHTTPAddr, Handler: protected}
 	ln, err := net.Listen("tcp", defaultHTTPAddr)
