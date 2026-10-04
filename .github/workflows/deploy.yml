@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - master
-      - refactor/full-rewrite
   pull_request:
     branches:
       - master
-      - refactor/full-rewrite
   workflow_dispatch:
 
 concurrency:
@@ -57,7 +55,7 @@ jobs:
   deploy:
     name: Deploy to Hetzner Production VPS
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
