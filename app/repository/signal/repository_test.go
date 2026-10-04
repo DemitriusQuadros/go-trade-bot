@@ -190,4 +190,42 @@ func TestSignalRepository_GetAll(t *testing.T) {
 		assert.NotNil(t, s.Orders)
 		assert.True(t, len(s.Orders) > 0)
 	}
+
+	openSignals, err := repo.GetAllOpenSignals()
+	assert.NoError(t, err)
+	assert.Len(t, openSignals, 1)
+	assert.Equal(t, "BTCUSDT", openSignals[0].Symbol)
+
+	closedSignals, err := repo.GetAllClosedSignals()
+	assert.NoError(t, err)
+	assert.Len(t, closedSignals, 1)
+	assert.Equal(t, "ETHUSDT", closedSignals[0].Symbol)
+}
+
+// fix-01: the dryrun stop watermark is persisted on the order row only.
+func TestSignalRepository_UpdateSimStopEvaluatedAt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	assert.NoError(t, db.AutoMigrate(&entities.Signal{}, &entities.Order{}))
+	repo := repository.NewSignalRepository(db)
+
+	assert.NoError(t, repo.Create(entities.Signal{
+		Symbol: "BTCUSDT", StrategyID: 3, Status: entities.Open, Mode: "dryrun",
+		Orders: []entities.Order{{BrokerOrderID: "SIM-1-1", StopLossOrderID: "SIM-STOP-1-2", StopLossPrice: 98, EntryPrice: 100, Quantity: 1, MarginType: entities.Isolated}},
+	}))
+	open, err := repo.GetOpenSignals("BTCUSDT", 3)
+	assert.NoError(t, err)
+	assert.Equal(t, "dryrun", open.Mode)
+	assert.Nil(t, open.Orders[0].SimStopEvaluatedAt)
+
+	mark := time.Date(2026, 1, 1, 10, 5, 0, 0, time.UTC)
+	assert.NoError(t, repo.UpdateSimStopEvaluatedAt(open.Orders[0].ID, mark))
+
+	open, err = repo.GetOpenSignals("BTCUSDT", 3)
+	assert.NoError(t, err)
+	if assert.NotNil(t, open.Orders[0].SimStopEvaluatedAt) {
+		assert.True(t, open.Orders[0].SimStopEvaluatedAt.Equal(mark))
+	}
+	assert.Equal(t, float32(98), open.Orders[0].StopLossPrice)
+	assert.Equal(t, "SIM-STOP-1-2", open.Orders[0].StopLossOrderID)
 }

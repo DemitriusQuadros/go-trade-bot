@@ -61,6 +61,66 @@ func (_m *SignalRepository) GetAll() ([]entities.Signal, error) {
 	return r0, r1
 }
 
+// GetAllOpenSignals provides a mock function with no fields
+func (_m *SignalRepository) GetAllOpenSignals() ([]entities.Signal, error) {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAllOpenSignals")
+	}
+
+	var r0 []entities.Signal
+	var r1 error
+	if rf, ok := ret.Get(0).(func() ([]entities.Signal, error)); ok {
+		return rf()
+	}
+	if rf, ok := ret.Get(0).(func() []entities.Signal); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Signal)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetAllClosedSignals provides a mock function with no fields
+func (_m *SignalRepository) GetAllClosedSignals() ([]entities.Signal, error) {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAllClosedSignals")
+	}
+
+	var r0 []entities.Signal
+	var r1 error
+	if rf, ok := ret.Get(0).(func() ([]entities.Signal, error)); ok {
+		return rf()
+	}
+	if rf, ok := ret.Get(0).(func() []entities.Signal); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entities.Signal)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetByID provides a mock function with given fields: id
 func (_m *SignalRepository) GetByID(id uint) (entities.Signal, error) {
 	ret := _m.Called(id)

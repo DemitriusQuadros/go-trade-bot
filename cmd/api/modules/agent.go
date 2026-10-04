@@ -1,0 +1,181 @@
+package modules
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"time"
+
+	"go-trade-bot/app/entities"
+	agenthandler "go-trade-bot/app/handler/web/agent"
+	repoagent "go-trade-bot/app/repository/agent"
+	"go-trade-bot/app/repository/agentplatform"
+	candle_repo "go-trade-bot/app/repository/candle"
+	snapshot_repo "go-trade-bot/app/repository/performancesnapshot"
+	proposalrepo "go-trade-bot/app/repository/proposal"
+	settings_repo "go-trade-bot/app/repository/settings"
+	signalrepo "go-trade-bot/app/repository/signal"
+	strategy_repo "go-trade-bot/app/repository/strategy"
+	strategyscript "go-trade-bot/app/strategies/script"
+	agentusecase "go-trade-bot/app/usecase/agent"
+	backtestusecase "go-trade-bot/app/usecase/backtest"
+	optimizeusecase "go-trade-bot/app/usecase/optimize"
+	signalusecase "go-trade-bot/app/usecase/signal"
+	strategyusecase "go-trade-bot/app/usecase/strategy"
+	optimizeworker "go-trade-bot/app/workers/optimize"
+	"go-trade-bot/internal/configuration"
+	"go-trade-bot/internal/i18n"
+	"go-trade-bot/internal/modelprovider"
+	"go-trade-bot/internal/notifier"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/fx"
+	"gorm.io/gorm"
+)
+
+// AgentModule is cmd/api's transport onto app/usecase/agent.AgentUseCase
+// (Frontend Spec 01) - wired against the same strategy/backtest/signal/
+// snapshot usecases cmd/api already constructs elsewhere, mirroring
+// cmd/mcp/modules/agent.go's wiring so both transports drive the exact same
+// usecase, tool registry, and safety gate (Backend Spec 03).
+//
+// Deviation from a literal "wired identically to cmd/mcp" reading: unlike
+// cmd/mcp/modules.ModelProviderModule (whose entire job is being an AI
+// agent process, so failing fast on missing AGENT.* config is correct),
+// cmd/api is the live-trading REST API - it must keep serving every other
+// route even when no model provider is configured. So this module never
+// fails fx construction on missing/invalid AGENT config; instead it wires
+// an unconfiguredProvider that turns every chat request into a normal
+// AgentRun row with Status="error" and a clear ErrorMessage, surfaced by
+// the chat panel like any other failed run (Frontend Spec 01 AC#4) instead
+// of taking the whole API process down.
+var AgentModule = fx.Module("agent",
+	fx.Provide(
+		func(db *gorm.DB) repoagent.Repository {
+			return repoagent.NewGormRepository(db)
+		},
+		func(db *gorm.DB) snapshot_repo.Repository {
+			return snapshot_repo.NewSnapshotRepository(db)
+		},
+		func(s strategyusecase.StrategyUseCase) agentusecase.StrategyUseCase { return s },
+		func(u *backtestusecase.BacktestUseCase) agentusecase.BacktestUseCase { return u },
+		func(s signalusecase.SignalUseCase) agentusecase.SignalUseCase { return agentSignalAdapter{s} },
+		func(strategyRepo strategy_repo.StrategyRepository, snapshotRepo snapshot_repo.Repository) agentusecase.PerformanceSnapshotUseCase {
+			return agentSnapshotAdapter{strategyRepo: strategyRepo, snapshotRepo: snapshotRepo}
+		},
+		func(o *optimizeusecase.OptimizeUseCase) agentusecase.OptimizeUseCase { return o },
+		func(w optimizeworker.OptimizeWorker) agentusecase.OptimizeWorker { return w },
+		func(cfg *configuration.Configuration) modelprovider.ModelProvider {
+			switch cfg.Agent.Provider {
+			case "anthropic":
+				if cfg.Agent.AnthropicKey == "" {
+					return modelprovider.UnconfiguredProvider{Reason: "AI agent is not configured on this server (AGENT.PROVIDER=anthropic but AGENT.ANTHROPIC_KEY is empty)"}
+				}
+				return modelprovider.NewAnthropicAdapter(cfg.Agent.AnthropicKey, cfg.Agent.AnthropicModel)
+			case "gemini":
+				if cfg.Agent.GeminiKey == "" {
+					return modelprovider.UnconfiguredProvider{Reason: "AI agent is not configured on this server (AGENT.PROVIDER=gemini but AGENT.GEMINI_KEY is empty)"}
+				}
+				return modelprovider.NewGeminiAdapter(cfg.Agent.GeminiKey, cfg.Agent.GeminiModel)
+			default:
+				return modelprovider.UnconfiguredProvider{Reason: fmt.Sprintf("AI agent is not configured on this server (unrecognized AGENT.PROVIDER %q)", cfg.Agent.Provider)}
+			}
+		},
+		func(
+			model modelprovider.ModelProvider,
+			repo repoagent.Repository,
+			strategy agentusecase.StrategyUseCase,
+			backtest agentusecase.BacktestUseCase,
+			signal agentusecase.SignalUseCase,
+			snapshot agentusecase.PerformanceSnapshotUseCase,
+			optimize agentusecase.OptimizeUseCase,
+			optimizeWorker agentusecase.OptimizeWorker,
+			cfg *configuration.Configuration,
+			platform agentplatform.Repository,
+			settings settings_repo.Repository,
+			factory *modelprovider.ConfigProviderFactory,
+			n *notifier.MultiTargetNotifier,
+			renderer agentusecase.ReportRenderer,
+			strategyLock agentusecase.StrategyLock,
+			db *gorm.DB,
+			bt *backtestusecase.BacktestUseCase,
+			runner *strategyscript.Runner,
+			locales i18n.Source,
+		) *agentusecase.AgentUseCase {
+			uc := agentusecase.NewAgentUseCase(model, repo, strategy, backtest, signal, snapshot)
+			uc.Optimize = optimize
+			uc.OptimizeWorker = optimizeWorker
+			uc.Provider = cfg.Agent.Provider
+			if cfg.Agent.Provider == "anthropic" {
+				uc.ModelName = cfg.Agent.AnthropicModel
+			} else if cfg.Agent.Provider == "gemini" {
+				uc.ModelName = cfg.Agent.GeminiModel
+			}
+			if uc.ModelName == "" {
+				uc.ModelName = modelprovider.DefaultModelFor(uc.Provider)
+			}
+			// Agents platform: persona-aware chat (memory, usage/budget,
+			// kill switch, reports, notify, strategy writer lock).
+			uc.Platform = platform
+			uc.Providers = factory
+			uc.Notifier = n
+			uc.Reports = renderer
+			uc.Guard = agentusecase.NewDefaultGuard(settings, platform, n)
+			uc.Lock = strategyLock
+			uc.APIBaseURL = cfg.APIBaseURL
+			uc.Locales = locales // i18n-02: default locale for runs and report snapshots
+			// Phase B-01: gated deploys, challengers, proposals (chat).
+			uc.WirePhaseB(bt, candle_repo.NewCandleRepository(db), proposalrepo.NewGormRepository(db), signalrepo.NewSignalRepository(db), runner)
+			uc.Inspector = asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.Redis.Addr})
+			uc.ExecutionReader = strategy_repo.NewStrategyRepository(db)
+			return uc
+		},
+		func(uc *agentusecase.AgentUseCase) agenthandler.UseCase { return uc },
+		func(repo repoagent.Repository) agenthandler.Repository { return repo },
+	),
+)
+
+// agentSignalAdapter mirrors cmd/mcp/modules/agent.go's signalUseCaseAdapter
+// - bridges SignalUseCase.GetAllOpen onto agentusecase.SignalUseCase's
+// GetOpenSignals method name.
+type agentSignalAdapter struct {
+	inner signalusecase.SignalUseCase
+}
+
+func (a agentSignalAdapter) GetOpenSignals(ctx context.Context) ([]entities.Signal, error) {
+	return a.inner.GetAllOpen(ctx)
+}
+
+// agentSnapshotAdapter mirrors cmd/mcp/modules/agent.go's
+// snapshotUseCaseAdapter - implements agentusecase.PerformanceSnapshotUseCase
+// on top of the existing per-symbol ListDaily repository method by merging
+// each of the strategy's monitored symbols' daily rows.
+type agentSnapshotAdapter struct {
+	strategyRepo strategy_repo.StrategyRepository
+	snapshotRepo snapshot_repo.Repository
+}
+
+func (a agentSnapshotAdapter) ListByStrategy(ctx context.Context, strategyID uint, limit int) ([]entities.StrategyPerformanceSnapshot, error) {
+	strat, err := a.strategyRepo.GetByID(ctx, strategyID)
+	if err != nil {
+		return nil, err
+	}
+
+	to := time.Now().UTC().AddDate(0, 0, 1)
+	from := to.AddDate(-1, 0, -1)
+
+	var all []entities.StrategyPerformanceSnapshot
+	for _, symbol := range strat.MonitoredSymbols {
+		rows, err := a.snapshotRepo.ListDaily(ctx, strategyID, symbol, from, to)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, rows...)
+	}
+
+	sort.Slice(all, func(i, j int) bool { return all[i].PeriodStart.After(all[j].PeriodStart) })
+	if limit > 0 && len(all) > limit {
+		all = all[:limit]
+	}
+	return all, nil
+}

@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* "Console Pro" theme: paper/parchment light mode by default, dark
+   near-black + amber ("phosphor terminal") mode via the `dark` class on
+   <html> (toggled by useTheme.ts, persisted in localStorage). Every token
+   pair below was tuned against its OWN background rather than inverted
+   from the other mode - see the design pitch this replaced for the
+   reasoning on why amber/red/green all get distinct light vs dark values
+   instead of reusing one saturated hex on both grounds. */
+@layer base {
+  :root {
+    --background: 41 47% 90%;
+    --foreground: 35 19% 13%;
+
+    --card: 42 62% 96%;
+    --card-foreground: 35 19% 13%;
+
+    --popover: 42 62% 96%;
+    --popover-foreground: 35 19% 13%;
+
+    --primary: 30 71% 39%; /* Amber - the one interactive accent, paper mode */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 41 42% 85%;
+    --secondary-foreground: 35 19% 13%;
+
+    --muted: 41 42% 85%;
+    --muted-foreground: 39 14% 40%;
+
+    --accent: 41 42% 85%;
+    --accent-foreground: 30 71% 39%;
+
+    --destructive: 3 58% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 149 71% 30%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 39 77% 31%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 43 41% 77%;
+    --input: 43 41% 77%;
+    --ring: 30 71% 39%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 216 19% 5%;
+    --foreground: 202 20% 92%;
+
+    --card: 214 15% 9%;
+    --card-foreground: 202 20% 92%;
+
+    --popover: 214 15% 9%;
+    --popover-foreground: 202 20% 92%;
+
+    --primary: 30 70% 51%; /* Amber - phosphor-terminal accent, dark mode */
+    --primary-foreground: 35 80% 6%;
+
+    --secondary: 217 16% 16%;
+    --secondary-foreground: 202 20% 92%;
+
+    --muted: 217 16% 16%;
+    --muted-foreground: 213 10% 59%;
+
+    --accent: 217 16% 16%;
+    --accent-foreground: 30 70% 51%;
+
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 150 50% 50%;
+    --success-foreground: 216 19% 5%;
+
+    --warning: 46 73% 56%;
+    --warning-foreground: 216 19% 5%;
+
+    --border: 217 16% 16%;
+    --input: 217 16% 16%;
+    --ring: 30 70% 51%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  /* Console Pro's icon weight is 1.5px everywhere (lucide's default is 2) -
+     one rule here instead of a strokeWidth prop on every call site, since
+     lucide-react always stamps this class on the <svg> it renders. */
+  .lucide {
+    stroke-width: 1.5;
+  }
+}
+
+@layer components {
+  .form-group {
+    @apply mb-4 flex flex-col gap-1.5;
+  }
+  .form-label {
+    @apply text-sm font-medium text-muted-foreground mb-1 block;
+  }
+  .form-input, .form-select, .form-textarea {
+    @apply flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-foreground transition-colors;
+  }
+  .form-textarea {
+    @apply min-h-[80px];
+  }
+  .form-input[type="number"] {
+    @apply font-mono;
+  }
+}

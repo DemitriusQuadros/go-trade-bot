@@ -92,3 +92,51 @@ func TestAccountRepository_UpdateAccount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, float32(2000.0), result.Amount)
 }
+
+func TestAccountRepository_GetByMode(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&entities.Account{}))
+
+	repo := repository.NewAccountRepository(db)
+	acc := entities.Account{
+		ID:              1,
+		Mode:            entities.AccountModeDryRun,
+		Amount:          5000.0,
+		AvailableOrders: 3,
+		Currency:        "USDT",
+	}
+	require.NoError(t, repo.Create(acc))
+
+	found, err := repo.GetByMode(entities.AccountModeDryRun)
+	require.NoError(t, err)
+	require.Equal(t, entities.AccountModeDryRun, found.Mode)
+	require.Equal(t, float32(5000.0), found.Amount)
+}
+
+func TestAccountRepository_EnsureDefaultAccounts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&entities.Account{}))
+
+	repo := repository.NewAccountRepository(db)
+	require.NoError(t, repo.EnsureDefaultAccounts())
+
+	// Idempotent: call twice
+	require.NoError(t, repo.EnsureDefaultAccounts())
+
+	accounts, err := repo.GetAllAccounts()
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+
+	dryRun, err := repo.GetByMode(entities.AccountModeDryRun)
+	require.NoError(t, err)
+	require.Equal(t, entities.AccountModeDryRun, dryRun.Mode)
+	require.Equal(t, float32(10000.0), dryRun.Amount)
+	require.Equal(t, int64(5), dryRun.AvailableOrders)
+
+	live, err := repo.GetByMode(entities.AccountModeLive)
+	require.NoError(t, err)
+	require.Equal(t, entities.AccountModeLive, live.Mode)
+	require.Equal(t, float32(0.0), live.Amount)
+}
