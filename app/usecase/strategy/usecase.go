@@ -2,17 +2,26 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"go-trade-bot/app/entities"
+	"go-trade-bot/app/strategies"
+	"go-trade-bot/internal/authz"
 	"go-trade-bot/internal/customerror"
 	"net/http"
+	"strings"
 	"time"
 )
 
 type StrategyRepository interface {
-	Save(ctx context.Context, strategy entities.Strategy) error
+	Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error)
 	GetAll(ctx context.Context) ([]entities.Strategy, error)
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
 	Update(ctx context.Context, strategy entities.Strategy) error
+	GetStrategyPerformanceBySymbol(ctx context.Context) []entities.StrategyPerformance
+	SaveScriptVersion(ctx context.Context, v entities.ScriptVersion) error
+	GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error)
+	CountOpenSignals(ctx context.Context, strategy entities.Strategy) (int64, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type StrategyWorker interface {
@@ -31,24 +40,95 @@ func NewStrategyUseCase(repository StrategyRepository, worker StrategyWorker) St
 	}
 }
 
-func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) error {
-	if err := u.validateStrategy(strategy); err != nil {
-		return err
-	}
-	strategy.CreatedAt = time.Now()
-	strategy.UpdatedAt = time.Now()
+// errDraftOnly is the draft-only guard's refusal (auth-01 §3).
+func errDraftOnly() error {
+	return customerror.Forbidden("only admins can change non-backtest strategies")
+}
 
-	if err := u.Repository.Save(ctx, strategy); err != nil {
-		return err
-	}
+// draftGuarded returns the acting user when the draft-only guard applies to
+// ctx: a non-admin principal. No principal = system (agent tools,
+// background tasks, cmd/mcp) = not guarded - the agent write scope and the
+// trading safety gates already apply there.
+func draftGuarded(ctx context.Context) bool {
+	p, ok := authz.FromContext(ctx)
+	return ok && !p.IsAdmin()
+}
 
-	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
-		return err
+// isDraft reports whether (mode, status) is inside the non-admin bounds:
+// mode backtest and status not productive.
+func isDraft(mode string, status entities.StrategyStatus) bool {
+	return mode == "backtest" && status != entities.Productive
+}
+
+// guardStored refuses a non-admin change to a stored strategy that is not a
+// backtest draft.
+func (u StrategyUseCase) guardStored(ctx context.Context, id uint) error {
+	if !draftGuarded(ctx) {
+		return nil
+	}
+	stored, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+	if !isDraft(stored.Mode, stored.Status) {
+		return errDraftOnly()
 	}
 	return nil
 }
 
+func (u StrategyUseCase) Save(ctx context.Context, strategy entities.Strategy) (entities.Strategy, error) {
+	strategy = applyStrategyNameFallback(strategy)
+	if draftGuarded(ctx) {
+		// Non-admins may only create backtest drafts (testing/disabled).
+		if strategy.Mode != "backtest" || (strategy.Status != entities.Testing && strategy.Status != entities.Disabled) {
+			return entities.Strategy{}, errDraftOnly()
+		}
+	}
+	if err := u.validateStrategy(strategy); err != nil {
+		return entities.Strategy{}, err
+	}
+	// Audit (auth-01 §7): who created it. Set only here, at creation.
+	if p, ok := authz.FromContext(ctx); ok {
+		strategy.CreatedByUserID = p.UserIDPtr()
+	}
+	strategy.CreatedAt = time.Now()
+	strategy.UpdatedAt = time.Now()
+
+	saved, err := u.Repository.Save(ctx, strategy)
+	if err != nil {
+		return entities.Strategy{}, err
+	}
+	// Only take the DB-populated ID from the repository's return, rather than
+	// overwriting the whole struct - keeps this correct even against a test
+	// double that stubs a partial return value, and avoids depending on the
+	// repository echoing back every field it was given.
+	strategy.ID = saved.ID
+
+	if err := u.Worker.EnqueueStrategyTask(strategy); err != nil {
+		return entities.Strategy{}, err
+	}
+	if strategy.StrategyName == "script" {
+		u.Repository.SaveScriptVersion(ctx, entities.ScriptVersion{
+			StrategyID: strategy.ID,
+			Source:     strategy.ScriptSource,
+			CreatedAt:  time.Now(),
+		})
+	}
+	return strategy, nil
+}
+
 func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy) error {
+	strategy = applyStrategyNameFallback(strategy)
+	if draftGuarded(ctx) {
+		// Both the stored strategy and the requested result must be a
+		// backtest draft for a non-admin (auth-01 §3).
+		if err := u.guardStored(ctx, strategy.ID); err != nil {
+			return err
+		}
+		if !isDraft(strategy.Mode, strategy.Status) {
+			return errDraftOnly()
+		}
+	}
 	if err := u.validateStrategy(strategy); err != nil {
 		return err
 	}
@@ -57,8 +137,84 @@ func (u StrategyUseCase) Update(ctx context.Context, strategy entities.Strategy)
 	if err := u.Repository.Update(ctx, strategy); err != nil {
 		return err
 	}
-
+	if strategy.StrategyName == "script" {
+		u.Repository.SaveScriptVersion(ctx, entities.ScriptVersion{
+			StrategyID: strategy.ID,
+			Source:     strategy.ScriptSource,
+			CreatedAt:  time.Now(),
+		})
+	}
 	return nil
+}
+
+func (u StrategyUseCase) UpdateStatus(ctx context.Context, id uint, status entities.StrategyStatus) (entities.Strategy, error) {
+	// Mode/status changes are admin-only (auth-01 §3); the route already
+	// requires admin, this covers every other transport.
+	if draftGuarded(ctx) {
+		return entities.Strategy{}, errDraftOnly()
+	}
+	if id == 0 {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+	if !entities.IsValidStatus(string(status)) {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Invalid status value")
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+
+	// Fix 3 (registry-existence check): a strategy persisted under a
+	// StrategyName that's no longer registered (e.g. deleted from the
+	// codebase, such as the retired `template` package) must not be allowed
+	// to silently transition status - the same guard Save/Update enforce.
+	if !strategies.Exists(strat.StrategyName) {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, fmt.Sprintf(
+			"Invalid strategy name %q, must be one of: %s", strat.StrategyName, strings.Join(strategies.Names(), ", "),
+		))
+	}
+
+	strat.Status = status
+	strat.UpdatedAt = time.Now()
+
+	if err := u.Repository.Update(ctx, strat); err != nil {
+		return entities.Strategy{}, err
+	}
+
+	return strat, nil
+}
+
+func (u StrategyUseCase) UpdateMode(ctx context.Context, id uint, mode string) (entities.Strategy, error) {
+	// Mode/status changes are admin-only (auth-01 §3); the route already
+	// requires admin, this covers every other transport.
+	if draftGuarded(ctx) {
+		return entities.Strategy{}, errDraftOnly()
+	}
+	if id == 0 {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+	if _, err := strategies.ParseExecutionMode(mode); err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusBadRequest, "Invalid mode: "+err.Error())
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return entities.Strategy{}, customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+
+	strat.Mode = mode
+	strat.UpdatedAt = time.Now()
+
+	if err := u.Repository.Update(ctx, strat); err != nil {
+		return entities.Strategy{}, err
+	}
+
+	return strat, nil
+}
+
+func (u StrategyUseCase) GetPerformance(ctx context.Context) ([]entities.StrategyPerformance, error) {
+	return u.Repository.GetStrategyPerformanceBySymbol(ctx), nil
 }
 
 func (u StrategyUseCase) Enqueue(ctx context.Context) error {
@@ -87,6 +243,46 @@ func (u StrategyUseCase) GetAll(ctx context.Context) ([]entities.Strategy, error
 	return u.Repository.GetAll(ctx)
 }
 
+// Delete permanently removes a strategy and cascades to every table that
+// references it (signals, orders, executions, backtests, optimization
+// runs, performance snapshots, script state/versions, and AI agent chat
+// history - see repository.Delete's doc comment for the full list and
+// why AgentRun is included). This is a hard delete with no undo.
+//
+// Two guards, both operator-confirmed requirements: a strategy currently
+// marked Productive must be disabled first (deleting a live-trading
+// strategy out from under itself is exactly the kind of accident this
+// exists to prevent), and a strategy with any open signal/position must
+// have it closed first - deleting the strategy row out from under an open
+// position would orphan real capital with no strategy left to manage it.
+func (u StrategyUseCase) Delete(ctx context.Context, id uint) error {
+	if id == 0 {
+		return customerror.New(http.StatusBadRequest, "Input a valid ID")
+	}
+
+	strat, err := u.Repository.GetByID(ctx, id)
+	if err != nil {
+		return customerror.New(http.StatusNotFound, "Strategy not found")
+	}
+	if draftGuarded(ctx) && !isDraft(strat.Mode, strat.Status) {
+		return errDraftOnly()
+	}
+
+	if strat.Status == entities.Productive {
+		return customerror.New(http.StatusConflict, "Cannot delete a productive strategy - disable it first")
+	}
+
+	openCount, err := u.Repository.CountOpenSignals(ctx, strat)
+	if err != nil {
+		return err
+	}
+	if openCount > 0 {
+		return customerror.New(http.StatusConflict, "Cannot delete a strategy with open positions - close them first")
+	}
+
+	return u.Repository.Delete(ctx, id)
+}
+
 func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 	if strategy.Name == "" {
 		return customerror.New(http.StatusBadRequest, "Strategy has to have a name")
@@ -99,12 +295,18 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 		return customerror.New(http.StatusBadRequest, "Please define a set of symbols to monitor")
 	}
 
-	if strategy.Algorithm == "" {
-		return customerror.New(http.StatusBadRequest, "Please define a altorigthm to be used")
+	// Validation cutover (Spec 06 ADR-005): the closed Algorithm enum switch
+	// (entities.IsValidAlgorithm) is replaced by a runtime registry lookup on
+	// StrategyName, so adding a new strategy no longer requires a recompile
+	// of the entities package.
+	if strategy.StrategyName == "" {
+		return customerror.New(http.StatusBadRequest, "Strategy has to have a strategy_name")
 	}
 
-	if !entities.IsValidAlgorithm(string(strategy.Algorithm)) {
-		return customerror.New(http.StatusBadRequest, "Invalid algorithm option")
+	if !strategies.Exists(strategy.StrategyName) {
+		return customerror.New(http.StatusBadRequest, fmt.Sprintf(
+			"Invalid strategy name %q, must be one of: %s", strategy.StrategyName, strings.Join(strategies.Names(), ", "),
+		))
 	}
 
 	if strategy.StrategyConfiguration.Cycle == 0 {
@@ -114,5 +316,48 @@ func (u StrategyUseCase) validateStrategy(strategy entities.Strategy) error {
 	if !entities.IsValidCycle(int(strategy.StrategyConfiguration.Cycle)) {
 		return customerror.New(http.StatusBadRequest, "Invalid cycle option")
 	}
+
+	if strategy.StrategyName == "script" && strings.TrimSpace(strategy.ScriptSource) == "" {
+		return customerror.New(http.StatusBadRequest, "Script source cannot be empty")
+	}
 	return nil
+}
+
+// applyStrategyNameFallback mirrors the DTO-layer backward-compat mapping
+// (app/handler/web/strategy/dto.go) for callers that construct
+// entities.Strategy directly (bypassing the DTO), so validation behaves
+// consistently regardless of entry point during the deprecation window.
+func applyStrategyNameFallback(strategy entities.Strategy) entities.Strategy {
+	return strategy
+}
+
+func (u StrategyUseCase) GetScriptVersions(ctx context.Context, strategyID uint) ([]entities.ScriptVersion, error) {
+	return u.Repository.GetScriptVersions(ctx, strategyID)
+}
+
+func (u StrategyUseCase) RevertScriptVersion(ctx context.Context, strategyID uint, versionID uint) error {
+	if err := u.guardStored(ctx, strategyID); err != nil {
+		return err
+	}
+	versions, err := u.Repository.GetScriptVersions(ctx, strategyID)
+	if err != nil {
+		return err
+	}
+	var target *entities.ScriptVersion
+	for _, v := range versions {
+		if v.ID == versionID {
+			target = &v
+			break
+		}
+	}
+	if target == nil {
+		return customerror.New(http.StatusNotFound, "Version not found")
+	}
+
+	strat, err := u.GetByID(ctx, strategyID)
+	if err != nil {
+		return err
+	}
+	strat.ScriptSource = target.Source
+	return u.Update(ctx, strat)
 }

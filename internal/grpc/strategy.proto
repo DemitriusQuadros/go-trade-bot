@@ -1,0 +1,72 @@
+syntax = "proto3";
+package strategy;
+option go_package = "go-trade-bot/internal/grpc/strategypb";
+
+// Context mirrors app/strategies.Context's fields exactly (frozen shape,
+// ADR-005) - this proto message is a wire-format transcription, not a
+// redesign. Candles/Position/Account are flattened to proto-friendly shapes;
+// Config (map[string]interface{} in Go) is passed as a JSON-encoded string
+// field, since arbitrary interface{} values have no natural proto mapping
+// and the strategy config JSON is already a JSON blob at rest
+// (StrategyConfiguration.Configuration) - no new serialization format is
+// introduced, just passed through.
+message Candle {
+    string symbol = 1;
+    string timeframe = 2;
+    int64 open_time_unix = 3;
+    double open = 4;
+    double high = 5;
+    double low = 6;
+    double close = 7;
+    double volume = 8;
+}
+
+message Position {
+    string symbol = 1;
+    double entry_price = 2;
+    double quantity = 3;
+    optional double stop_loss_price = 4;
+    string stop_loss_order_id = 5;
+    int64 opened_at_unix = 6;
+}
+
+message StrategyContext {
+    repeated Candle candles = 1;
+    optional Position position = 2;
+    double account_available = 3;
+    string config_json = 4;      // JSON-encoded map[string]interface{}
+    double price = 5;
+    string timeframe = 6;
+    string symbol = 7;
+    string mode = 8;             // ExecutionMode.String() - "backtest"|"dryrun"|"paper"|"live"
+}
+
+message Order { double qty = 1; double price = 2; }
+
+message Signal {
+    optional Order buy = 1;
+    optional Order sell = 2;
+    optional Order stop_loss = 3;
+    optional Order take_profit = 4;
+}
+
+message BoolResponse { bool value = 1; }
+message SignalResponse { Signal signal = 1; }
+message NullableSignalResponse { optional Signal signal = 1; } // null => "hold" (UpdatePosition's nil contract)
+message Empty {}
+message NameResponse { string name = 1; }
+
+// One RPC per Strategy hook - a direct 1:1 mapping, not a generic
+// "call method X" RPC, so the .proto file itself documents the exact
+// frozen contract a Python implementation must satisfy.
+service MLStrategy {
+    rpc Name(Empty) returns (NameResponse);
+    rpc Before(StrategyContext) returns (Empty);
+    rpc ShouldLong(StrategyContext) returns (BoolResponse);
+    rpc GoLong(StrategyContext) returns (SignalResponse);
+    rpc ShouldShort(StrategyContext) returns (BoolResponse);
+    rpc GoShort(StrategyContext) returns (SignalResponse);
+    rpc UpdatePosition(StrategyContext) returns (NullableSignalResponse);
+    rpc After(StrategyContext) returns (Empty);
+    rpc Terminate(StrategyContext) returns (Empty);
+}

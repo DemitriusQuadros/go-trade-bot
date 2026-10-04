@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weekly review</title>
+<style>
+:root {
+  --background: 41 47% 90%;
+  --foreground: 35 19% 13%;
+  --card: 42 62% 96%;
+  --card-foreground: 35 19% 13%;
+  --primary: 30 71% 39%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 41 42% 85%;
+  --muted: 41 42% 85%;
+  --muted-foreground: 39 14% 40%;
+  --destructive: 3 58% 48%;
+  --success: 149 71% 30%;
+  --warning: 39 77% 31%;
+  --border: 43 41% 77%;
+  --radius: 0.5rem;
+}
+.dark {
+  --background: 216 19% 5%;
+  --foreground: 202 20% 92%;
+  --card: 214 15% 9%;
+  --card-foreground: 202 20% 92%;
+  --primary: 30 70% 51%;
+  --primary-foreground: 35 80% 6%;
+  --secondary: 217 16% 16%;
+  --muted: 217 16% 16%;
+  --muted-foreground: 213 10% 59%;
+  --destructive: 358 75% 59%;
+  --success: 150 50% 50%;
+  --warning: 46 73% 56%;
+  --border: 217 16% 16%;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: 216 19% 5%;
+    --foreground: 202 20% 92%;
+    --card: 214 15% 9%;
+    --card-foreground: 202 20% 92%;
+    --primary: 30 70% 51%;
+    --primary-foreground: 35 80% 6%;
+    --secondary: 217 16% 16%;
+    --muted: 217 16% 16%;
+    --muted-foreground: 213 10% 59%;
+    --destructive: 358 75% 59%;
+    --success: 150 50% 50%;
+    --warning: 46 73% 56%;
+    --border: 217 16% 16%;
+  }
+}
+* { box-sizing: border-box; border-color: hsl(var(--border)); }
+html, body { margin: 0; padding: 0; }
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, code, pre, table.data td.num, .kpi .value, .chart-axis { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.report { max-width: 960px; margin: 0 auto; padding: 24px 20px 32px; }
+.report-header { border-bottom: 1px solid hsl(var(--border)); padding-bottom: 16px; margin-bottom: 20px; }
+.eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+h1 { font-size: 22px; font-weight: 600; margin: 4px 0 10px; }
+h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.06em; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.badge { display: inline-block; border-radius: 9999px; padding: 1px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid transparent; }
+.sev-info { color: hsl(var(--primary)); border-color: hsl(var(--primary) / 0.4); background: hsl(var(--primary) / 0.08); }
+.sev-warning { color: hsl(var(--warning)); border-color: hsl(var(--warning) / 0.4); background: hsl(var(--warning) / 0.1); }
+.sev-critical { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.45); background: hsl(var(--destructive) / 0.1); }
+.card { background: hsl(var(--card)); color: hsl(var(--card-foreground)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.source { font-size: 12px; color: hsl(var(--muted-foreground)); margin: -4px 0 12px; }
+p { margin: 0 0 10px; white-space: pre-wrap; }
+p:last-child { margin-bottom: 0; }
+.callout { border-left-width: 3px; }
+.callout.sev-info { border-left-color: hsl(var(--primary)); }
+.callout.sev-warning { border-left-color: hsl(var(--warning)); }
+.callout.sev-critical { border-left-color: hsl(var(--destructive)); }
+.callout .callout-title { font-weight: 600; margin-bottom: 6px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.kpi { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) - 2px); padding: 10px 12px; background: hsl(var(--background) / 0.5); }
+.kpi .label { font-size: 11px; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+.pos { color: hsl(var(--success)); }
+.neg { color: hsl(var(--destructive)); }
+svg.chart { width: 100%; height: auto; display: block; }
+svg.chart .grid { stroke: hsl(var(--border)); stroke-width: 1; }
+svg.chart .line { fill: none; stroke-width: 1.75; }
+svg.chart .line.pos { stroke: hsl(var(--success)); }
+svg.chart .line.neg { stroke: hsl(var(--destructive)); }
+svg.chart .area.pos { fill: hsl(var(--success) / 0.08); }
+svg.chart .area.neg { fill: hsl(var(--destructive) / 0.08); }
+svg.chart .chart-axis { fill: hsl(var(--muted-foreground)); font-size: 10px; }
+.empty { color: hsl(var(--muted-foreground)); font-style: italic; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.data th { text-align: left; font-weight: 600; color: hsl(var(--muted-foreground)); border-bottom: 1px solid hsl(var(--border)); padding: 6px 8px; white-space: nowrap; }
+table.data td { border-bottom: 1px solid hsl(var(--border) / 0.6); padding: 6px 8px; vertical-align: top; }
+table.data td.num { text-align: right; white-space: nowrap; }
+.note { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 8px; }
+pre.diff { margin: 0; padding: 8px 0; border-radius: calc(var(--radius) - 2px); background: hsl(var(--background) / 0.6); border: 1px solid hsl(var(--border)); overflow-x: auto; font-size: 12px; line-height: 1.5; }
+pre.diff span { display: block; padding: 0 12px; white-space: pre; }
+pre.diff .add { background: hsl(var(--success) / 0.12); color: hsl(var(--success)); }
+pre.diff .del { background: hsl(var(--destructive) / 0.12); color: hsl(var(--destructive)); }
+pre.diff .gap { color: hsl(var(--muted-foreground)); font-style: italic; }
+ol.recs { margin: 0; padding-left: 20px; }
+ol.recs li { margin-bottom: 10px; }
+ol.recs .rec-title { font-weight: 600; }
+ol.recs .rec-action { font-size: 12px; color: hsl(var(--primary)); margin-top: 2px; }
+footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid hsl(var(--border)); font-size: 12px; color: hsl(var(--muted-foreground)); }
+</style>
+</head>
+<body>
+<main class="report">
+<header class="report-header">
+<div class="eyebrow">Agent report</div>
+<h1>Weekly review</h1>
+<div class="meta">
+<span class="badge sev-warning">warning</span>
+<span>Risk Monitor</span>
+<span>·</span>
+<span class="mono">2026-09-27 12:00 UTC</span>
+<span>·</span>
+<span>RSI Momentum, Breakout</span>
+</div>
+</header>
+
+<section class="card">
+<h2>Equity</h2>
+<div class="source">Backtest #7 · BTCUSDT</div>
+<svg class="chart" viewBox="0 0 640 220" role="img" aria-label="Equity curve">
+<line class="grid" x1="56" y1="18" x2="584" y2="18"></line>
+<line class="grid" x1="56" y1="110" x2="584" y2="110"></line>
+<line class="grid" x1="56" y1="202" x2="584" y2="202"></line>
+<path class="area pos" d="M56.0,202.0 L232.0,142.4 L408.0,187.1 L584.0,18.0 L584.0,202.0 L56.0,202.0 Z"></path>
+<path class="line pos" d="M56.0,202.0 L232.0,142.4 L408.0,187.1 L584.0,18.0"></path>
+<text class="chart-axis" x="50" y="22" text-anchor="end">1123.45</text>
+<text class="chart-axis" x="50" y="206" text-anchor="end">1000.00</text>
+<text class="chart-axis" x="56" y="216">2026-09-01</text>
+<text class="chart-axis" x="584" y="216" text-anchor="end">2026-09-04</text>
+</svg>
+</section>
+
+<footer>Generated by agent Risk Monitor · run #99</footer>
+</main>
+</body>
+</html>

@@ -68,6 +68,14 @@ func (c *MetricsCollector) IncrementCounter(name string, labels map[string]strin
 	}
 }
 
+// AddCounter adds value (>= 0) to a counter - for non-unit increments such
+// as cost or token totals.
+func (c *MetricsCollector) AddCounter(name string, labels map[string]string, value float64) {
+	if metric, ok := c.metrics[name].(*prometheus.CounterVec); ok && value > 0 {
+		metric.With(labels).Add(value)
+	}
+}
+
 func (c *MetricsCollector) ObserveHistogram(name string, labels map[string]string, value float64) {
 	if metric, ok := c.metrics[name].(*prometheus.HistogramVec); ok {
 		metric.With(labels).Observe(value)

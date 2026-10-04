@@ -1,0 +1,19 @@
+# Snippet to ADD to your existing cloudflared config.yml's `ingress:` list
+# (not a standalone file cloudflared reads on its own) - one more hostname
+# entry alongside whatever other tools already route through this tunnel on
+# this notebook.
+#
+# `service` points at the SAME target your other tools already point at
+# (nginx doing virtual-host routing by Host header) - cloudflared itself
+# never needs to know about the mcp container directly, nginx handles that
+# via deploy/nginx/mcp.conf.example's server_name match.
+#
+# Ordering matters in cloudflared ingress rules: this hostname-specific rule
+# must come BEFORE any catch-all `service: http_status:404` (or similar)
+# rule at the bottom of your ingress list.
+
+ingress:
+  # ... your existing per-tool hostname rules stay above this one ...
+  - hostname: mcp.yourdomain.com
+    service: http://nginx:80    # same nginx target your other tools use
+  # ... your existing catch-all 404 rule stays below this one ...
