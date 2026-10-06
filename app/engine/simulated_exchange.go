@@ -141,6 +141,10 @@ func (e *SimulatedFillExchange) SetSimulatedTime(t time.Time, currentCandle exch
 					e.executedOrders[order.ClientOrderID] = res
 				}
 				delete(e.restingOrders, id)
+				// Indexed under broker id and client id: drop both aliases or the
+				// leftover would re-trigger on a later candle and overwrite this fill.
+				delete(e.restingOrders, order.OrderID)
+				delete(e.restingOrders, order.ClientOrderID)
 			}
 		}
 	}
