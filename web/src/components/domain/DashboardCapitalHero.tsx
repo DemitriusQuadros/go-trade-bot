@@ -369,10 +369,14 @@ export function DashboardCapitalHero({
                 )}
                 <span className="text-xs font-semibold text-muted-foreground">({formatPct(dryRoiPct)})</span>
               </div>
-              <span className="text-[10px] text-muted-foreground" title={t('capital.cashPnlHint')}>
-                {t('capital.cashPnl')}: {formatUsd(dryCashPnl, { digits: 2, signed: true })} ({formatPct(dryCashRoiPct)}) •{' '}
-                {t('capital.inOpenPositions')}: {formatUsd(dryRunInvestedCapital, { digits: 2 })}
-              </span>
+              <div className="flex flex-col text-[10px] text-muted-foreground" title={t('capital.cashPnlHint')}>
+                <span>
+                  {t('capital.cashPnl')}: {formatUsd(dryCashPnl, { digits: 2, signed: true })} ({formatPct(dryCashRoiPct)})
+                </span>
+                <span>
+                  {t('capital.inOpenPositions')}: {formatUsd(dryRunInvestedCapital, { digits: 2 })}
+                </span>
+              </div>
             </div>
 
               <div>
