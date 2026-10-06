@@ -28,6 +28,8 @@ interface DashboardCapitalHeroProps {
   serverMode?: string;
   dryRunPositionsCount: number;
   dryRunUnrealizedPnL: number;
+  /** Cost basis of open dry-run positions (capital already deducted from the cash balance). */
+  dryRunInvestedCapital: number;
   livePositionsCount: number;
   liveUnrealizedPnL: number;
   onSyncExchange: () => Promise<void>;
@@ -41,6 +43,7 @@ export function DashboardCapitalHero({
   serverMode,
   dryRunPositionsCount,
   dryRunUnrealizedPnL,
+  dryRunInvestedCapital,
   livePositionsCount,
   liveUnrealizedPnL,
   onSyncExchange,
@@ -59,7 +62,13 @@ export function DashboardCapitalHero({
   // Dry-run calculations
   const dryAmount = dryRunAcc ? (dryRunAcc.amount ?? (dryRunAcc as any).Amount ?? 0) : 0;
   const dryInitial = dryRunAcc?.initial_amount ?? 10000;
-  const dryNetPnl = dryAmount - dryInitial;
+  // The dry-run balance is cash only: opening a position deducts its cost, so
+  // "balance - initial" shows capital locked in open positions as a loss.
+  const dryCashPnl = dryAmount - dryInitial;
+  const dryCashRoiPct = dryInitial > 0 ? (dryCashPnl / dryInitial) * 100 : 0;
+  // Portfolio value = cash + cost basis of open positions + their unrealized P&L.
+  const dryEquity = dryAmount + dryRunInvestedCapital + dryRunUnrealizedPnL;
+  const dryNetPnl = dryEquity - dryInitial;
   const dryRoiPct = dryInitial > 0 ? (dryNetPnl / dryInitial) * 100 : 0;
   const dryCurrency = dryRunAcc?.currency || 'USDT';
   const dryMaxOrders = dryRunAcc?.available_orders ?? 5;
@@ -135,6 +144,22 @@ export function DashboardCapitalHero({
                     </span>
                   )}
                   <span className="text-muted-foreground">• {t('capital.simulatedPnl')}</span>
+                </div>
+                <div
+                  className="flex flex-wrap items-center gap-x-2 mt-1 text-[11px] text-muted-foreground"
+                  title={t('capital.cashPnlHint')}
+                >
+                  <span>
+                    {t('capital.cashPnl')}:{' '}
+                    <strong className={dryCashPnl >= 0 ? 'text-emerald-500' : 'text-destructive'}>
+                      {formatUsd(dryCashPnl, { digits: 2, signed: true })} ({formatPct(dryCashRoiPct)})
+                    </strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    {t('capital.inOpenPositions')}:{' '}
+                    <strong className="text-foreground">{formatUsd(dryRunInvestedCapital, { digits: 2 })}</strong>
+                  </span>
                 </div>
               </div>
             </div>
@@ -325,6 +350,9 @@ export function DashboardCapitalHero({
                 </span>
                 <span className="text-xs font-mono text-muted-foreground">{dryCurrency}</span>
               </div>
+              <span className="text-[10px] text-muted-foreground">
+                {t('capital.portfolioValue')}: {formatUsd(dryEquity, { digits: 2 })}
+              </span>
             </div>
 
             <div>
@@ -340,6 +368,14 @@ export function DashboardCapitalHero({
                   </span>
                 )}
                 <span className="text-xs font-semibold text-muted-foreground">({formatPct(dryRoiPct)})</span>
+              </div>
+              <div className="flex flex-col text-[10px] text-muted-foreground" title={t('capital.cashPnlHint')}>
+                <span>
+                  {t('capital.cashPnl')}: {formatUsd(dryCashPnl, { digits: 2, signed: true })} ({formatPct(dryCashRoiPct)})
+                </span>
+                <span>
+                  {t('capital.inOpenPositions')}: {formatUsd(dryRunInvestedCapital, { digits: 2 })}
+                </span>
               </div>
             </div>
 

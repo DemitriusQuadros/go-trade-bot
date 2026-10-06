@@ -128,6 +128,13 @@ export function Dashboard() {
     () => dryRunPositions.reduce((sum, pos) => sum + pos.unrealizedPnL, 0),
     [dryRunPositions]
   );
+  // Capital currently locked in open dry-run positions (cost basis). The dry-run
+  // account balance is cash only: opening a position deducts its cost, so this
+  // amount must be added back to get the real portfolio value.
+  const dryRunInvestedCapital = useMemo(
+    () => dryRunPositions.reduce((sum, pos) => sum + pos.entryPrice * pos.quantity, 0),
+    [dryRunPositions]
+  );
   const liveUnrealizedPnL = useMemo(
     () => livePositions.reduce((sum, pos) => sum + pos.unrealizedPnL, 0),
     [livePositions]
@@ -267,6 +274,7 @@ export function Dashboard() {
         serverMode={settings?.mode}
         dryRunPositionsCount={dryRunPositions.length}
         dryRunUnrealizedPnL={dryRunUnrealizedPnL}
+        dryRunInvestedCapital={dryRunInvestedCapital}
         livePositionsCount={livePositions.length}
         liveUnrealizedPnL={liveUnrealizedPnL}
         onSyncExchange={handleSyncExchange}
