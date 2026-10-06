@@ -762,6 +762,9 @@ func (u *BacktestUseCase) executeReplay(
 	cache := memcache.NewInMemoryCache()
 
 	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache, nil)
+	// A resting stop that fills inside the replay must close the position;
+	// otherwise it stays "open" until a take-profit/exit happens to run.
+	eng.PreCycle = engine.NewBacktestStopEvaluator(signalUC, simExchange)
 	// Without this, buildContext fetches candles at the strategy's own live
 	// Cycle interval (e.g. 15m) instead of the timeframe this backtest was
 	// requested at (e.g. 1h) - historical depth for the strategy's Cycle
