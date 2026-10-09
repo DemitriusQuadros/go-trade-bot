@@ -77,6 +77,12 @@ type TraceableStrategy interface {
 	SetTraceSink(sink func(TraceRecord))
 }
 
+// TraceLog adds an engine-originated entry (e.g. a size clamp) to the current
+// cycle's trace. A no-op when tracing is off, so production pays nothing.
+func (s *ScriptStrategy) TraceLog(label string, value any) {
+	s.currentTrace.LogEntry(label, value)
+}
+
 func (s *ScriptStrategy) Name() string { return s.name }
 
 func (s *ScriptStrategy) Before(ctx strategies.Context) {

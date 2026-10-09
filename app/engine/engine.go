@@ -147,7 +147,7 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 	if strategyCtx.Position == nil {
 		if strategy.ShouldLong(strategyCtx) {
 			signal := strategy.GoLong(strategyCtx)
-			err = e.processGoLong(dbStrategy, symbol, mode, signal)
+			err = e.processGoLong(strategy, dbStrategy, symbol, mode, signal)
 		} else if strategy.ShouldShort(strategyCtx) {
 			// Phase 1's ExchangeClient is spot-only (Spec 01) - no short
 			// execution path exists. This is logged/webhooked but does NOT
@@ -309,7 +309,7 @@ func (e *Engine) fetch24hVolume(ctx context.Context, symbol string) (float64, er
 // is treated as a hard cycle error - no order is placed, a strategy.error
 // webhook fires, and the returned error causes the caller (handler.go) to
 // record StrategyExecution{Status: Error} for this cycle.
-func (e *Engine) processGoLong(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, signal strategies.Signal) error {
+func (e *Engine) processGoLong(strategy strategies.Strategy, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, signal strategies.Signal) error {
 	if signal.Buy == nil {
 		msg := fmt.Sprintf("strategy %s: GoLong returned no Buy order despite ShouldLong=true", dbStrategy.Name)
 		log.Print(msg)
@@ -326,6 +326,13 @@ func (e *Engine) processGoLong(dbStrategy entities.Strategy, symbol string, mode
 		MarginType:     entities.Isolated,
 		StopLossPct:    strategyStopLossPct(dbStrategy),
 		PositionSizing: strategyPositionSizing(dbStrategy),
+		RequestedQty:   signal.Buy.Qty,
+	}
+	// A traced script strategy (backtest/REPL) gets the clamp in its trace.
+	if tl, ok := strategy.(interface{ TraceLog(label string, value any) }); ok {
+		entry.OnClamp = func(requested, allowed float64) {
+			tl.TraceLog("qty_clamped", map[string]float64{"requested": requested, "allowed": allowed})
+		}
 	}
 	if signal.StopLoss != nil {
 		price := signal.StopLoss.Price

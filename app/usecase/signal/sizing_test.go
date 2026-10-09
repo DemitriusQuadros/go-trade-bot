@@ -74,3 +74,27 @@ func TestPositionSizer_ZeroAvailable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, amount)
 }
+
+func TestResolveEntryQty(t *testing.T) {
+	tests := []struct {
+		name                          string
+		req, price, fallback, ceiling float64
+		wantQty                       float64
+		wantClamped                   bool
+	}{
+		{"script qty within ceiling is honoured", 5, 100, 100, 1000, 5, false},
+		{"script qty above ceiling is clamped", 20, 100, 100, 1000, 10, true},
+		{"no script qty falls back", 0, 100, 250, 1000, 2.5, false},
+		{"negative script qty falls back", -1, 100, 250, 1000, 2.5, false},
+		{"zero ceiling clamps to zero", 5, 100, 100, 0, 0, true},
+		{"bad price yields zero", 5, 0, 100, 1000, 0, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveEntryQty(tc.req, tc.price, tc.fallback, tc.ceiling)
+			if got.Qty != tc.wantQty || got.Clamped != tc.wantClamped {
+				t.Fatalf("got %+v, want qty=%v clamped=%v", got, tc.wantQty, tc.wantClamped)
+			}
+		})
+	}
+}
