@@ -326,6 +326,7 @@ func (e *Engine) processGoLong(dbStrategy entities.Strategy, symbol string, mode
 		MarginType:     entities.Isolated,
 		StopLossPct:    strategyStopLossPct(dbStrategy),
 		PositionSizing: strategyPositionSizing(dbStrategy),
+		RequestedQty:   signal.Buy.Qty,
 	}
 	if signal.StopLoss != nil {
 		price := signal.StopLoss.Price

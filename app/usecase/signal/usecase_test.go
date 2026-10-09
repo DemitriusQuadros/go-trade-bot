@@ -578,3 +578,47 @@ func TestSignalUseCase_GenerateBuySignal_StrategyStopAndTakeProfit(t *testing.T)
 		})
 	}
 }
+
+func TestSignalUseCase_GenerateBuySignal_ScriptQty(t *testing.T) {
+	run := func(t *testing.T, e usecase.EntrySignal, balance float32, wantQty float64, wantClampNotice bool) {
+		t.Helper()
+		signalUC, mockRepo, acc, ex, n := newSignalUseCase()
+		acc.On("CanOpenOrder").Return(true, nil).Once()
+		acc.On("GetDisponibleAmout").Return(float32(100), nil).Once() // per-slot fallback: 10% of 1000
+		acc.On("GetAccount").Return(entities.Account{Amount: balance}, nil).Maybe()
+		mockRepo.On("GetOpenSignals", e.Symbol, e.StrategyID).Return(entities.Signal{}, nil).Once()
+		ex.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+			return r.Side == exchange.SideBuy && assert.InDelta(t, wantQty, r.Quantity, 1e-9)
+		})).Return(exchange.OrderResult{BrokerOrderID: "1", Status: exchange.OrderStatusFilled, ExecutedQty: wantQty, AvgFillPrice: float64(e.EntryPrice)}, nil).Once()
+		mockRepo.On("Create", mock.Anything).Return(nil).Once()
+		acc.On("DeductOrder", mock.Anything).Return(nil).Once()
+		n.On("Send", mock.Anything, eventOfType(notifier.EventPositionOpened)).Return(nil).Once()
+		if wantClampNotice {
+			n.On("Send", mock.Anything, eventOfType(notifier.EventStrategyError)).Return(nil).Once()
+		}
+		assert.NoError(t, signalUC.GenerateBuySignal(e))
+		ex.AssertExpectations(t)
+		n.AssertExpectations(t)
+	}
+	base := usecase.EntrySignal{Symbol: "SOLUSDT", StrategyID: 1, EntryPrice: 100, MarginType: entities.Isolated}
+
+	t.Run("script qty is honoured instead of the per-slot size", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 9.5 // 950 of a 1000 balance
+		run(t, e, 1000, 9.5, false)
+	})
+	t.Run("script qty above the free balance is clamped and notified", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 20
+		run(t, e, 1000, 10, true)
+	})
+	t.Run("script qty above the configured sizing cap is clamped and notified", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 9.5
+		e.PositionSizing = &usecase.PositionSizingConfig{Type: usecase.SizingPctCapital, Value: 50}
+		run(t, e, 1000, 5, true)
+	})
+	t.Run("no script qty keeps the per-slot fallback", func(t *testing.T) {
+		run(t, base, 1000, 1, false)
+	})
+}
