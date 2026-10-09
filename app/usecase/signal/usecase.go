@@ -53,6 +53,10 @@ type EntrySignal struct {
 	// slot. A positive value is honoured but clamped to a ceiling the script
 	// cannot change (B-03, see ResolveEntryQty).
 	RequestedQty float64
+	// OnClamp, if set, is called when RequestedQty was reduced to the size
+	// ceiling (requested and allowed are base-asset quantities). The engine
+	// uses it to put the clamp in the script execution trace.
+	OnClamp func(requested, allowed float64)
 }
 
 type ExitSignal struct {
@@ -298,6 +302,9 @@ func (s SignalUseCase) resolveScriptQty(ctx context.Context, e EntrySignal, size
 			d.Requested, e.Symbol, d.Qty, ceiling)
 		log.Printf("[signal] %s/%s: %s", e.StrategyName, e.Symbol, msg)
 		s.notify(ctx, s.errorEvent(e, msg))
+		if e.OnClamp != nil {
+			e.OnClamp(d.Requested, d.Qty)
+		}
 	}
 	return d.Qty, nil
 }

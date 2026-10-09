@@ -185,3 +185,18 @@ end
 	require.NoError(t, err)
 	require.Equal(t, 3.0, final["cycles"])
 }
+
+func TestScriptStrategy_TraceLogAppearsInTrace(t *testing.T) {
+	strat := script.NewScriptStrategy(entities.Strategy{ID: 1, Name: "s", ScriptSource: ``}, &fakeStore{}, newRunner())
+	var got []script.TraceRecord
+	strat.SetTraceSink(func(r script.TraceRecord) { got = append(got, r) })
+	ctx := ctxFor("BTCUSDT")
+	strat.Before(ctx)
+	strat.TraceLog("qty_clamped", 1)
+	strat.After(ctx)
+	require.Len(t, got, 1)
+	require.Len(t, got[0].Log, 1)
+	require.Equal(t, "qty_clamped", got[0].Log[0].Label)
+
+	require.NotPanics(t, func() { strat.TraceLog("x", 1) }, "no-op outside a traced cycle")
+}

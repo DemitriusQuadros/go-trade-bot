@@ -610,7 +610,11 @@ func TestSignalUseCase_GenerateBuySignal_ScriptQty(t *testing.T) {
 	t.Run("script qty above the free balance is clamped and notified", func(t *testing.T) {
 		e := base
 		e.RequestedQty = 20
+		var gotReq, gotAllowed float64
+		e.OnClamp = func(r, a float64) { gotReq, gotAllowed = r, a }
 		run(t, e, 1000, 10, true)
+		assert.Equal(t, 20.0, gotReq)
+		assert.Equal(t, 10.0, gotAllowed)
 	})
 	t.Run("script qty above the configured sizing cap is clamped and notified", func(t *testing.T) {
 		e := base
