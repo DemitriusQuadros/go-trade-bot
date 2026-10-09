@@ -209,6 +209,13 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   replay driver that nothing wires), `simulated_stop.go` (the worker's dryrun stop-loss evaluator, run via
   `Engine.PreCycle`), `montecarlo.go` (trade reordering for robustness testing). Has panic recovery per
   strategy cycle (`strategy_panics_total` metric + webhook alert).
+- **Daily loss limit (R-01)** - `max_daily_loss_usd` in the strategy config (`app/engine/dailyloss.go`). The engine
+  (so the worker AND the backtest `ReplayDriver`, identically) sums realized `Order.Profit` of the strategy's trades
+  closed since 00:00 UTC of the latest candle's day (`SignalUseCase.RealizedPnL` -> `ListClosedBetween`); at
+  `<= -limit` a flat strategy skips its entry hooks until the next UTC reset. Stateless (no halted flag stored), realized
+  only, exits never blocked, checked between trades (a trade can overshoot the limit). One notification per strategy
+  per UTC day, a `daily_loss_halt` trace entry, and a failed PnL read blocks entries and errors the cycle (fail closed).
+  Not done: account-wide limit, percent limit, close-positions flag, a `halted_daily_limit` status in the API/UI.
 - **`app/workers/strategy/`** — Asynq client wrapper that enqueues a strategy for its next cycle.
 - **Asynchronous backtests (B-02)** — `BacktestRun` has `Status` (`queued|running|done|failed`, column default
   `done` so pre-existing rows read as finished), `ErrorMessage`, `Timeframe`, `FillPolicyJSON`, `StartedAt`/

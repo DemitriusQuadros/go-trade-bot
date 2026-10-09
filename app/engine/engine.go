@@ -36,6 +36,8 @@ type SignalUseCase interface {
 	GenerateBuySignal(e usecase.EntrySignal) error
 	GenerateSellSignal(e usecase.ExitSignal) error
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
+	// RealizedPnL sums Order.Profit of strategyID's signals closed in [from, to).
+	RealizedPnL(strategyID uint, from, to time.Time) (float64, error)
 }
 
 const metricStrategyPanics = "strategy_panics_total"
@@ -145,7 +147,14 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 	strategy.Before(strategyCtx)
 
 	if strategyCtx.Position == nil {
-		if strategy.ShouldLong(strategyCtx) {
+		halted, haltErr := e.dailyLossHalted(strategy, dbStrategy, symbol, mode, strategyCtx)
+		if haltErr != nil {
+			err = haltErr
+		}
+		if halted {
+			// R-01: no new entries today. Hooks that only decide entries are
+			// skipped; exits (the else branch) are never blocked.
+		} else if strategy.ShouldLong(strategyCtx) {
 			signal := strategy.GoLong(strategyCtx)
 			err = e.processGoLong(strategy, dbStrategy, symbol, mode, signal)
 		} else if strategy.ShouldShort(strategyCtx) {
@@ -329,10 +338,8 @@ func (e *Engine) processGoLong(strategy strategies.Strategy, dbStrategy entities
 		RequestedQty:   signal.Buy.Qty,
 	}
 	// A traced script strategy (backtest/REPL) gets the clamp in its trace.
-	if tl, ok := strategy.(interface{ TraceLog(label string, value any) }); ok {
-		entry.OnClamp = func(requested, allowed float64) {
-			tl.TraceLog("qty_clamped", map[string]float64{"requested": requested, "allowed": allowed})
-		}
+	entry.OnClamp = func(requested, allowed float64) {
+		e.traceLog(strategy, "qty_clamped", map[string]float64{"requested": requested, "allowed": allowed})
 	}
 	if signal.StopLoss != nil {
 		price := signal.StopLoss.Price

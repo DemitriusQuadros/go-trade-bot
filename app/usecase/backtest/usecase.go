@@ -941,3 +941,20 @@ func (a *memAccountUC) CanOpenOrder() (bool, error) {
 func (a *memAccountUC) GetAccount() (entities.Account, error) {
 	return entities.Account{ID: 1, Amount: a.amount, AvailableOrders: 5, Currency: "USDT"}, nil
 }
+
+func (m *memSignalRepo) ListClosedBetween(_ context.Context, strategyID uint, from, to time.Time) ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.StrategyID != strategyID || s.Status != entities.Closed || len(s.Orders) == 0 {
+			continue
+		}
+		closedAt := s.Orders[0].UpdatedAt
+		if closedAt.IsZero() {
+			closedAt = s.UpdatedAt
+		}
+		if !closedAt.Before(from) && closedAt.Before(to) {
+			res = append(res, s)
+		}
+	}
+	return res, nil
+}

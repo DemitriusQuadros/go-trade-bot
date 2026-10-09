@@ -3,6 +3,9 @@
 package mocks
 
 import (
+	"context"
+	"time"
+
 	entities "go-trade-bot/app/entities"
 
 	mock "github.com/stretchr/testify/mock"
@@ -207,4 +210,32 @@ func NewSignalRepository(t interface {
 	t.Cleanup(func() { mock.AssertExpectations(t) })
 
 	return mock
+}
+
+// ListClosedBetween provides a mock function with given fields: ctx, strategyID, from, to
+func (_m *SignalRepository) ListClosedBetween(ctx context.Context, strategyID uint, from time.Time, to time.Time) ([]entities.Signal, error) {
+	ret := _m.Called(ctx, strategyID, from, to)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListClosedBetween")
+	}
+
+	var r0 []entities.Signal
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, time.Time, time.Time) ([]entities.Signal, error)); ok {
+		return rf(ctx, strategyID, from, to)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, time.Time, time.Time) []entities.Signal); ok {
+		r0 = rf(ctx, strategyID, from, to)
+	} else if ret.Get(0) != nil {
+		r0 = ret.Get(0).([]entities.Signal)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, time.Time, time.Time) error); ok {
+		r1 = rf(ctx, strategyID, from, to)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }

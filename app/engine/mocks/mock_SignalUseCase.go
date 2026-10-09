@@ -3,6 +3,8 @@
 package mocks
 
 import (
+	"time"
+
 	entities "go-trade-bot/app/entities"
 	usecase "go-trade-bot/app/usecase/signal"
 
@@ -90,4 +92,32 @@ func NewSignalUseCase(t interface {
 	t.Cleanup(func() { mock.AssertExpectations(t) })
 
 	return mock
+}
+
+// RealizedPnL provides a mock function with given fields: strategyID, from, to
+func (_m *SignalUseCase) RealizedPnL(strategyID uint, from time.Time, to time.Time) (float64, error) {
+	ret := _m.Called(strategyID, from, to)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RealizedPnL")
+	}
+
+	var r0 float64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(uint, time.Time, time.Time) (float64, error)); ok {
+		return rf(strategyID, from, to)
+	}
+	if rf, ok := ret.Get(0).(func(uint, time.Time, time.Time) float64); ok {
+		r0 = rf(strategyID, from, to)
+	} else {
+		r0 = ret.Get(0).(float64)
+	}
+
+	if rf, ok := ret.Get(1).(func(uint, time.Time, time.Time) error); ok {
+		r1 = rf(strategyID, from, to)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
