@@ -30,6 +30,11 @@ func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration) 
 	impl := &mcp.Implementation{Name: "go-trade-bot-agent", Version: "0.1.0"}
 	mcpServer := mcp.NewServer(impl, nil)
 	registerTools(mcpServer, uc)
+	taken := map[string]bool{}
+	for _, t := range uc.Tools() {
+		taken[t.Def.Name] = true
+	}
+	registerAPITools(mcpServer, cfg, taken)
 	registerResources(mcpServer)
 	return &Server{mcpServer: mcpServer, cfg: cfg}
 }
