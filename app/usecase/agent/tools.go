@@ -116,7 +116,7 @@ func (u AgentUseCase) getStrategyTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name:        "get_strategy",
-			Description: "Get one strategy's full detail, including its script_source, by id.",
+			Description: "Get one strategy's full detail, including its configuration JSON (stop_loss_pct, position_sizing, max_daily_loss_usd, ...) and its script_source, by id.",
 			InputSchema: getStrategySchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -422,8 +422,14 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 // successful save_strategy_script call, without changing the Tool.Execute
 // signature.
 func summarizeStrategyForModel(s entities.Strategy) string {
-	return fmt.Sprintf("strategy_id=%d name=%q strategy_name=%q status=%s mode=%s symbols=%v cycle_minutes=%d\nscript_source:\n%s",
-		s.ID, s.Name, s.StrategyName, s.Status, s.Mode, []string(s.MonitoredSymbols), int(s.StrategyConfiguration.Cycle), s.ScriptSource)
+	// configuration carries the risk knobs (stop_loss_pct, position_sizing,
+	// max_daily_loss_usd, custom keys); it is operator-set JSON, no secrets.
+	cfg := strings.TrimSpace(string(s.StrategyConfiguration.Configuration))
+	if cfg == "" {
+		cfg = "{}"
+	}
+	return fmt.Sprintf("strategy_id=%d name=%q strategy_name=%q status=%s mode=%s symbols=%v cycle_minutes=%d\nconfiguration: %s\nscript_source:\n%s",
+		s.ID, s.Name, s.StrategyName, s.Status, s.Mode, []string(s.MonitoredSymbols), int(s.StrategyConfiguration.Cycle), cfg, s.ScriptSource)
 }
 
 // runBacktestArgs is the model-facing shape of run_backtest (Backend Spec 06).

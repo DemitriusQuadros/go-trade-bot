@@ -262,6 +262,18 @@ func (u *BacktestUseCase) ExecuteQueued(ctx context.Context, runID uint) error {
 	}
 	strategyName = strat.Name
 
+	if queued.IsWalkForward {
+		result, err := u.executeQueuedWalkForward(ctx, queued, strat)
+		if err != nil {
+			return fail(err)
+		}
+		if err := u.backtestRepo.Update(ctx, result); err != nil {
+			return fail(fmt.Errorf("failed to persist walk-forward run: %w", err))
+		}
+		u.pruneReports(ctx, strat.ID)
+		return nil
+	}
+
 	var fillPolicy engine.FillPolicy
 	if len(queued.FillPolicyJSON) > 0 {
 		_ = json.Unmarshal(queued.FillPolicyJSON, &fillPolicy)
@@ -420,21 +432,22 @@ func (u *BacktestUseCase) RunWalkForward(ctx context.Context, req WalkForwardReq
 // so it appears in that strategy's history); req.StrategyID is ignored.
 // The strategy is never written.
 func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat entities.Strategy, req WalkForwardRequest) (entities.BacktestRun, error) {
-	startTimer := time.Now()
-	strategyName := "unknown"
-	defer func() {
-		if u.collector != nil {
-			duration := time.Since(startTimer).Seconds()
-			u.collector.ObserveHistogram("backtest_run_duration_seconds", map[string]string{"strategy": strategyName, "is_walk_forward": "true"}, duration)
-		}
-	}()
+	run, err := u.computeWalkForward(ctx, strat, req)
+	if err != nil {
+		return entities.BacktestRun{}, err
+	}
+	if err := u.backtestRepo.Create(ctx, &run); err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to persist walk-forward run: %w", err)
+	}
 
-	if strat.ID == 0 {
-		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
-	}
-	if req.Symbol == "" {
-		return entities.BacktestRun{}, fmt.Errorf("symbol is required")
-	}
+	run.Strategy = strat
+
+	u.pruneReports(ctx, strat.ID)
+	return run, nil
+}
+
+// applyWalkForwardDefaults fills the optional walk-forward parameters.
+func applyWalkForwardDefaults(req *WalkForwardRequest) {
 	if req.Timeframe == "" {
 		req.Timeframe = "1m"
 	}
@@ -450,6 +463,28 @@ func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat e
 	if req.StepMonths <= 0 {
 		req.StepMonths = req.TestMonths
 	}
+}
+
+// computeWalkForward runs the walk-forward validation and builds the run row
+// WITHOUT persisting it, so the synchronous path can Create it and the queued
+// path can fill the row it already owns.
+func (u *BacktestUseCase) computeWalkForward(ctx context.Context, strat entities.Strategy, req WalkForwardRequest) (entities.BacktestRun, error) {
+	startTimer := time.Now()
+	strategyName := "unknown"
+	defer func() {
+		if u.collector != nil {
+			duration := time.Since(startTimer).Seconds()
+			u.collector.ObserveHistogram("backtest_run_duration_seconds", map[string]string{"strategy": strategyName, "is_walk_forward": "true"}, duration)
+		}
+	}()
+
+	if strat.ID == 0 {
+		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
+	}
+	if req.Symbol == "" {
+		return entities.BacktestRun{}, fmt.Errorf("symbol is required")
+	}
+	applyWalkForwardDefaults(&req)
 
 	strategyName = strat.Name
 
@@ -540,15 +575,73 @@ func (u *BacktestUseCase) RunWalkForwardForStrategy(ctx context.Context, strat e
 
 		CandidateSourceHash: req.CandidateSourceHash,
 	}
-
-	if err := u.backtestRepo.Create(ctx, &run); err != nil {
-		return entities.BacktestRun{}, fmt.Errorf("failed to persist walk-forward run: %w", err)
-	}
-
 	run.Strategy = strat
-
-	u.pruneReports(ctx, strat.ID)
 	return run, nil
+}
+
+// EnqueueWalkForward validates req like RunWalkForward (strategy, symbol,
+// candles in range) and persists a queued walk-forward BacktestRun carrying
+// its parameters; the caller hands the run's ID to the asynq worker, which
+// calls ExecuteQueued. Walk-forward is the heaviest backtest (it replays every
+// train and test window), so it should not hold an HTTP request open.
+func (u *BacktestUseCase) EnqueueWalkForward(ctx context.Context, req WalkForwardRequest) (entities.BacktestRun, error) {
+	if req.StrategyID == 0 {
+		return entities.BacktestRun{}, fmt.Errorf("strategy_id is required")
+	}
+	if req.Symbol == "" {
+		return entities.BacktestRun{}, fmt.Errorf("symbol is required")
+	}
+	strat, err := u.strategyRepo.GetByID(ctx, req.StrategyID)
+	if err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to load strategy %d: %w", req.StrategyID, err)
+	}
+	applyWalkForwardDefaults(&req)
+	if err := u.requireCandles(ctx, req.Symbol, req.Timeframe, req.StartDate, req.EndDate); err != nil {
+		return entities.BacktestRun{}, err
+	}
+	params, err := json.Marshal(req)
+	if err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to encode walk-forward parameters: %w", err)
+	}
+	run := entities.BacktestRun{
+		StrategyID:            strat.ID,
+		Symbol:                req.Symbol,
+		Timeframe:             req.Timeframe,
+		StartDate:             req.StartDate,
+		EndDate:               req.EndDate,
+		IsWalkForward:         true,
+		InitialCapital:        req.InitialCapital,
+		WalkForwardParamsJSON: datatypes.JSON(params),
+		Status:                entities.BacktestQueued,
+		CreatedAt:             time.Now().UTC(),
+	}
+	if err := u.backtestRepo.Create(ctx, &run); err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("failed to persist queued walk-forward run: %w", err)
+	}
+	run.Strategy = strat
+	return run, nil
+}
+
+// executeQueuedWalkForward runs a queued walk-forward row and fills that same
+// row with the aggregate out-of-sample result.
+func (u *BacktestUseCase) executeQueuedWalkForward(ctx context.Context, queued entities.BacktestRun, strat entities.Strategy) (entities.BacktestRun, error) {
+	var req WalkForwardRequest
+	if err := json.Unmarshal(queued.WalkForwardParamsJSON, &req); err != nil {
+		return entities.BacktestRun{}, fmt.Errorf("invalid stored walk-forward parameters: %w", err)
+	}
+	req.StrategyID = queued.StrategyID
+	result, err := u.computeWalkForward(ctx, strat, req)
+	if err != nil {
+		return entities.BacktestRun{}, err
+	}
+	finished := time.Now().UTC()
+	result.ID = queued.ID
+	result.Status = entities.BacktestDone
+	result.StartedAt = queued.StartedAt
+	result.FinishedAt = &finished
+	result.CreatedAt = queued.CreatedAt
+	result.WalkForwardParamsJSON = queued.WalkForwardParamsJSON
+	return result, nil
 }
 
 // RunEphemeral executes one backtest against an in-memory strategy config

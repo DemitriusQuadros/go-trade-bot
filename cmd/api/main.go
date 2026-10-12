@@ -186,7 +186,7 @@ var routeConstructors = []any{
 	broker.NewBrokerHandler,
 	account.NewAccountHandler,
 	signal.NewSignalHandler,
-	backtest.NewBacktestHandler,
+	backtest.NewBacktestHandlerAsync,
 	optimize.NewOptimizeHandler,
 	performancehistory.NewHandler,
 	realtime.NewRealtimeHandler,

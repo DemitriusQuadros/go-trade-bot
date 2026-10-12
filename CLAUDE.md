@@ -52,6 +52,13 @@ go test ./... -race                    # Race detector — skip by default, this
 ```
 
 E2E tests (Gherkin/Godog) live in `tests/e2e/`, organized by phase (`tests/e2e/features/phase-{1,2,3,4}/`).
+**Caveat:** most of that older suite is NOT real end-to-end: its "the API server is running" step is a no-op and its request
+steps fabricate the HTTP response when no server exists (`makeHTTPResponse`), so those scenarios mostly test the step
+definitions. **`tests/e2e/real/` is the real-stack suite** (`go test ./tests/e2e/real/`): the real gorilla/mux handlers over
+httptest, the real usecases/repositories on SQLite, the real MCP server driven by an in-memory MCP client
+(`server.InMemoryClient`), and `BacktestUseCase.ExecuteQueued` standing in for cmd/worker; only the asynq queue is a fake.
+Covers async backtests/walk-forward, report regeneration, the MCP tool surface, credential non-leakage and the agent lifecycle.
+New scenarios belong there. Not covered (backlog card T-01): real Redis/asynq, Postgres, cmd/* process wiring, MCP HTTP.
 
 There is no frontend test suite yet.
 
@@ -141,6 +148,24 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
 - **mcp** — MCP server exposing the agent tool registry to external MCP clients (stdio or `--transport=http`).
   MCP tool calls act as the default "Copilot" agent's permissions; `notify` and `trigger_agent` are never exposed over MCP; no
   strategy writer lock is wired here (nil Lock).
+  **Operator tools** (`app/handler/mcptools`, wired by `cmd/mcp/modules/mcptools.go`): 33 more tools that call the usecases
+  in-process, like any other inbound adapter (no HTTP hop, no `API_TOKEN`, cmd/mcp does not need cmd/api). Results are compact
+  LLM-oriented views, not the web DTOs: e.g. `get_settings` never returns credentials or URLs (not even masked) and
+  `list_agent_run_history` has no transcripts. Reads: settings, accounts, signals (closed history incl. exit reason/profit),
+  script versions, Monte Carlo, prices/klines (capped), candle datasets/chunks, agents, `list_webhook_targets` (id/name/kind
+  only), and report links. **Full agent lifecycle:** `create_agent`, `update_agent` (patch semantics), `delete_agent`,
+  `pause_agent`, `run_agent` (enqueues `agent:run`, spends that agent's budget), `set_kill_switch`. Other writes:
+  `run_monte_carlo`, `script_repl`, `script_fast_rerun`, candle dataset create/pause/resume/retry/reconcile, and the async
+  `run_walk_forward`. Backtests are asynchronous over MCP (`run_backtest` and `run_walk_forward` return `backtest_id` +
+  `queued`; poll `get_backtest`). **Report links:** `get_agent_report_url` and `get_backtest_report_url` return URLs under
+  `API_BASE_URL` (dashboard page / raw HTML; `write_report` already returns its URL) - they are opened in a browser where the
+  operator is signed in, no credential is ever put in a URL. The write set is pinned by `TestWriteSetIsPinned`; the **ports in
+  `mcptools/ports.go` are the allowlist** (a method not listed cannot be called). **Deliberately REST-only:** settings and
+  account writes, `/signal/close`, strategy status/mode and `/strategy` writes, proposal approve/reject, `/deploy-gate` writes,
+  `/users`, webhook-target create/update/delete/test (a target's URL receives trade events), chat transcripts. Because agent
+  permissions can now be edited over MCP, remember that no permission can change a live/productive strategy - live changes
+  still need an operator-approved proposal over REST. Strategy create/edit stays on the gated agent tools. The agent tool
+  `get_strategy` also returns the strategy's `configuration` JSON. Not verified against a live stack.
 
 Each entry point defines its own `modules/` directory with FX dependency injection modules. The `Migrate`
 entity lists in `cmd/api/main.go`, `cmd/mcp/main.go` and `cmd/agent/main.go` must stay in sync; all three
@@ -224,8 +249,11 @@ Clean architecture — dependencies flow inward: `handler → usecase → reposi
   `BacktestWorker`, so MCP `run_backtest` returns `backtest_id` + `status=queued` immediately and `get_backtest`
   reports status/error until done; the in-app chat and agent runs (cmd/api, cmd/agent) leave them nil and keep
   the blocking tool. The REST run DTO exposes `status`, `error_message`, `timeframe`, `started_at`, `finished_at`.
-  Not done yet: an async option on `POST /backtest`, and the frontend does not show queued/failed rows
-  differently from finished ones.
+  `POST /backtest` and `POST /backtest/walkforward` accept `"async": true` (202 + the queued run, `Location` header;
+  501 if the server has no queue; 503 and the run marked failed if the hand-off fails). A queued walk-forward run stores
+  its parameters in `BacktestRun.WalkForwardParamsJSON`, and `ExecuteQueued` fills the same row. The frontend does not show
+  queued/failed rows differently from finished ones. `GET /backtest/{id}/report` re-renders the HTML from the persisted
+  metrics when the stored report file was pruned.
 - **Agents platform (Phase A)** — agents are configurable persona rows, not code:
   - `app/entities/agentplatform.go`: `Agent` (goal prompt, provider/model override, permissions, cron
     triggers, webhook target ids, daily budget, paused, `IsDefault`), `AgentStrategyBinding`,

@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"go-trade-bot/app/handler/mcptools"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/cmd/mcp/server"
 	"go-trade-bot/internal/configuration"
@@ -14,8 +15,8 @@ import (
 // use case.
 var McpServerModule = fx.Module("mcpserver",
 	fx.Provide(
-		func(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration) *server.Server {
-			return server.NewServer(uc, cfg)
+		func(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration, direct mcptools.Deps) *server.Server {
+			return server.NewServer(uc, cfg, direct)
 		},
 	),
 )

@@ -55,3 +55,31 @@ func TestGetReport_Lang(t *testing.T) {
 	run.MetricsJSON = nil
 	assert.Equal(t, "<html>stored EN report</html>", get(run, "/backtest/5/report?lang=es"), "old runs fall back to the file")
 }
+
+// A finished run whose stored report file is gone (reports are pruned per
+// strategy) is rendered again from its persisted metrics instead of 404ing.
+func TestGetReport_RegeneratesWhenStoredFileIsMissing(t *testing.T) {
+	run := entities.BacktestRun{
+		ID: 6, Symbol: "BTCUSDT", Strategy: entities.Strategy{Name: "Pruned"},
+		StartDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		HTMLReportPath: "/nonexistent/pruned.html",
+		MetricsJSON:    datatypes.JSON(`{"sharpe_ratio":1.2,"total_trades":1,"profit_factor":2,"equity_curve":[]}`),
+		TradeLogJSON:   datatypes.JSON(`[{"symbol":"BTCUSDT","profit":10}]`),
+	}
+	get := func(run entities.BacktestRun) *httptest.ResponseRecorder {
+		h := handler.NewBacktestHandler(&mockUseCase{runResult: run})
+		r := mux.NewRouter()
+		r.HandleFunc("/backtest/{id:[0-9]+}/report", h.GetReport).Methods(http.MethodGet)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/backtest/6/report", nil))
+		return rec
+	}
+
+	rec := get(run)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "Pruned")
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+
+	run.MetricsJSON = nil
+	assert.Equal(t, http.StatusNotFound, get(run).Code, "nothing to render from: still a 404")
+}

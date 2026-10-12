@@ -58,7 +58,11 @@ type BacktestRun struct {
 	ErrorMessage   string         `json:"error_message,omitempty"`
 	Timeframe      string         `json:"timeframe"`
 	FillPolicyJSON datatypes.JSON `json:"-" gorm:"type:jsonb"`
-	StartedAt      *time.Time     `json:"started_at,omitempty"`
-	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
+	// WalkForwardParamsJSON carries the walk-forward request (train/test/
+	// step months, fill policy) of a queued walk-forward run, so the worker
+	// can execute it later. Empty for plain runs.
+	WalkForwardParamsJSON datatypes.JSON `json:"-" gorm:"type:jsonb"`
+	StartedAt             *time.Time     `json:"started_at,omitempty"`
+	FinishedAt            *time.Time     `json:"finished_at,omitempty"`
+	CreatedAt             time.Time      `json:"created_at"`
 }
