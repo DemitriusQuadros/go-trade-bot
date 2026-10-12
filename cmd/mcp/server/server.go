@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 
+	"go-trade-bot/app/handler/mcptools"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/configuration"
 
@@ -26,7 +27,7 @@ type Server struct {
 // NewServer builds the MCP server and registers every tool (Backend Spec
 // 03/06) and resource (Backend Spec 05) up front - both transports below
 // see the identical, fully-populated server.
-func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration) *Server {
+func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration, direct mcptools.Deps) *Server {
 	impl := &mcp.Implementation{Name: "go-trade-bot-agent", Version: "0.1.0"}
 	mcpServer := mcp.NewServer(impl, nil)
 	registerTools(mcpServer, uc)
@@ -34,7 +35,7 @@ func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration) 
 	for _, t := range uc.Tools() {
 		taken[t.Def.Name] = true
 	}
-	registerAPITools(mcpServer, cfg, taken)
+	registerDirectTools(mcpServer, mcptools.New(direct), taken)
 	registerResources(mcpServer)
 	return &Server{mcpServer: mcpServer, cfg: cfg}
 }

@@ -141,16 +141,19 @@ pivot have landed; see `AGENTS.md` for how this project's agent-delegated workfl
 - **mcp** — MCP server exposing the agent tool registry to external MCP clients (stdio or `--transport=http`).
   MCP tool calls act as the default "Copilot" agent's permissions; `notify` and `trigger_agent` are never exposed over MCP; no
   strategy writer lock is wired here (nil Lock).
-  **REST-backed tools** (`cmd/mcp/server/apitools.go`): 38 more tools that forward ONE cmd/api route each over loopback
-  (`MCP.API_URL`, default `http://localhost:8080`) with the `API_TOKEN` bearer, so DTOs, masking and validation are the web UI's.
-  The `apiTools` table is the security boundary because the bearer is a synthetic admin: Tier 1 reads (settings, account,
-  signals, strategy detail incl. `configuration`, performance, agents, memory, candle datasets, proposals, webhook targets
-  masked) and Tier 2 low-risk writes (Monte Carlo, script repl/fast-rerun, candle dataset create/pause/resume/retry/reconcile,
-  pause/run an agent). **Deliberately REST-only (Tier 3):** `PUT /settings`, `/account` writes, `/signal/close`, strategy
-  status/mode and every `/strategy` write, the kill switch write, proposal approve/reject, `/deploy-gate` writes, `/users`,
-  `/webhook-targets` writes - so the human-approval invariant for live changes still holds. Strategy create/edit stays on the
-  gated agent tools. `apitools_test.go` pins the exact write set; adding a write there is a conscious edit. cmd/mcp now needs
-  cmd/api reachable for these tools. Not verified against a live stack.
+  **Operator tools** (`app/handler/mcptools`, wired by `cmd/mcp/modules/mcptools.go`): 25 more tools that call the usecases
+  in-process, like any other inbound adapter (no HTTP hop, no `API_TOKEN` involved, cmd/mcp does not need cmd/api). Results are
+  compact LLM-oriented views, not the web DTOs: e.g. `get_settings` never returns credentials or URLs (not even masked) and
+  `list_agent_run_history` has no transcripts. Reads: settings, accounts, signals (closed history incl. exit reason/profit),
+  script versions, Monte Carlo, prices/klines (capped), candle datasets/chunks, agents (list/get/usage/kill-switch state/run
+  history). Writes (pinned by `TestWriteSetIsPinned`): `run_monte_carlo`, `script_repl`, `script_fast_rerun`, candle dataset
+  create/pause/resume/retry/reconcile, `pause_agent`. The **ports in `mcptools/ports.go` are the allowlist** - a method not
+  listed there cannot be called (`TestPortsCarryNoForbiddenMethods`), and `cmd/mcp` leaves the agent run enqueuer and webhook
+  sender nil on purpose. **Deliberately REST-only:** settings and account writes, `/signal/close`, strategy status/mode and
+  `/strategy` writes, the kill switch write, proposal approve/reject, `/deploy-gate` writes, `/users`, `/webhook-targets`,
+  `POST /agents/{id}/run` (spends model budget), chat transcripts, backtest HTML reports, market-watcher status (Redis). Strategy
+  create/edit stays on the gated agent tools. The agent tool `get_strategy` now also returns the strategy's `configuration` JSON
+  (stop_loss_pct, position_sizing, max_daily_loss_usd). Not verified against a live stack.
 
 Each entry point defines its own `modules/` directory with FX dependency injection modules. The `Migrate`
 entity lists in `cmd/api/main.go`, `cmd/mcp/main.go` and `cmd/agent/main.go` must stay in sync; all three

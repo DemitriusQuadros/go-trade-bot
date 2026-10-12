@@ -51,10 +51,6 @@ type Configuration struct {
 	Agent                Agent
 	AgentRuntime         AgentRuntime
 	CandleData           CandleData
-	// MCPAPIURL is where cmd/mcp reaches cmd/api for its REST-backed tools
-	// (MCP.API_URL, default http://localhost:8080). Deliberately separate from
-	// APIBaseURL, which is the public URL used in report deep links.
-	MCPAPIURL string
 }
 
 // AuthConfig is the AUTH.* block (auth-01 §4). All keys optional.
@@ -278,11 +274,6 @@ func NewConfiguration() *Configuration {
 		apiBaseURL = "http://localhost:8080"
 	}
 
-	mcpAPIURL := viper.GetString("MCP.API_URL")
-	if mcpAPIURL == "" {
-		mcpAPIURL = "http://localhost:8080"
-	}
-
 	apiToken := viper.GetString("API_TOKEN")
 	if apiToken == "" {
 		apiToken = viper.GetString("API.TOKEN")
@@ -345,7 +336,6 @@ func NewConfiguration() *Configuration {
 		Testnet:              testnet,
 		WebhookURL:           webhookURL,
 		APIBaseURL:           apiBaseURL,
-		MCPAPIURL:            mcpAPIURL,
 		APIToken:             apiToken,
 		AllowInsecureNoAuth:  allowInsecure,
 		Auth:                 authCfg,
