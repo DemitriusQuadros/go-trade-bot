@@ -68,3 +68,15 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	return nil
 }
+
+// InMemoryClient connects an MCP client to this server over an in-process
+// transport, with every tool and resource exactly as a real client would see
+// them. It exists for end-to-end tests and embedding; neither stdio nor HTTP
+// is started.
+func (s *Server) InMemoryClient(ctx context.Context) (*mcp.ClientSession, error) {
+	ct, st := mcp.NewInMemoryTransports()
+	if _, err := s.mcpServer.Connect(ctx, st, nil); err != nil {
+		return nil, err
+	}
+	return mcp.NewClient(&mcp.Implementation{Name: "in-memory", Version: "0"}, nil).Connect(ctx, ct, nil)
+}

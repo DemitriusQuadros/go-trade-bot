@@ -18,8 +18,11 @@ import (
 	scriptusecase "go-trade-bot/app/usecase/script"
 	signalusecase "go-trade-bot/app/usecase/signal"
 	strategyusecase "go-trade-bot/app/usecase/strategy"
+	agentworker "go-trade-bot/app/workers/agent"
+	backtestworker "go-trade-bot/app/workers/backtest"
 	candledata_worker "go-trade-bot/app/workers/candledata"
 	"go-trade-bot/internal/candlesource"
+	"go-trade-bot/internal/configuration"
 	"go-trade-bot/internal/exchange"
 
 	"go.uber.org/fx"
@@ -28,21 +31,20 @@ import (
 
 // MCPToolsModule wires the in-process MCP adapter (app/handler/mcptools) onto
 // the same usecases cmd/api uses. Only the methods listed in that package's
-// ports are reachable. Where cmd/api wires a collaborator that no allowed
-// method touches (the agent run enqueuer, the webhook test sender) it is
-// left nil here on purpose, so e.g. running an agent is not just unlisted but
-// impossible from this process.
+// ports are reachable. The webhook test sender is left nil on purpose:
+// webhook targets are read-only over MCP.
 var MCPToolsModule = fx.Module("mcptools",
 	fx.Provide(
 		candledata_repo.NewRepository,
 		candledata_worker.NewEnqueuer,
 		newMCPCandleDataService,
-		func(db *gorm.DB, strategies strategy_repo.StrategyRepository) *platformusecase.UseCase {
+		agentworker.NewAgentWorker,
+		func(db *gorm.DB, strategies strategy_repo.StrategyRepository, worker agentworker.AgentWorker) *platformusecase.UseCase {
 			return platformusecase.NewUseCase(
 				agentplatform.NewGormRepository(db), strategies, repoagent.NewGormRepository(db),
-				nil, // no run enqueuer: manual agent runs are REST-only
+				worker, // run_agent enqueues agent:run on the "agents" queue (consumed by cmd/agent)
 				settings_repo.NewRepository(db),
-				nil, // no webhook test sender
+				nil, // no webhook test sender: webhook targets are read-only here
 			)
 		},
 		func(c exchange.ExchangeClient, r candle_repo.Repository, s strategy_repo.StrategyRepository, runner *strategyscript.Runner) *scriptusecase.UseCase {
@@ -58,17 +60,25 @@ var MCPToolsModule = fx.Module("mcptools",
 			ds *candledatausecase.Service,
 			sc *scriptusecase.UseCase,
 			ag *platformusecase.UseCase,
+			bw backtestworker.BacktestWorker,
+			cfg *configuration.Configuration,
 		) mcptools.Deps {
 			return mcptools.Deps{
-				Settings:   settings_repo.NewRepository(db),
-				Accounts:   acc,
-				Signals:    sig,
-				Versions:   strat,
-				MonteCarlo: bt,
-				Market:     ex,
-				Datasets:   ds,
-				Scripts:    sc,
-				Agents:     ag,
+				Settings:    settings_repo.NewRepository(db),
+				Accounts:    acc,
+				Signals:     sig,
+				Versions:    strat,
+				MonteCarlo:  bt,
+				Market:      ex,
+				Datasets:    ds,
+				Scripts:     sc,
+				Agents:      ag,
+				Webhooks:    ag,
+				WalkForward: bt,
+				Tasks:       bw,
+				Reports:     ag,
+				Backtests:   bt,
+				BaseURL:     cfg.APIBaseURL,
 			}
 		},
 	),

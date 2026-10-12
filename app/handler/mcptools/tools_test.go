@@ -160,7 +160,8 @@ func fullDeps() (Deps, *fakeMarket, *fakeDatasets, *fakeAgents, *fakeMC) {
 			WebhookURL: "https://discord.example/hook/abc", APIToken: "tok-xyz", APIBaseURL: "https://base.example", PrometheusURL: "http://prom",
 		}},
 		Accounts: fakeAccounts{}, Signals: fakeSignals{}, Versions: fakeVersions{}, MonteCarlo: mc, Market: m,
-		Datasets: d, Scripts: fakeScripts{n: 500}, Agents: a,
+		Datasets: d, Scripts: fakeScripts{n: 500}, Agents: a, WalkForward: &fakeWF{}, Tasks: &fakeTasks{},
+		Reports: fakeReports{}, Backtests: fakeBacktests{}, BaseURL: "https://bot.example",
 	}, m, d, a, mc
 }
 
@@ -198,8 +199,9 @@ func TestWriteSetIsPinned(t *testing.T) {
 	}
 	sort.Strings(writes)
 	assert.Equal(t, []string{
-		"create_candle_dataset", "pause_agent", "pause_candle_dataset", "reconcile_candle_dataset", "resume_candle_dataset",
-		"retry_failed_candle_chunks", "run_monte_carlo", "script_fast_rerun", "script_repl",
+		"create_agent", "create_candle_dataset", "delete_agent", "pause_agent", "pause_candle_dataset", "reconcile_candle_dataset",
+		"resume_candle_dataset", "retry_failed_candle_chunks", "run_agent", "run_monte_carlo", "run_walk_forward", "script_fast_rerun", "script_repl",
+		"set_kill_switch", "update_agent",
 	}, writes)
 }
 
@@ -207,7 +209,7 @@ func TestWriteSetIsPinned(t *testing.T) {
 // change live money, settings, accounts, users or run an agent.
 func TestPortsCarryNoForbiddenMethods(t *testing.T) {
 	forbidden := []string{
-		"Close", "Delete", "DeleteAgent", "CreateAgent", "UpdateAgent", "EnqueueManualRun", "SetKillSwitch", "Apply", "Save",
+		"Close", "Delete", "Apply", "Save",
 		"Update", "UpdateDryRunCapital", "ResetDryRunCapital", "UpdateLiveAllocation", "SyncExchangeBalance", "CreateAccount",
 		"RevertScriptVersion", "PlaceOrder", "CancelOrder", "Approve", "Reject", "GenerateBuySignal", "GenerateSellSignal",
 	}
@@ -237,7 +239,7 @@ func TestToolsHaveUniqueNamesAndValidSchemas(t *testing.T) {
 		assert.Equal(t, "object", m["type"], tl.Name)
 		require.NotNil(t, tl.Run, tl.Name)
 	}
-	assert.Len(t, seen, 25)
+	assert.Len(t, seen, 33)
 }
 
 func TestNilPortOmitsItsTools(t *testing.T) {

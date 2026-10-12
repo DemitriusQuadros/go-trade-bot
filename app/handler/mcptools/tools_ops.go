@@ -98,6 +98,7 @@ type agentView struct {
 	MaxIterations        int      `json:"max_iterations"`
 	TodayCostUSD         float64  `json:"today_cost_usd"`
 	Triggers             any      `json:"triggers"`
+	WebhookTargetIDs     []uint   `json:"webhook_target_ids,omitempty"`
 	LastRun              any      `json:"last_run,omitempty"`
 	NextRunAt            string   `json:"next_run_at,omitempty"`
 }
@@ -158,7 +159,7 @@ func toUsageDay(d agentplatform.UsageDay) usageDayView {
 var agentIDSchema = json.RawMessage(`{"type":"object","properties":{"agent_id":{"type":"integer"}},"required":["agent_id"]}`)
 
 func agentTools(m AgentManager) []Tool {
-	return []Tool{
+	return append(agentWriteTools(m), []Tool{
 		{
 			Name:        "list_agents",
 			Description: "All agent personas: permissions, bound strategies, paused flag, daily budget and today's cost, trigger counts, last run and next scheduled run. The goal prompt is shortened; use get_agent for it.",
@@ -188,7 +189,7 @@ func agentTools(m AgentManager) []Tool {
 				if err != nil {
 					return nil, err
 				}
-				return toAgentView(v, 4000), nil
+				return detailedAgentView(v), nil
 			},
 		},
 		{
@@ -281,7 +282,7 @@ func agentTools(m AgentManager) []Tool {
 				return toAgentView(v, 0), nil
 			},
 		},
-	}
+	}...)
 }
 
 func agentID(name string, raw json.RawMessage) (uint, error) {

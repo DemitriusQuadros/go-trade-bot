@@ -41,6 +41,15 @@ type Deps struct {
 	Datasets   DatasetManager
 	Scripts    ScriptRunner
 	Agents     AgentManager
+	Webhooks   WebhookTargetReader
+	// WalkForward + Tasks enable the asynchronous run_walk_forward tool.
+	WalkForward WalkForwardQueue
+	Tasks       BacktestTasks
+	// Reports/Backtests + BaseURL enable the report link tools; BaseURL is
+	// the dashboard's public URL (API_BASE_URL).
+	Reports   ReportReader
+	Backtests BacktestReader
+	BaseURL   string
 }
 
 // New builds every tool whose dependency is wired.
@@ -72,6 +81,13 @@ func New(d Deps) []Tool {
 	}
 	if d.Agents != nil {
 		tools = append(tools, agentTools(d.Agents)...)
+	}
+	if d.WalkForward != nil && d.Tasks != nil {
+		tools = append(tools, walkForwardTools(d.WalkForward, d.Tasks)...)
+	}
+	tools = append(tools, reportTools(d.BaseURL, d.Reports, d.Backtests)...)
+	if d.Webhooks != nil {
+		tools = append(tools, webhookTools(d.Webhooks)...)
 	}
 	return tools
 }

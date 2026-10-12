@@ -72,14 +72,27 @@ type ScriptRunner interface {
 	FastRerun(ctx context.Context, req scriptuc.FastRerunRequest) (scriptuc.FastRerunResponse, error)
 }
 
-// AgentManager is the agents platform usecase's reads plus SetPaused. There
-// is no create/update/delete, no manual run (it spends model budget) and no
-// kill-switch write.
+// AgentManager is the agents platform management usecase: full agent
+// lifecycle (create/update/delete/pause), manual runs, usage and the global
+// kill switch. Webhook TARGETS are only readable (WebhookTargetReader): a
+// target's URL is where trade events get sent, so creating one stays a
+// human, authenticated-REST action.
 type AgentManager interface {
 	ListAgents(ctx context.Context) ([]agentplatform.AgentView, error)
 	GetAgent(ctx context.Context, id uint) (agentplatform.AgentView, error)
+	CreateAgent(ctx context.Context, in agentplatform.AgentInput) (agentplatform.AgentView, error)
+	UpdateAgent(ctx context.Context, id uint, in agentplatform.AgentInput) (agentplatform.AgentView, error)
+	DeleteAgent(ctx context.Context, id uint) error
 	SetPaused(ctx context.Context, id uint, paused bool) (agentplatform.AgentView, error)
+	EnqueueManualRun(ctx context.Context, id uint, prompt string) (string, error)
 	ListRuns(ctx context.Context, agentID uint, limit int, beforeID *uint) ([]entities.AgentRun, entities.Agent, error)
 	Usage(ctx context.Context, agentID uint, days int) (agentplatform.UsageDay, []agentplatform.UsageDay, error)
 	KillSwitch(ctx context.Context) (bool, error)
+	SetKillSwitch(ctx context.Context, paused bool) (bool, error)
+}
+
+// WebhookTargetReader lists notification targets so agents can be wired to
+// them by id. Results never include the URL or secret.
+type WebhookTargetReader interface {
+	ListWebhookTargets(ctx context.Context) ([]entities.WebhookTarget, error)
 }
