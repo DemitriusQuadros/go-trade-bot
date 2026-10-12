@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"go-trade-bot/internal/report"
 
 	"github.com/gorilla/mux"
+	"go.uber.org/fx"
 )
 
 type UseCase interface {
@@ -34,8 +36,41 @@ type UseCase interface {
 	GetMonteCarlo(ctx context.Context, runID uint) (engine.MonteCarloResult, error)
 }
 
+// AsyncUseCase is the queued half of the backtest usecase (B-02): validate +
+// persist a queued run, which cmd/worker then executes.
+type AsyncUseCase interface {
+	Enqueue(ctx context.Context, req usecase.RunRequest) (entities.BacktestRun, error)
+	EnqueueWalkForward(ctx context.Context, req usecase.WalkForwardRequest) (entities.BacktestRun, error)
+	MarkEnqueueFailed(ctx context.Context, runID uint, cause error) error
+}
+
+// TaskEnqueuer hands a queued run to the asynq worker.
+type TaskEnqueuer interface {
+	EnqueueBacktestTask(runID uint) error
+}
+
 type BacktestHandler struct {
 	useCase UseCase
+	async   AsyncUseCase
+	tasks   TaskEnqueuer
+}
+
+// AsyncParams lets fx build the handler with the optional queue wired in.
+type AsyncParams struct {
+	fx.In
+	UseCase UseCase
+	Async   AsyncUseCase `optional:"true"`
+	Tasks   TaskEnqueuer `optional:"true"`
+}
+
+// NewBacktestHandlerAsync is NewBacktestHandler plus the queue, enabling
+// {"async": true} on POST /backtest and /backtest/walkforward. Without a
+// queue those requests are rejected with 501 rather than silently run
+// synchronously.
+func NewBacktestHandlerAsync(p AsyncParams) *BacktestHandler {
+	h := NewBacktestHandler(p.UseCase)
+	h.async, h.tasks = p.Async, p.Tasks
+	return h
 }
 
 func NewBacktestHandler(u UseCase) *BacktestHandler {
@@ -110,6 +145,11 @@ func (h *BacktestHandler) RunBacktest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Async {
+		h.enqueue(w, r, func() (entities.BacktestRun, error) { return h.async.Enqueue(r.Context(), req.ToUseCase()) })
+		return
+	}
+
 	run, err := h.useCase.Run(r.Context(), req.ToUseCase())
 	if err != nil {
 		customerror.WriteHTTPError(w, err)
@@ -135,6 +175,11 @@ func (h *BacktestHandler) RunWalkForward(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if req.Async {
+		h.enqueue(w, r, func() (entities.BacktestRun, error) { return h.async.EnqueueWalkForward(r.Context(), req.ToUseCase()) })
+		return
+	}
+
 	run, err := h.useCase.RunWalkForward(r.Context(), req.ToUseCase())
 	if err != nil {
 		customerror.WriteHTTPError(w, err)
@@ -145,6 +190,31 @@ func (h *BacktestHandler) RunWalkForward(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// enqueue validates + stores a queued run via create, hands it to the worker
+// and answers 202 with the queued run. Validation errors are the same 4xx a
+// synchronous run returns; a queue failure marks the run failed (so it is not
+// left queued forever) and answers 503.
+func (h *BacktestHandler) enqueue(w http.ResponseWriter, r *http.Request, create func() (entities.BacktestRun, error)) {
+	if h.async == nil || h.tasks == nil {
+		http.Error(w, `async backtests are not available on this server`, http.StatusNotImplemented)
+		return
+	}
+	run, err := create()
+	if err != nil {
+		customerror.WriteHTTPError(w, err)
+		return
+	}
+	if err := h.tasks.EnqueueBacktestTask(run.ID); err != nil {
+		_ = h.async.MarkEnqueueFailed(r.Context(), run.ID, err)
+		http.Error(w, fmt.Sprintf("backtest run %d was created but could not be queued: %v", run.ID, err), http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Location", fmt.Sprintf("/api/backtest/%d", run.ID))
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(ToRunResponse(run, false))
 }
 
 func (h *BacktestHandler) GetByID(w http.ResponseWriter, r *http.Request) {
@@ -315,17 +385,25 @@ func (h *BacktestHandler) GetReport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if run.HTMLReportPath == "" {
-		writeReportNotFound(w)
-		return
+	if run.HTMLReportPath != "" {
+		if content, err := os.ReadFile(run.HTMLReportPath); err == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(content)
+			return
+		}
 	}
-	content, err := os.ReadFile(run.HTMLReportPath)
-	if err != nil {
-		writeReportNotFound(w)
-		return
+	// The stored file is gone (old reports are pruned, or it was never
+	// written): render it again from the persisted metrics and trade log so
+	// a finished run always has a report.
+	if input, ok := reportInputFromRun(run, i18n.EN); ok {
+		var buf bytes.Buffer
+		if err := report.Render(&buf, input, i18n.EN); err == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(content)
+	writeReportNotFound(w)
 }
 
 // reportInputFromRun rebuilds the HTML report input from a persisted run.

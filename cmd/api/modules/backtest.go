@@ -6,6 +6,7 @@ import (
 	candle_repo "go-trade-bot/app/repository/candle"
 	strategy_repo "go-trade-bot/app/repository/strategy"
 	usecase "go-trade-bot/app/usecase/backtest"
+	backtestworker "go-trade-bot/app/workers/backtest"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/metrics_provider"
 
@@ -46,5 +47,10 @@ var BacktestModule = fx.Module("backtest",
 		func(u *usecase.BacktestUseCase) handler.UseCase {
 			return u
 		},
+		// B-02 follow-up: {"async": true} on POST /backtest and
+		// /backtest/walkforward queues the run for cmd/worker.
+		backtestworker.NewBacktestWorker,
+		func(u *usecase.BacktestUseCase) handler.AsyncUseCase { return u },
+		func(w backtestworker.BacktestWorker) handler.TaskEnqueuer { return w },
 	),
 )
