@@ -360,3 +360,20 @@ func dbStratB(s entities.Strategy) entities.Strategy {
 	s.ID = 2
 	return s
 }
+
+func (m *memorySignalRepo) ListClosedBetween(_ context.Context, strategyID uint, from, to time.Time) ([]entities.Signal, error) {
+	var res []entities.Signal
+	for _, s := range m.signals {
+		if s.StrategyID != strategyID || s.Status != entities.Closed || len(s.Orders) == 0 {
+			continue
+		}
+		closedAt := s.Orders[0].UpdatedAt
+		if closedAt.IsZero() {
+			closedAt = s.UpdatedAt
+		}
+		if !closedAt.Before(from) && closedAt.Before(to) {
+			res = append(res, s)
+		}
+	}
+	return res, nil
+}

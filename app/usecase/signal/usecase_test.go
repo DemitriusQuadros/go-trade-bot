@@ -6,6 +6,7 @@ import (
 	"fmt"
 	usecase "go-trade-bot/app/usecase/signal"
 	"testing"
+	"time"
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/usecase/signal/mocks"
@@ -625,4 +626,22 @@ func TestSignalUseCase_GenerateBuySignal_ScriptQty(t *testing.T) {
 	t.Run("no script qty keeps the per-slot fallback", func(t *testing.T) {
 		run(t, base, 1000, 1, false)
 	})
+}
+
+func TestSignalUseCase_RealizedPnL(t *testing.T) {
+	signalUC, mockRepo, _, _, _ := newSignalUseCase()
+	from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(24 * time.Hour)
+	mockRepo.On("ListClosedBetween", mock.Anything, uint(7), from, to).Return([]entities.Signal{
+		{Orders: []entities.Order{{Profit: -10.5}}},
+		{Orders: []entities.Order{{Profit: 4}}},
+	}, nil).Once()
+
+	pnl, err := signalUC.RealizedPnL(7, from, to)
+	assert.NoError(t, err)
+	assert.InDelta(t, -6.5, pnl, 1e-6)
+
+	mockRepo.On("ListClosedBetween", mock.Anything, uint(7), from, to).Return(nil, errors.New("db")).Once()
+	_, err = signalUC.RealizedPnL(7, from, to)
+	assert.Error(t, err)
 }

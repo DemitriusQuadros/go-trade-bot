@@ -76,6 +76,9 @@ type SignalRepository interface {
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 	GetAllOpenSignals() ([]entities.Signal, error)
 	GetAllClosedSignals() ([]entities.Signal, error)
+	// ListClosedBetween returns strategyID's closed signals (with orders)
+	// whose close time is in [from, to).
+	ListClosedBetween(ctx context.Context, strategyID uint, from, to time.Time) ([]entities.Signal, error)
 	Update(signal entities.Signal) error
 	GetByID(id uint) (entities.Signal, error)
 	GetAll() ([]entities.Signal, error)
@@ -594,6 +597,23 @@ func (s SignalUseCase) calculateExitFee(order entities.Order, sellPrice float32)
 	}
 	total := float64(order.Quantity) * float64(sellPrice)
 	return float32(total * feePct / 100.0)
+}
+
+// RealizedPnL sums the net profit (Order.Profit, fees included) of
+// strategyID's signals closed in [from, to). Backs the engine's daily loss
+// limit (R-01).
+func (s SignalUseCase) RealizedPnL(strategyID uint, from, to time.Time) (float64, error) {
+	closed, err := s.Repository.ListClosedBetween(context.Background(), strategyID, from, to)
+	if err != nil {
+		return 0, err
+	}
+	var total float64
+	for _, sig := range closed {
+		for _, o := range sig.Orders {
+			total += float64(o.Profit)
+		}
+	}
+	return total, nil
 }
 
 func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error) {
