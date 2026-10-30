@@ -56,7 +56,7 @@ The `ctx` table:
 
 A signal table has up to four optional sub-tables, each `{qty = n, price = n}`:
 
-- `buy` - required from `go_long` (open a long at market).
+- `buy` - required from `go_long` (open a long at market). `buy.qty`, if > 0, is the size you want and is honoured, but the engine clamps it to a ceiling you cannot change: the free balance (`ctx.account.available`), further limited by the strategy's `position_sizing` config if set. A clamp is logged and notified, never silent. With `qty` 0 or missing, the size comes from `position_sizing`, or one per-order slot of the balance if none is set.
 - `sell` - from `update_position` to close the position at market.
 - `stop_loss = { price = n }` - from `go_long`: placed as a real exchange-side STOP_MARKET (simulated in dryrun/backtest) and takes precedence over `stop_loss_pct`. It must be below the fill price, otherwise `stop_loss_pct` is used and the operator is notified.
 - `take_profit = { price = n }` - from `go_long`: stored with the position; at the start of every cycle, once `ctx.price` reaches it the engine closes the position at market (exit reason `take_profit`) and skips the hooks for that cycle. Ignored unless above the fill price.

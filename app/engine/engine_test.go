@@ -110,7 +110,7 @@ func TestEngine_Run_GoLong_UsesConfiguredStopLossPct(t *testing.T) {
 	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
 	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{}, nil)
 	signalUC.On("GenerateBuySignal", mock.MatchedBy(func(e usecase.EntrySignal) bool {
-		return e.Symbol == "BTCUSDT" && e.StrategyID == 1 && e.StopLossPct == 2.0 && e.StopLossPrice == nil && e.EntryPrice == 50000
+		return e.Symbol == "BTCUSDT" && e.StrategyID == 1 && e.StopLossPct == 2.0 && e.StopLossPrice == nil && e.EntryPrice == 50000 && e.RequestedQty == 0.02
 	})).Return(nil)
 
 	strategy := new(mocks.Strategy)

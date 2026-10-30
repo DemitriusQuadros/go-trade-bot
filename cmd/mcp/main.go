@@ -17,8 +17,8 @@ import (
 	"log"
 
 	"go-trade-bot/app/entities"
-	agentrepo "go-trade-bot/app/repository/agent"
 	accountrepo "go-trade-bot/app/repository/account"
+	agentrepo "go-trade-bot/app/repository/agent"
 	"go-trade-bot/app/repository/agentplatform"
 	proposalrepo "go-trade-bot/app/repository/proposal"
 	"go-trade-bot/app/strategies"
@@ -63,6 +63,7 @@ func appOptions() fx.Option {
 		modules.OptimizeModule,
 		modules.ModelProviderModule,
 		modules.AgentModule,
+		modules.MCPToolsModule,
 		modules.McpServerModule,
 		fx.Invoke(func(db *gorm.DB) {
 			// Runs defensively on startup with the same entity list

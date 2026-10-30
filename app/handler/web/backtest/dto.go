@@ -19,6 +19,10 @@ type RunRequestDTO struct {
 	EndDate        time.Time         `json:"end_date"`
 	InitialCapital float64           `json:"initial_capital"`
 	FillPolicy     engine.FillPolicy `json:"fill_policy"`
+	// Async queues the run for cmd/worker and returns 202 with the queued
+	// run immediately; poll GET /backtest/{id} for status. Use it for long
+	// windows.
+	Async bool `json:"async"`
 }
 
 func (dto RunRequestDTO) ToUseCase() usecase.RunRequest {
@@ -44,6 +48,8 @@ type WalkForwardRequestDTO struct {
 	TestMonths     int               `json:"test_months"`
 	StepMonths     int               `json:"step_months"`
 	FillPolicy     engine.FillPolicy `json:"fill_policy"`
+	// Async: see RunRequestDTO.Async. Walk-forward is the heaviest backtest.
+	Async bool `json:"async"`
 }
 
 func (dto WalkForwardRequestDTO) ToUseCase() usecase.WalkForwardRequest {

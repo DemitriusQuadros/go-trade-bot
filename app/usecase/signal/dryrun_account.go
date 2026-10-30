@@ -1,5 +1,7 @@
 package usecase
 
+import "go-trade-bot/app/entities"
+
 // DryRunAccount is the AccountUseCase the worker's dryrun SignalUseCase uses
 // (fix-01). Reads (CanOpenOrder, GetDisponibleAmout) delegate to the real
 // account so dryrun sizing mirrors what live would do, but the writes
@@ -34,3 +36,6 @@ func (a DryRunAccount) GetDisponibleAmout() (float32, error) { return a.inner.Ge
 
 // CanOpenOrder reads the real account's order slots.
 func (a DryRunAccount) CanOpenOrder() (bool, error) { return a.inner.CanOpenOrder() }
+
+// GetAccount reads the real account (sizing basis only; never written).
+func (a DryRunAccount) GetAccount() (entities.Account, error) { return a.inner.GetAccount() }

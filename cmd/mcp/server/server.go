@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 
+	"go-trade-bot/app/handler/mcptools"
 	agentusecase "go-trade-bot/app/usecase/agent"
 	"go-trade-bot/internal/configuration"
 
@@ -26,10 +27,15 @@ type Server struct {
 // NewServer builds the MCP server and registers every tool (Backend Spec
 // 03/06) and resource (Backend Spec 05) up front - both transports below
 // see the identical, fully-populated server.
-func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration) *Server {
+func NewServer(uc *agentusecase.AgentUseCase, cfg *configuration.Configuration, direct mcptools.Deps) *Server {
 	impl := &mcp.Implementation{Name: "go-trade-bot-agent", Version: "0.1.0"}
 	mcpServer := mcp.NewServer(impl, nil)
 	registerTools(mcpServer, uc)
+	taken := map[string]bool{}
+	for _, t := range uc.Tools() {
+		taken[t.Def.Name] = true
+	}
+	registerDirectTools(mcpServer, mcptools.New(direct), taken)
 	registerResources(mcpServer)
 	return &Server{mcpServer: mcpServer, cfg: cfg}
 }
@@ -61,4 +67,16 @@ func (s *Server) Stop(ctx context.Context) error {
 		return s.http.shutdown(ctx)
 	}
 	return nil
+}
+
+// InMemoryClient connects an MCP client to this server over an in-process
+// transport, with every tool and resource exactly as a real client would see
+// them. It exists for end-to-end tests and embedding; neither stdio nor HTTP
+// is started.
+func (s *Server) InMemoryClient(ctx context.Context) (*mcp.ClientSession, error) {
+	ct, st := mcp.NewInMemoryTransports()
+	if _, err := s.mcpServer.Connect(ctx, st, nil); err != nil {
+		return nil, err
+	}
+	return mcp.NewClient(&mcp.Implementation{Name: "in-memory", Version: "0"}, nil).Connect(ctx, ct, nil)
 }

@@ -48,6 +48,15 @@ type EntrySignal struct {
 	TakeProfitPrice *float64
 	// PositionSizing, if non-nil, specifies pluggable position sizing (fixed amount or % of capital).
 	PositionSizing *PositionSizingConfig
+	// RequestedQty is the quantity the strategy script asked for (buy.qty).
+	// 0 means "no preference": size comes from PositionSizing / the per-order
+	// slot. A positive value is honoured but clamped to a ceiling the script
+	// cannot change (B-03, see ResolveEntryQty).
+	RequestedQty float64
+	// OnClamp, if set, is called when RequestedQty was reduced to the size
+	// ceiling (requested and allowed are base-asset quantities). The engine
+	// uses it to put the clamp in the script execution trace.
+	OnClamp func(requested, allowed float64)
 }
 
 type ExitSignal struct {
@@ -67,6 +76,9 @@ type SignalRepository interface {
 	GetOpenSignals(symbol string, strategyId uint) (entities.Signal, error)
 	GetAllOpenSignals() ([]entities.Signal, error)
 	GetAllClosedSignals() ([]entities.Signal, error)
+	// ListClosedBetween returns strategyID's closed signals (with orders)
+	// whose close time is in [from, to).
+	ListClosedBetween(ctx context.Context, strategyID uint, from, to time.Time) ([]entities.Signal, error)
 	Update(signal entities.Signal) error
 	GetByID(id uint) (entities.Signal, error)
 	GetAll() ([]entities.Signal, error)
@@ -76,6 +88,9 @@ type AccountUseCase interface {
 	AddOrder(exitPrice float32) error
 	GetDisponibleAmout() (float32, error)
 	CanOpenOrder() (bool, error)
+	// GetAccount exposes the full free balance (Amount), the basis for
+	// ctx.account.available and for the ceiling on a script-requested qty.
+	GetAccount() (entities.Account, error)
 }
 
 // SignalUseCase orchestrates trade signal persistence AND real order
@@ -149,6 +164,12 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		return fmt.Errorf("failed to compute position sizing: %w", err)
 	}
 	requestedQty := investedAmount / float64(e.EntryPrice)
+	if e.RequestedQty > 0 {
+		requestedQty, err = s.resolveScriptQty(ctx, e, sizer, investedAmount)
+		if err != nil {
+			return err
+		}
+	}
 
 	ordinal := time.Now().UnixNano()
 	buyClientOrderID := fmt.Sprintf("gtb-%d-buy-%d", e.StrategyID, ordinal)
@@ -259,6 +280,36 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 	})
 
 	return nil
+}
+
+// resolveScriptQty applies the B-03 contract to a script-requested qty. The
+// ceiling is the full free balance (the same number scripts see as
+// ctx.account.available), further limited by the strategy's configured
+// position_sizing when there is one. A clamp is logged and notified, never
+// silent.
+func (s SignalUseCase) resolveScriptQty(ctx context.Context, e EntrySignal, sizer PositionSizer, fallbackAmount float64) (float64, error) {
+	acc, err := s.AccountUseCase.GetAccount()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read account for position sizing: %w", err)
+	}
+	ceiling := float64(acc.Amount)
+	if e.PositionSizing != nil {
+		ceiling, err = sizer.Size(e.PositionSizing, ceiling)
+		if err != nil {
+			return 0, fmt.Errorf("failed to compute position sizing ceiling: %w", err)
+		}
+	}
+	d := ResolveEntryQty(e.RequestedQty, float64(e.EntryPrice), fallbackAmount, ceiling)
+	if d.Clamped {
+		msg := fmt.Sprintf("script asked for qty %.8f on %s but the size ceiling allows %.8f (%.2f quote); using the ceiling",
+			d.Requested, e.Symbol, d.Qty, ceiling)
+		log.Printf("[signal] %s/%s: %s", e.StrategyName, e.Symbol, msg)
+		s.notify(ctx, s.errorEvent(e, msg))
+		if e.OnClamp != nil {
+			e.OnClamp(d.Requested, d.Qty)
+		}
+	}
+	return d.Qty, nil
 }
 
 // submitStopLoss places the protective STOP_MARKET order at position-open
@@ -546,6 +597,23 @@ func (s SignalUseCase) calculateExitFee(order entities.Order, sellPrice float32)
 	}
 	total := float64(order.Quantity) * float64(sellPrice)
 	return float32(total * feePct / 100.0)
+}
+
+// RealizedPnL sums the net profit (Order.Profit, fees included) of
+// strategyID's signals closed in [from, to). Backs the engine's daily loss
+// limit (R-01).
+func (s SignalUseCase) RealizedPnL(strategyID uint, from, to time.Time) (float64, error) {
+	closed, err := s.Repository.ListClosedBetween(context.Background(), strategyID, from, to)
+	if err != nil {
+		return 0, err
+	}
+	var total float64
+	for _, sig := range closed {
+		for _, o := range sig.Orders {
+			total += float64(o.Profit)
+		}
+	}
+	return total, nil
 }
 
 func (s SignalUseCase) GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	usecase "go-trade-bot/app/usecase/signal"
 	"testing"
+	"time"
 
 	"go-trade-bot/app/entities"
 	"go-trade-bot/app/usecase/signal/mocks"
@@ -577,4 +578,70 @@ func TestSignalUseCase_GenerateBuySignal_StrategyStopAndTakeProfit(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestSignalUseCase_GenerateBuySignal_ScriptQty(t *testing.T) {
+	run := func(t *testing.T, e usecase.EntrySignal, balance float32, wantQty float64, wantClampNotice bool) {
+		t.Helper()
+		signalUC, mockRepo, acc, ex, n := newSignalUseCase()
+		acc.On("CanOpenOrder").Return(true, nil).Once()
+		acc.On("GetDisponibleAmout").Return(float32(100), nil).Once() // per-slot fallback: 10% of 1000
+		acc.On("GetAccount").Return(entities.Account{Amount: balance}, nil).Maybe()
+		mockRepo.On("GetOpenSignals", e.Symbol, e.StrategyID).Return(entities.Signal{}, nil).Once()
+		ex.On("PlaceOrder", mock.Anything, mock.MatchedBy(func(r exchange.PlaceOrderRequest) bool {
+			return r.Side == exchange.SideBuy && assert.InDelta(t, wantQty, r.Quantity, 1e-9)
+		})).Return(exchange.OrderResult{BrokerOrderID: "1", Status: exchange.OrderStatusFilled, ExecutedQty: wantQty, AvgFillPrice: float64(e.EntryPrice)}, nil).Once()
+		mockRepo.On("Create", mock.Anything).Return(nil).Once()
+		acc.On("DeductOrder", mock.Anything).Return(nil).Once()
+		n.On("Send", mock.Anything, eventOfType(notifier.EventPositionOpened)).Return(nil).Once()
+		if wantClampNotice {
+			n.On("Send", mock.Anything, eventOfType(notifier.EventStrategyError)).Return(nil).Once()
+		}
+		assert.NoError(t, signalUC.GenerateBuySignal(e))
+		ex.AssertExpectations(t)
+		n.AssertExpectations(t)
+	}
+	base := usecase.EntrySignal{Symbol: "SOLUSDT", StrategyID: 1, EntryPrice: 100, MarginType: entities.Isolated}
+
+	t.Run("script qty is honoured instead of the per-slot size", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 9.5 // 950 of a 1000 balance
+		run(t, e, 1000, 9.5, false)
+	})
+	t.Run("script qty above the free balance is clamped and notified", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 20
+		var gotReq, gotAllowed float64
+		e.OnClamp = func(r, a float64) { gotReq, gotAllowed = r, a }
+		run(t, e, 1000, 10, true)
+		assert.Equal(t, 20.0, gotReq)
+		assert.Equal(t, 10.0, gotAllowed)
+	})
+	t.Run("script qty above the configured sizing cap is clamped and notified", func(t *testing.T) {
+		e := base
+		e.RequestedQty = 9.5
+		e.PositionSizing = &usecase.PositionSizingConfig{Type: usecase.SizingPctCapital, Value: 50}
+		run(t, e, 1000, 5, true)
+	})
+	t.Run("no script qty keeps the per-slot fallback", func(t *testing.T) {
+		run(t, base, 1000, 1, false)
+	})
+}
+
+func TestSignalUseCase_RealizedPnL(t *testing.T) {
+	signalUC, mockRepo, _, _, _ := newSignalUseCase()
+	from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(24 * time.Hour)
+	mockRepo.On("ListClosedBetween", mock.Anything, uint(7), from, to).Return([]entities.Signal{
+		{Orders: []entities.Order{{Profit: -10.5}}},
+		{Orders: []entities.Order{{Profit: 4}}},
+	}, nil).Once()
+
+	pnl, err := signalUC.RealizedPnL(7, from, to)
+	assert.NoError(t, err)
+	assert.InDelta(t, -6.5, pnl, 1e-6)
+
+	mockRepo.On("ListClosedBetween", mock.Anything, uint(7), from, to).Return(nil, errors.New("db")).Once()
+	_, err = signalUC.RealizedPnL(7, from, to)
+	assert.Error(t, err)
 }
