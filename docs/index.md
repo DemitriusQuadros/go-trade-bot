@@ -1,5 +1,9 @@
 # Go Binance Trade Bot Documentation
 
+<p align="center">
+  <img src="assets/gopher-quant.png" alt="TradeBot Gopher Mascot" width="160" />
+</p>
+
 Welcome to the official documentation for **Go Binance Trade Bot**, an institutional-grade, distributed algorithmic trading platform and autonomous AI strategy co-pilot for Binance spot markets.
 
 ---

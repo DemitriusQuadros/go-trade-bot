@@ -11,6 +11,8 @@ site_dir: "site"
 
 theme:
   name: material
+  logo: assets/gopher-quant.png
+  favicon: assets/gopher-face.png
   palette:
     - scheme: slate
       primary: teal

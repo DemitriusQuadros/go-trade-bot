@@ -1,20 +1,25 @@
 <div align="center">
 
+<p align="center">
+  <img src="docs/assets/gopher-quant.png" alt="TradeBot Gopher Mascot" width="180" />
+</p>
+
 # ⚡ Go Binance Trade Bot
 
 **An enterprise-grade, autonomous algorithmic trading platform and AI strategy co-pilot for Binance.**
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/DemitriusQuadros/go-trade-bot?style=for-the-badge&logo=go&color=00ADD8)](https://go.dev/)
-[![React UI](https://img.shields.io/badge/UI-React%20%7C%20Tailwind%20%7C%20Vite-61DAFB?style=for-the-badge&logo=react)](web/)
-[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL%2016-336791?style=for-the-badge&logo=postgresql)](docker-compose.yml)
-[![Redis & Asynq](https://img.shields.io/badge/Queue-Redis%20%2F%20Asynq-DC382D?style=for-the-badge&logo=redis)](https://github.com/hibiken/asynq)
-[![Model Context Protocol](https://img.shields.io/badge/MCP-33%2B%20Tools-8A2BE2?style=for-the-badge)](cmd/mcp/)
-[![Documentation](https://img.shields.io/badge/Docs-GitHub%20Pages-blue?style=for-the-badge&logo=github)](https://demitriusquadros.github.io/go-trade-bot/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+<p align="center">
+  <a href="https://demitriusquadros.github.io/go-trade-bot/"><img src="https://img.shields.io/badge/Docs-GitHub%20Pages-0284c7?style=for-the-badge&logo=googledocs&logoColor=white" alt="Documentation"></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go Version"></a>
+  <a href="web/"><img src="https://img.shields.io/badge/UI-React%20%7C%20Tailwind-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React UI"></a>
+  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/Postgres-16-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL"></a>
+  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/Redis-Asynq-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis"></a>
+  <a href="cmd/mcp/"><img src="https://img.shields.io/badge/MCP-33%2B%20Tools-8A2BE2?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP"></a>
+  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-success?style=for-the-badge" alt="License"></a>
+</p>
 
-<br/>
-
-**🌐 Official Documentation:** Visit **[demitriusquadros.github.io/go-trade-bot](https://demitriusquadros.github.io/go-trade-bot/)** for complete guides, architectural deep dives, Lua indicator references, and tutorials in English, Português, and Español.
+> 🌐 **Official Documentation:** Visit **[https://demitriusquadros.github.io/go-trade-bot/](https://demitriusquadros.github.io/go-trade-bot/)** for complete guides, architectural deep dives, Lua indicator references, and tutorials in **English**, **Português**, and **Español**.
 
 ---
 
