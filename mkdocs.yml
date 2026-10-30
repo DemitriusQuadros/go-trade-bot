@@ -15,13 +15,13 @@ theme:
   favicon: assets/gopher-face.png
   palette:
     - scheme: slate
-      primary: teal
+      primary: slate
       accent: emerald
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - scheme: default
-      primary: teal
+      primary: white
       accent: emerald
       toggle:
         icon: material/brightness-7
@@ -96,6 +96,9 @@ plugins:
             API & Observability: API y Observabilidad
             REST Reference: Referencia REST
             Metrics & Grafana: Métricas y Grafana
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
