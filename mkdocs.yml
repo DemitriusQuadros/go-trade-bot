@@ -1,0 +1,140 @@
+site_name: Go Binance Trade Bot
+site_description: "An enterprise-grade, autonomous algorithmic trading platform and AI strategy co-pilot for Binance."
+site_author: "Demitrius Quadros"
+site_url: "https://demitriusquadros.github.io/go-trade-bot/"
+repo_url: "https://github.com/DemitriusQuadros/go-trade-bot"
+repo_name: "DemitriusQuadros/go-trade-bot"
+edit_uri: "edit/master/docs/"
+
+docs_dir: "docs"
+site_dir: "site"
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: emerald
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: teal
+      accent: emerald
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: pt
+          name: Português
+          build: true
+          nav_translations:
+            Overview: Visão Geral
+            Architecture: Arquitetura
+            System Overview: Visão Geral do Sistema
+            Safety Invariants: Invariantes de Segurança
+            Data Pipeline & Reconciler: Pipeline de Dados & Reconciliador
+            Trading Engine: Motor de Trading
+            Execution Modes: Modos de Execução
+            Lua Strategy Scripting: Estratégias em Lua
+            Risk Management: Gestão de Risco
+            Agents Platform: Plataforma de Agentes
+            Autonomous Agents: Agentes Autônomos
+            Deploy Gate & Challengers: Deploy Gate & Desafiantes
+            MCP Operator Tools: Ferramentas MCP de Operação
+            Deployment & Guides: Guias de Deploy
+            Docker Compose: Docker Compose
+            Bare-Metal Local Dev: Dev Local Bare-Metal
+            Cloudflare Production: Produção com Cloudflare
+            API & Observability: API & Observabilidade
+            REST Reference: Referência REST
+            Metrics & Grafana: Métricas & Grafana
+        - locale: es
+          name: Español
+          build: true
+          nav_translations:
+            Overview: Visión General
+            Architecture: Arquitectura
+            System Overview: Visión General del Sistema
+            Safety Invariants: Invariantes de Seguridad
+            Data Pipeline & Reconciler: Pipeline de Datos y Reconciliador
+            Trading Engine: Motor de Trading
+            Execution Modes: Modos de Ejecución
+            Lua Strategy Scripting: Estrategias en Lua
+            Risk Management: Gestión de Riesgo
+            Agents Platform: Plataforma de Agentes
+            Autonomous Agents: Agentes Autónomos
+            Deploy Gate & Challengers: Deploy Gate y Desafiantes
+            MCP Operator Tools: Herramientas MCP de Operación
+            Deployment & Guides: Guías de Despliegue
+            Docker Compose: Docker Compose
+            Bare-Metal Local Dev: Dev Local Bare-Metal
+            Cloudflare Production: Producción con Cloudflare
+            API & Observability: API y Observabilidad
+            REST Reference: Referencia REST
+            Metrics & Grafana: Métricas y Grafana
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Architecture:
+      - System Overview: architecture/overview.md
+      - Safety Invariants: architecture/safety-invariants.md
+      - Data Pipeline & Reconciler: architecture/data-pipeline.md
+  - Trading Engine:
+      - Execution Modes: trading/execution-modes.md
+      - Lua Strategy Scripting: trading/lua-scripting.md
+      - Risk Management: trading/risk-management.md
+  - Agents Platform:
+      - Autonomous Agents: agents/platform.md
+      - Deploy Gate & Challengers: agents/deploy-gate.md
+      - MCP Operator Tools: agents/mcp-server.md
+  - Deployment & Guides:
+      - Docker Compose: guides/quickstart-docker.md
+      - Bare-Metal Local Dev: guides/local-development.md
+      - Cloudflare Production: guides/cloudflare-production.md
+  - API & Observability:
+      - REST Reference: api/rest-reference.md
+      - Metrics & Grafana: api/metrics-grafana.md
