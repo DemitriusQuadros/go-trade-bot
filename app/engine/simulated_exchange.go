@@ -290,3 +290,8 @@ func (e *SimulatedFillExchange) SubscribeKline(ctx context.Context, symbol, inte
 	ch := make(chan exchange.Candle)
 	return ch, nil
 }
+
+func (e *SimulatedFillExchange) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
+	ch := make(chan exchange.BookTicker)
+	return ch, nil
+}

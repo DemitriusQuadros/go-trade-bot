@@ -174,6 +174,12 @@ export function formatDuration(startIso: string, endIso?: string | null): string
   return formatMs(ms);
 }
 
+export function formatElapsed(startIso: string): string {
+  const ms = Date.now() - new Date(startIso).getTime();
+  if (Number.isNaN(ms) || ms < 0) return '—';
+  return formatMs(ms);
+}
+
 export function formatMs(ms: number): string {
   if (ms < 1000) return `${formatNumber(ms, { digits: 0 })}ms`;
   const s = ms / 1000;

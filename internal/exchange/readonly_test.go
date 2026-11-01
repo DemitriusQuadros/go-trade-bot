@@ -39,6 +39,10 @@ func (m *mockInner) SubscribeKline(ctx context.Context, symbol, interval string)
 	args := m.Called(ctx, symbol, interval)
 	return args.Get(0).(<-chan Candle), args.Error(1)
 }
+func (m *mockInner) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
+	args := m.Called(ctx, symbol)
+	return args.Get(0).(<-chan BookTicker), args.Error(1)
+}
 
 // A-02 AC#2: PlaceOrder/CancelOrder return ErrReadOnlyClient and never
 // reach the inner client; the blocked-attempt hook fires each time.
@@ -69,6 +73,8 @@ func TestReadOnlyClient_DelegatesReads(t *testing.T) {
 	inner.On("ListTickerPrices", mock.Anything, "BTCUSDT").Return([]TickerPrice{{}}, nil).Once()
 	inner.On("GetAccountBalance", mock.Anything).Return(AccountBalance{}, nil).Once()
 	inner.On("SubscribeKline", mock.Anything, "BTCUSDT", "1m").Return(ch, nil).Once()
+	btCh := make(<-chan BookTicker)
+	inner.On("SubscribeBookTicker", mock.Anything, "BTCUSDT").Return(btCh, nil).Once()
 
 	c := NewReadOnlyClient(inner, nil)
 	ctx := context.Background()
@@ -82,6 +88,8 @@ func TestReadOnlyClient_DelegatesReads(t *testing.T) {
 	_, err = c.GetAccountBalance(ctx)
 	require.NoError(t, err)
 	_, err = c.SubscribeKline(ctx, "BTCUSDT", "1m")
+	require.NoError(t, err)
+	_, err = c.SubscribeBookTicker(ctx, "BTCUSDT")
 	require.NoError(t, err)
 	inner.AssertExpectations(t)
 }

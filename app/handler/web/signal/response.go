@@ -12,6 +12,8 @@ type OrderResponseDTO struct {
 	BrokerOrderID   string    `json:"broker_order_id"`
 	StopLossOrderID string    `json:"stop_loss_order_id"`
 	StopLossPrice   float32   `json:"stop_loss_price"`
+	TakeProfitPrice float32   `json:"take_profit_price"`
+	ExitReason      string    `json:"exit_reason,omitempty"`
 	EntryPrice      float32   `json:"entry_price"`
 	ExitPrice       float32   `json:"exit_price"`
 	Quantity        float32   `json:"quantity"`
@@ -32,6 +34,7 @@ type SignalResponseDTO struct {
 	Symbol     string             `json:"symbol"`
 	StrategyID uint               `json:"strategy_id"`
 	Status     string             `json:"status"`
+	Mode       string             `json:"mode"`
 	Orders     []OrderResponseDTO `json:"orders"`
 	CreatedAt  time.Time          `json:"created_at"`
 	UpdatedAt  time.Time          `json:"updated_at"`
@@ -44,6 +47,8 @@ func ToOrderResponse(o entities.Order) OrderResponseDTO {
 		BrokerOrderID:   o.BrokerOrderID,
 		StopLossOrderID: o.StopLossOrderID,
 		StopLossPrice:   o.StopLossPrice,
+		TakeProfitPrice: o.TakeProfitPrice,
+		ExitReason:      o.ExitReason,
 		EntryPrice:      o.EntryPrice,
 		ExitPrice:       o.ExitPrice,
 		Quantity:        o.Quantity,
@@ -71,6 +76,7 @@ func ToSignalResponse(s entities.Signal) SignalResponseDTO {
 		Symbol:     s.Symbol,
 		StrategyID: s.StrategyID,
 		Status:     string(s.Status),
+		Mode:       s.Mode,
 		Orders:     orders,
 		CreatedAt:  s.CreatedAt,
 		UpdatedAt:  s.UpdatedAt,

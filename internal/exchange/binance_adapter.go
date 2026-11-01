@@ -257,6 +257,58 @@ func (a *BinanceAdapter) SubscribeKline(ctx context.Context, symbol, interval st
 	return out, nil
 }
 
+// SubscribeBookTicker streams real-time best bid and ask quotes for symbol.
+// Channel closes when the underlying stream ends or ctx is canceled.
+func (a *BinanceAdapter) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
+	out := make(chan BookTicker)
+
+	handler := func(event *binance.WsBookTickerEvent) {
+		bidPrice, err := strconv.ParseFloat(event.BestBidPrice, 64)
+		if err != nil {
+			return
+		}
+		askPrice, err := strconv.ParseFloat(event.BestAskPrice, 64)
+		if err != nil {
+			return
+		}
+		bidQty, _ := strconv.ParseFloat(event.BestBidQty, 64)
+		askQty, _ := strconv.ParseFloat(event.BestAskQty, 64)
+
+		bt := BookTicker{
+			Symbol:       event.Symbol,
+			BestBidPrice: bidPrice,
+			BestBidQty:   bidQty,
+			BestAskPrice: askPrice,
+			BestAskQty:   askQty,
+			Timestamp:    time.Now().UTC(),
+		}
+		select {
+		case out <- bt:
+		case <-ctx.Done():
+		}
+	}
+
+	errHandler := func(err error) {}
+
+	doneC, stopC, err := binance.WsBookTickerServe(symbol, handler, errHandler)
+	if err != nil {
+		close(out)
+		return nil, err
+	}
+
+	go func() {
+		select {
+		case <-doneC:
+		case <-ctx.Done():
+			close(stopC)
+			<-doneC
+		}
+		close(out)
+	}()
+
+	return out, nil
+}
+
 func toBinanceSide(side OrderSide) binance.SideType {
 	if side == SideSell {
 		return binance.SideTypeSell

@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useSignals, useStrategies, useTickerPrices, useAgentRuns } from '@/hooks/queries';
+import { useSignals, useStrategies, useTickerPrices, useAgentRuns, useCloseSignal } from '@/hooks/queries';
 import { useSSE } from '@/hooks/useSSE';
 import { Signal, Order, Strategy } from '@/api/types';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { LoadingScreen } from '@/components/ui/Spinner';
 import { AgentRunsTable } from '@/components/domain/AgentRunsTable';
+import { PositionProximityGauge } from '@/components/domain/PositionProximityGauge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/context/ToastContext';
 import {
   Layers,
   ArrowUpRight,
@@ -81,6 +84,15 @@ export function Activity() {
 // --- Positions ---------------------------------------------------------
 function PositionsTab() {
   const t = useT();
+  const { toast } = useToast();
+  const closeSignalMutation = useCloseSignal();
+  const [closingPosition, setClosingPosition] = useState<{
+    id: number;
+    symbol: string;
+    strategyName: string;
+    currentPrice: number;
+  } | null>(null);
+
   const [statusTab, setStatusTab] = useState<'open' | 'closed'>('open');
   const { data: signals = [], refetch: refetchSignals, isLoading: isSignalsLoading } = useSignals(statusTab as any);
   const { data: strategies = [] } = useStrategies();
@@ -101,10 +113,11 @@ function PositionsTab() {
       const firstOrder = sig.orders?.[0];
       const entryPrice = firstOrder ? firstOrder.entry_price : 0;
       const stopLossPrice = firstOrder ? firstOrder.stop_loss_price : 0;
+      const livePos = ssePositions[sig.id];
+      const takeProfitPrice = firstOrder?.take_profit_price ?? livePos?.take_profit_price ?? 0;
       const quantity = firstOrder ? firstOrder.quantity : 0;
       const invested = firstOrder ? firstOrder.invested_amount : 0;
 
-      const livePos = ssePositions[sig.id];
       const currentPrice =
         livePos?.current_price ||
         ssePrices[sig.symbol]?.price ||
@@ -132,6 +145,7 @@ function PositionsTab() {
         strategyName: strat?.name || `Strategy #${sig.strategy_id}`,
         entryPrice,
         stopLossPrice,
+        takeProfitPrice,
         currentPrice,
         quantity,
         invested,
@@ -229,11 +243,12 @@ function PositionsTab() {
                   <th>{t('activity.colStrategy')}</th>
                   <th>{t('activity.colEntryPrice')}</th>
                   {statusTab === 'open' ? <th>{t('activity.colCurrentPrice')}</th> : <th>{t('activity.colExitPrice')}</th>}
-                  <th>{t('activity.colStopLoss')}</th>
+                  {statusTab === 'open' ? <th className="min-w-[180px]">{t('dashboard.colProximity')}</th> : <th>{t('activity.colStopLoss')}</th>}
                   <th>{t('activity.colQuantity')}</th>
                   <th>{t('activity.colInvested')}</th>
                   <th>{statusTab === 'open' ? t('activity.colUnrealized') : t('activity.colRealized')}</th>
                   <th>{t('activity.colOpenedAt')}</th>
+                  {statusTab === 'open' && <th className="text-right">{t('dashboard.colActions')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -249,16 +264,28 @@ function PositionsTab() {
                       </td>
                       <td className="font-mono">${formatNumber(pos.entryPrice, { digits: 2 })}</td>
                       <td className="font-mono">${formatNumber(pos.currentPrice, { digits: 2 })}</td>
-                      <td className="font-mono text-muted-foreground">
-                        {pos.stopLossPrice > 0 ? (
-                          <div className="flex items-center gap-1 text-warning/90">
-                            <Shield className="w-3 h-3 flex-shrink-0" />
-                            <span>${formatNumber(pos.stopLossPrice, { digits: 2 })}</span>
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
+                      {statusTab === 'open' ? (
+                        <td>
+                          <PositionProximityGauge
+                            entryPrice={pos.entryPrice}
+                            currentPrice={pos.currentPrice}
+                            takeProfitPrice={pos.takeProfitPrice}
+                            stopLossPrice={pos.stopLossPrice}
+                            compact
+                          />
+                        </td>
+                      ) : (
+                        <td className="font-mono text-muted-foreground">
+                          {pos.stopLossPrice > 0 ? (
+                            <div className="flex items-center gap-1 text-warning/90">
+                              <Shield className="w-3 h-3 flex-shrink-0" />
+                              <span>${formatNumber(pos.stopLossPrice, { digits: 2 })}</span>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      )}
                       <td className="font-mono text-xs text-muted-foreground">{formatNumber(pos.quantity, { digits: 4 })}</td>
                       <td className="font-mono text-xs text-muted-foreground">${formatNumber(pos.invested, { digits: 2 })}</td>
                       <td className="font-mono">
@@ -281,6 +308,17 @@ function PositionsTab() {
                           </span>
                         </div>
                       </td>
+                      {statusTab === 'open' && (
+                        <td className="text-right">
+                          <button
+                            type="button"
+                            onClick={() => setClosingPosition(pos)}
+                            className="px-2 py-1 rounded text-xs font-medium text-destructive hover:bg-destructive/10 border border-destructive/20 transition-colors"
+                          >
+                            {t('dashboard.marketClose')}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -289,6 +327,30 @@ function PositionsTab() {
           </div>
         )}
       </Card>
+
+      {closingPosition && (
+        <ConfirmDialog
+          isOpen={!!closingPosition}
+          title={t('dashboard.confirmCloseTitle', { symbol: closingPosition.symbol })}
+          message={t('dashboard.confirmCloseDesc', {
+            symbol: closingPosition.symbol,
+            strategy: closingPosition.strategyName,
+            price: formatNumber(closingPosition.currentPrice, { digits: 2 }),
+          })}
+          confirmText={closeSignalMutation.isPending ? t('dashboard.closing') : t('dashboard.marketClose')}
+          isDangerous
+          onConfirm={async () => {
+            try {
+              await closeSignalMutation.mutateAsync(closingPosition.id);
+              toast(t('dashboard.positionClosedDesc', { symbol: closingPosition.symbol }), 'success');
+              setClosingPosition(null);
+            } catch (err: any) {
+              toast(err?.message || 'Failed to close position', 'error');
+            }
+          }}
+          onCancel={() => setClosingPosition(null)}
+        />
+      )}
     </>
   );
 }

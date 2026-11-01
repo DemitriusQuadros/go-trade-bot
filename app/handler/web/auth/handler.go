@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -151,7 +152,11 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) unauthorized(w http.ResponseWriter, r *http.Request) {
-	setup, _ := h.useCase.SetupRequired(r.Context())
+	setup, err := h.useCase.SetupRequired(r.Context())
+	if err != nil {
+		log.Printf("auth: SetupRequired check failed: %v", err)
+		setup = false
+	}
 	writeJSON(w, http.StatusUnauthorized, map[string]any{
 		"error": "unauthorized", "message": "sign in required", "setup_required": setup,
 	})

@@ -28,6 +28,7 @@ type ExchangeClient interface {
 	ListTickerPrices(ctx context.Context, symbol string) ([]TickerPrice, error)
 	GetAccountBalance(ctx context.Context) (AccountBalance, error)
 	SubscribeKline(ctx context.Context, symbol, interval string) (<-chan Candle, error)
+	SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error)
 }
 
 // HistoricalKlineFetcher is a narrow capability interface, deliberately NOT

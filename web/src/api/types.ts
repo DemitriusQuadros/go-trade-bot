@@ -87,6 +87,8 @@ export interface Order {
   broker_order_id: string;
   stop_loss_order_id: string;
   stop_loss_price: number;
+  take_profit_price?: number;
+  exit_reason?: string;
   entry_price: number;
   exit_price: number;
   quantity: number;
@@ -317,8 +319,11 @@ export interface RealtimePositionEvent {
   signal_id: number;
   symbol: string;
   strategy_id: number;
+  mode?: string;
   entry_price: number;
   current_price: number;
+  take_profit_price?: number;
+  stop_loss_price?: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   quantity: number;

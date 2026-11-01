@@ -82,3 +82,7 @@ func (s *SwappableExchangeClient) GetAccountBalance(ctx context.Context) (Accoun
 func (s *SwappableExchangeClient) SubscribeKline(ctx context.Context, symbol, interval string) (<-chan Candle, error) {
 	return (*s.current.Load()).SubscribeKline(ctx, symbol, interval)
 }
+
+func (s *SwappableExchangeClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
+	return (*s.current.Load()).SubscribeBookTicker(ctx, symbol)
+}

@@ -64,3 +64,7 @@ func (c *ReadOnlyClient) GetAccountBalance(ctx context.Context) (AccountBalance,
 func (c *ReadOnlyClient) SubscribeKline(ctx context.Context, symbol, interval string) (<-chan Candle, error) {
 	return c.inner.SubscribeKline(ctx, symbol, interval)
 }
+
+func (c *ReadOnlyClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
+	return c.inner.SubscribeBookTicker(ctx, symbol)
+}

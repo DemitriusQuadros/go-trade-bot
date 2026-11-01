@@ -46,6 +46,9 @@ func (m *mockExchangeClient) GetAccountBalance(ctx context.Context) (exchange.Ac
 func (m *mockExchangeClient) SubscribeKline(ctx context.Context, symbol, interval string) (<-chan exchange.Candle, error) {
 	return nil, nil
 }
+func (m *mockExchangeClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
+	return nil, nil
+}
 
 type mockSignalRepo struct {
 	signals []entities.Signal

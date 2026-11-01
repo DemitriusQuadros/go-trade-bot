@@ -75,6 +75,16 @@ type TickerPrice struct {
 	Price  float64
 }
 
+// BookTicker represents real-time best bid and ask order book quotes.
+type BookTicker struct {
+	Symbol       string
+	BestBidPrice float64
+	BestBidQty   float64
+	BestAskPrice float64
+	BestAskQty   float64
+	Timestamp    time.Time
+}
+
 // AccountBalance is the ACL's balance shape for a single asset.
 type AccountBalance struct {
 	Asset  string

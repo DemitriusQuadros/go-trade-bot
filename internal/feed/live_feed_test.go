@@ -68,6 +68,9 @@ func (f *fakeExchangeClient) ListTickerPrices(ctx context.Context, symbol string
 func (f *fakeExchangeClient) GetAccountBalance(ctx context.Context) (exchange.AccountBalance, error) {
 	panic("not implemented for feed tests")
 }
+func (f *fakeExchangeClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
+	panic("not implemented for feed tests")
+}
 
 func candleAt(seconds int64) exchange.Candle {
 	return exchange.Candle{Symbol: "BTCUSDT", OpenTime: time.Unix(seconds, 0)}

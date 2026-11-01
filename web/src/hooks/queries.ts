@@ -141,6 +141,19 @@ export function useSignals(status?: 'open' | 'closed') {
   });
 }
 
+export function useCloseSignal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.closeSignal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['signals'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.signals() });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.signals('open') });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.signals('closed') });
+    },
+  });
+}
+
 export function usePerformanceHistory() {
   return useQuery({
     queryKey: QUERY_KEYS.performanceHistory,

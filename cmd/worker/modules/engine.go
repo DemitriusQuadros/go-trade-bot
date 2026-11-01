@@ -42,6 +42,7 @@ type DryRunEngine struct {
 	Engine   *engine.Engine
 	Exchange *exchange.DryRunExchange
 	Stops    *engine.SimulatedStopEvaluator
+	SignalUC signalusecase.SignalUseCase
 }
 
 // DryRunEngineParams are NewDryRunEngine's fx dependencies.
@@ -91,5 +92,5 @@ func NewDryRunEngine(p DryRunEngineParams) DryRunEngine {
 	eng := engine.NewEngine(dryEx, p.Indicators, signalUC, p.Account, p.Notifier, p.Cache, p.Metrics)
 	eng.PreCycle = stops
 
-	return DryRunEngine{Engine: eng, Exchange: dryEx, Stops: stops}
+	return DryRunEngine{Engine: eng, Exchange: dryEx, Stops: stops, SignalUC: signalUC}
 }

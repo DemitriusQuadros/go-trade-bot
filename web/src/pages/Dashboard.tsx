@@ -7,6 +7,7 @@ import {
   usePerformanceSnapshots,
   usePlatformSettings,
   useSyncAccount,
+  useCloseSignal,
 } from '@/hooks/queries';
 import { useSSE } from '@/hooks/useSSE';
 import { useToast } from '@/context/ToastContext';
@@ -18,6 +19,8 @@ import { PnlHistoryChart } from '@/components/charts/PnlHistoryChart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { DashboardEnvironmentSwitcher, DashboardViewMode } from '@/components/domain/DashboardEnvironmentSwitcher';
 import { DashboardCapitalHero } from '@/components/domain/DashboardCapitalHero';
+import { PositionProximityGauge } from '@/components/domain/PositionProximityGauge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   TrendingUp,
   Cpu,
@@ -26,7 +29,7 @@ import {
   Coins,
   ExternalLink,
 } from 'lucide-react';
-import { formatNumber, formatPct, formatPrice, formatUsd } from '@/lib/format';
+import { formatNumber, formatPct, formatPrice, formatUsd, formatElapsed } from '@/lib/format';
 import { useT } from '@/i18n';
 
 export function Dashboard() {
@@ -43,6 +46,14 @@ export function Dashboard() {
   // Sub-filters for tables
   const [positionsTab, setPositionsTab] = useState<'all' | 'dryrun' | 'live'>('all');
   const [strategiesTab, setStrategiesTab] = useState<'all' | 'dryrun' | 'live'>('all');
+  const [closingPosition, setClosingPosition] = useState<{
+    id: number;
+    symbol: string;
+    strategy_name: string;
+    currentPrice: number;
+  } | null>(null);
+
+  const closeSignalMutation = useCloseSignal();
 
   const { data: account, isLoading: isAccountLoading, refetch: refetchAccount } = useAccount();
   const { data: settings } = usePlatformSettings();
@@ -98,6 +109,10 @@ export function Dashboard() {
         unrealizedPnLPct = entryPrice > 0 ? (unrealizedPnL / (entryPrice * quantity)) * 100 : 0;
       }
 
+      const takeProfitPrice = ssePos?.take_profit_price ?? entryOrder?.take_profit_price ?? 0;
+      const stopLossPrice = ssePos?.stop_loss_price ?? entryOrder?.stop_loss_price ?? 0;
+      const openedAt = ssePos?.opened_at ?? signal.created_at;
+
       return {
         id: signal.id,
         symbol: signal.symbol,
@@ -107,6 +122,9 @@ export function Dashboard() {
         brokerOrderId,
         entryPrice,
         currentPrice,
+        takeProfitPrice,
+        stopLossPrice,
+        openedAt,
         quantity,
         unrealizedPnL,
         unrealizedPnLPct,
@@ -328,9 +346,21 @@ export function Dashboard() {
                 <h2 className="text-base font-bold text-foreground">
                   {t('dashboard.openPositions')}
                 </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t('dashboard.openPositionsSubtitle')}
-                </p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-muted-foreground">
+                    {t('dashboard.openPositionsSubtitle')}
+                  </p>
+                  {sseConnected ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{t('dashboard.wsLive')}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                      <span>{t('dashboard.pollingFallback')}</span>
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -396,11 +426,13 @@ export function Dashboard() {
                     <TableHead>{t('dashboard.colExecution')}</TableHead>
                     <TableHead>{t('dashboard.colSymbol')}</TableHead>
                     <TableHead>{t('dashboard.colStrategyId')}</TableHead>
-                    <TableHead>{t('dashboard.colOrderId')}</TableHead>
                     <TableHead>{t('dashboard.colEntryPrice')}</TableHead>
                     <TableHead>{t('dashboard.colCurrentPrice')}</TableHead>
+                    <TableHead className="min-w-[190px]">{t('dashboard.colProximity')}</TableHead>
                     <TableHead>{t('dashboard.colQuantity')}</TableHead>
                     <TableHead>{t('dashboard.colUnrealized')}</TableHead>
+                    <TableHead>{t('dashboard.colAge')}</TableHead>
+                    <TableHead className="text-right">{t('dashboard.colActions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -425,11 +457,17 @@ export function Dashboard() {
                           {pos.strategy_name}
                         </Link>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {pos.brokerOrderId || '—'}
-                      </TableCell>
                       <TableCell>${formatNumber(pos.entryPrice, { digits: 2 })}</TableCell>
-                      <TableCell>${formatNumber(pos.currentPrice, { digits: 2 })}</TableCell>
+                      <TableCell className="font-semibold">${formatNumber(pos.currentPrice, { digits: 2 })}</TableCell>
+                      <TableCell>
+                        <PositionProximityGauge
+                          entryPrice={pos.entryPrice}
+                          currentPrice={pos.currentPrice}
+                          takeProfitPrice={pos.takeProfitPrice}
+                          stopLossPrice={pos.stopLossPrice}
+                          compact
+                        />
+                      </TableCell>
                       <TableCell>{formatNumber(pos.quantity, { digits: 4 })}</TableCell>
                       <TableCell>
                         <span
@@ -439,6 +477,18 @@ export function Dashboard() {
                         >
                           {formatUsd(pos.unrealizedPnL, { signed: true, digits: 2 })} ({formatPct(pos.unrealizedPnLPct)})
                         </span>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground font-mono">
+                        {formatElapsed(pos.openedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <button
+                          type="button"
+                          onClick={() => setClosingPosition(pos)}
+                          className="px-2 py-1 rounded text-xs font-medium text-destructive hover:bg-destructive/10 border border-destructive/20 transition-colors"
+                        >
+                          {t('dashboard.marketClose')}
+                        </button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -588,6 +638,30 @@ export function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {closingPosition && (
+        <ConfirmDialog
+          isOpen={!!closingPosition}
+          title={t('dashboard.confirmCloseTitle', { symbol: closingPosition.symbol })}
+          message={t('dashboard.confirmCloseDesc', {
+            symbol: closingPosition.symbol,
+            strategy: closingPosition.strategy_name,
+            price: formatNumber(closingPosition.currentPrice, { digits: 2 }),
+          })}
+          confirmText={closeSignalMutation.isPending ? t('dashboard.closing') : t('dashboard.marketClose')}
+          isDangerous
+          onConfirm={async () => {
+            try {
+              await closeSignalMutation.mutateAsync(closingPosition.id);
+              toast(t('dashboard.positionClosedDesc', { symbol: closingPosition.symbol }), 'success');
+              setClosingPosition(null);
+            } catch (err: any) {
+              toast(err?.message || 'Failed to close position', 'error');
+            }
+          }}
+          onCancel={() => setClosingPosition(null)}
+        />
+      )}
     </div>
   );
 }

@@ -82,5 +82,9 @@ jobs:
             echo "🔄 [3/3] Gracefully restarting TradeBot services..."
             docker compose up -d tradebot-api tradebot-worker tradebot-agent tradebot-mcp
 
+            echo "🧹 [4/4] Pruning build cache to prevent disk exhaustion..."
+            docker builder prune -f --keep-storage 2GB
+            docker image prune -f
+
             echo "✅ Deployment completed successfully!"
             docker ps --filter "name=tradebot" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

@@ -266,6 +266,8 @@ export const api = {
   },
   getSignal: (id: number, opts?: { signal?: AbortSignal }) =>
     api.get<Signal>(`/signal/${id}`, opts),
+  closeSignal: (id: number) =>
+    api.post<void>(`/signal/close/${id}`),
 
   // Market data
   getTickerPrices: (symbol?: string, opts?: { signal?: AbortSignal }) => {

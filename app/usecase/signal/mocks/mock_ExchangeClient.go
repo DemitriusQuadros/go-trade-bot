@@ -207,6 +207,36 @@ func (_m *ExchangeClient) SubscribeKline(ctx context.Context, symbol string, int
 	return r0, r1
 }
 
+// SubscribeBookTicker provides a mock function with given fields: ctx, symbol
+func (_m *ExchangeClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
+	ret := _m.Called(ctx, symbol)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SubscribeBookTicker")
+	}
+
+	var r0 <-chan exchange.BookTicker
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (<-chan exchange.BookTicker, error)); ok {
+		return rf(ctx, symbol)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) <-chan exchange.BookTicker); ok {
+		r0 = rf(ctx, symbol)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(<-chan exchange.BookTicker)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, symbol)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // NewExchangeClient creates a new instance of ExchangeClient. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewExchangeClient(t interface {

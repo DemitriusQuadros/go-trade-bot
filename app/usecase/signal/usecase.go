@@ -664,10 +664,18 @@ func (s SignalUseCase) Close(ctx context.Context, id uint) error {
 		return fmt.Errorf("no ticker prices found for symbol %s", signal.Symbol)
 	}
 
-	return s.GenerateSellSignal(ExitSignal{
+	uc := s
+	if len(signal.Orders) > 0 && exchange.IsSimulatedOrderID(signal.Orders[0].BrokerOrderID) && !exchange.IsSimulatedClient(s.Exchange) {
+		dryEx := exchange.NewDryRunExchange(s.Exchange, 0.05, s.Metrics)
+		uc = NewSignalUseCase(s.Repository, s.AccountUseCase, dryEx, s.Notifier, nil, s.Sizer)
+		uc.FeePct = s.FeePct
+	}
+
+	return uc.GenerateSellSignal(ExitSignal{
 		Symbol:       signal.Symbol,
 		StrategyID:   signal.StrategyID,
 		StrategyName: signal.Strategy.Name,
+		Mode:         signal.Mode,
 		ExitPrice:    float32(prices[0].Price),
 		ExitReason:   "manual",
 	})

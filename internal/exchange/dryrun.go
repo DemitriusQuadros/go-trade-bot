@@ -269,3 +269,7 @@ func (d *DryRunExchange) GetAccountBalance(ctx context.Context) (AccountBalance,
 func (d *DryRunExchange) SubscribeKline(ctx context.Context, symbol, interval string) (<-chan Candle, error) {
 	return d.readOnly.SubscribeKline(ctx, symbol, interval)
 }
+
+func (d *DryRunExchange) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
+	return d.readOnly.SubscribeBookTicker(ctx, symbol)
+}

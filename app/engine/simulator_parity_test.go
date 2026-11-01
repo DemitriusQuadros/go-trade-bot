@@ -150,6 +150,11 @@ func (f *fixedSequenceExchange) SubscribeKline(ctx context.Context, symbol, inte
 	return ch, nil
 }
 
+func (f *fixedSequenceExchange) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
+	ch := make(chan exchange.BookTicker)
+	return ch, nil
+}
+
 type countedFeed struct {
 	feed.Feed
 	count int

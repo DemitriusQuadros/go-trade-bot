@@ -32,6 +32,8 @@ import (
 	"go-trade-bot/app/strategies/script"
 
 	accountrepo "go-trade-bot/app/repository/account"
+	signal_repo "go-trade-bot/app/repository/signal"
+	"go-trade-bot/app/watcher"
 	backtest_worker "go-trade-bot/app/workers/backtest"
 	optimize_worker "go-trade-bot/app/workers/optimize"
 	tasks "go-trade-bot/app/workers/strategy"
@@ -211,8 +213,21 @@ func RegisterHandlers(
 	StartMetricsServer(cfg)
 	StartInternalBridgeServer(cfg, internalSettingsHandler)
 
+	sigRepository := signal_repo.NewSignalRepository(db)
+	posWatcher := watcher.NewPositionWatcher(
+		swappableExchange,
+		eng.SignalUseCase,
+		dryRun.SignalUC,
+		sigRepository,
+		collector,
+	)
+
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			if err := posWatcher.Start(ctx); err != nil {
+				log.Printf("failed to start position watcher: %v", err)
+			}
+
 			mux := asynq.NewServeMux()
 
 			mux.Handle(tasks.StrategyTask, middleware.AsynqConfigMiddleware(
@@ -261,6 +276,7 @@ func RegisterHandlers(
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
+			posWatcher.Stop()
 			scheduler.Shutdown()
 			server.Shutdown()
 			return nil

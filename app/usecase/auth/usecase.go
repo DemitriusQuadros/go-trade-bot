@@ -300,10 +300,13 @@ func (u *UseCase) Logout(ctx context.Context, raw string) error {
 	return u.repo.DeleteSession(ctx, s.ID)
 }
 
-// SetupRequired reports whether there are no users yet.
+// SetupRequired reports whether there are no users yet. It fails closed (returns false) if the query fails.
 func (u *UseCase) SetupRequired(ctx context.Context) (bool, error) {
 	n, err := u.repo.CountUsers(ctx)
-	return n == 0, err
+	if err != nil {
+		return false, err
+	}
+	return n == 0, nil
 }
 
 // Bootstrap creates the first admin when the users table is empty and both

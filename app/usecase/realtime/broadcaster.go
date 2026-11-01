@@ -41,8 +41,11 @@ type PositionUpdatePayload struct {
 	SignalID         uint      `json:"signal_id"`
 	Symbol           string    `json:"symbol"`
 	StrategyID       uint      `json:"strategy_id"`
+	Mode             string    `json:"mode"`
 	EntryPrice       float64   `json:"entry_price"`
 	CurrentPrice     float64   `json:"current_price"`
+	TakeProfitPrice  float64   `json:"take_profit_price"`
+	StopLossPrice    float64   `json:"stop_loss_price"`
 	UnrealizedPnL    float64   `json:"unrealized_pnl"`
 	UnrealizedPnLPct float64   `json:"unrealized_pnl_pct"`
 	Quantity         float64   `json:"quantity"`
@@ -212,10 +215,12 @@ func (b *DashboardBroadcaster) pollOnce(ctx context.Context) {
 			}
 		}
 
-		var entryPrice, quantity float64
+		var entryPrice, quantity, tpPrice, slPrice float64
 		if len(sig.Orders) > 0 {
 			entryPrice = float64(sig.Orders[0].EntryPrice)
 			quantity = float64(sig.Orders[0].Quantity)
+			tpPrice = float64(sig.Orders[0].TakeProfitPrice)
+			slPrice = float64(sig.Orders[0].StopLossPrice)
 		}
 
 		if hasPrice && entryPrice > 0 {
@@ -228,8 +233,11 @@ func (b *DashboardBroadcaster) pollOnce(ctx context.Context) {
 					SignalID:         sig.ID,
 					Symbol:           sig.Symbol,
 					StrategyID:       sig.StrategyID,
+					Mode:             sig.Mode,
 					EntryPrice:       entryPrice,
 					CurrentPrice:     curPrice,
+					TakeProfitPrice:  tpPrice,
+					StopLossPrice:    slPrice,
 					UnrealizedPnL:    unrealized,
 					UnrealizedPnLPct: unrealizedPct,
 					Quantity:         quantity,
