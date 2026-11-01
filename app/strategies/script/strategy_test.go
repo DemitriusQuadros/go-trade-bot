@@ -142,6 +142,9 @@ func (s *stubExchange) GetAccountBalance(context.Context) (exchange.AccountBalan
 func (s *stubExchange) SubscribeKline(context.Context, string, string) (<-chan exchange.Candle, error) {
 	return nil, nil
 }
+func (s *stubExchange) SubscribeBookTicker(context.Context, string) (<-chan exchange.BookTicker, error) {
+	return nil, nil
+}
 
 // stubSignalUC reports "no open position" so the engine runs the entry path.
 type stubSignalUC struct{}
