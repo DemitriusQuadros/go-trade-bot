@@ -717,3 +717,72 @@ func TestBacktestUseCase_DeleteBacktest_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, backtest.ErrBacktestRunNotFound))
 }
+
+func TestBacktestUseCase_Run_PopulatesTotalFeesPaid(t *testing.T) {
+	candles := generateCandles(100)
+	candleRepo := &mockCandleRepo{candles: candles}
+	stratRepo := &mockStrategyRepo{
+		strategy: entities.Strategy{ID: 1, Name: "RSI Momentum", StrategyName: "script", ScriptSource: noTradeScript},
+	}
+	backtestRepo := &mockBacktestRepo{}
+	metricsProvider := &mockMetricsProvider{
+		metrics: metrics_provider.BacktestMetrics{
+			TotalFeesPaid: 42.75,
+		},
+	}
+
+	uc := backtest.NewBacktestUseCase(
+		candleRepo, backtestRepo, stratRepo, metricsProvider,
+		backtest.ThresholdPolicy{}, t.TempDir(), 20,
+	)
+
+	run, err := uc.Run(context.Background(), backtest.RunRequest{
+		StrategyID: 1,
+		Symbol:     "BTCUSDT",
+		Timeframe:  "1m",
+		StartDate:  candles[0].OpenTime,
+		EndDate:    candles[len(candles)-1].OpenTime.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 42.75, run.TotalFeesPaid, "the returned run must carry TotalFeesPaid from metrics")
+	require.Len(t, backtestRepo.runs, 1)
+	assert.Equal(t, 42.75, backtestRepo.runs[0].TotalFeesPaid, "persisted run must carry TotalFeesPaid")
+}
+
+func TestBacktestUseCase_RunWalkForwardForStrategy_PopulatesTotalFeesPaid(t *testing.T) {
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	candles := oscillatingCandles(200)
+	shift := start.Add(91 * 24 * time.Hour).Sub(candles[0].OpenTime)
+	for i := range candles {
+		candles[i].OpenTime = candles[i].OpenTime.Add(shift)
+	}
+	strat := entities.Strategy{
+		ID: 1, Name: "WF Strat", StrategyName: "script", ScriptSource: noTradeScript,
+	}
+	btRepo := &mockBacktestRepo{}
+	metricsProvider := &mockMetricsProvider{
+		metrics: metrics_provider.BacktestMetrics{
+			TotalFeesPaid: 88.5,
+		},
+	}
+	uc := backtest.NewBacktestUseCase(
+		&mockCandleRepo{candles: candles}, btRepo, &mockStrategyRepo{strategy: strat},
+		metricsProvider, backtest.DefaultThresholdPolicy(), t.TempDir(), 20,
+	)
+
+	req := backtest.WalkForwardRequest{
+		StrategyID:  strat.ID,
+		Symbol:      "BTCUSDT",
+		Timeframe:   "1m",
+		StartDate:   start,
+		EndDate:     start.Add(121 * 24 * time.Hour),
+		TrainMonths: 3,
+		TestMonths:  1,
+	}
+
+	run, err := uc.RunWalkForwardForStrategy(context.Background(), strat, req)
+	require.NoError(t, err)
+	assert.Equal(t, 88.5, run.TotalFeesPaid, "walk forward run must carry TotalFeesPaid from metrics")
+	require.Len(t, btRepo.runs, 1)
+	assert.Equal(t, 88.5, btRepo.runs[0].TotalFeesPaid, "persisted walk forward run must carry TotalFeesPaid")
+}

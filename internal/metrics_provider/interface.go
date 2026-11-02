@@ -4,14 +4,18 @@ import "time"
 
 // TradeLogEntry records the execution details of a single trade.
 type TradeLogEntry struct {
-	Symbol     string    `json:"symbol"`
-	EntryTime  time.Time `json:"entry_time"`
-	EntryPrice float64   `json:"entry_price"`
-	ExitTime   time.Time `json:"exit_time"`
-	ExitPrice  float64   `json:"exit_price"`
-	Quantity   float64   `json:"quantity"`
-	Profit     float64   `json:"profit"` // net of fees
-	ExitReason string    `json:"exit_reason"` // "take_profit" | "stop_loss" | "manual" | "band_cross" | "open_at_end"
+	Symbol           string    `json:"symbol"`
+	EntryTime        time.Time `json:"entry_time"`
+	EntryPrice       float64   `json:"entry_price"`
+	ExitTime         time.Time `json:"exit_time"`
+	ExitPrice        float64   `json:"exit_price"`
+	Quantity         float64   `json:"quantity"`
+	Profit           float64   `json:"profit"` // net of fees
+	ExitReason       string    `json:"exit_reason"` // "take_profit" | "stop_loss" | "manual" | "band_cross" | "open_at_end"
+	Side             string    `json:"side,omitempty"`
+	Leverage         float64   `json:"leverage,omitempty"`
+	LiquidationPrice float64   `json:"liquidation_price,omitempty"`
+	FundingPaid      float64   `json:"funding_paid,omitempty"`
 }
 
 // EquityPoint captures portfolio value at a point in time.
@@ -30,6 +34,9 @@ type BacktestMetrics struct {
 	AvgTradeDuration time.Duration `json:"avg_trade_duration"`
 	TotalReturnPct   float64       `json:"total_return_pct"`
 	EquityCurve      []EquityPoint `json:"equity_curve"`
+	TotalFeesPaid    float64       `json:"total_fees_paid,omitempty"`
+	TotalFundingPaid float64       `json:"total_funding_paid,omitempty"`
+	Liquidations     int           `json:"liquidations,omitempty"`
 }
 
 // MetricsProvider defines the interface for calculating trading performance metrics.

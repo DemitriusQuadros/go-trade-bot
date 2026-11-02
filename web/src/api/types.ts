@@ -80,6 +80,9 @@ export interface StrategyUpdateRequest {
 // --- Signal / Order (Positions) ------------------------------------------
 export type SignalStatus = 'open' | 'closed';
 export type MarginType = 'isolated' | 'cross';
+export type PositionSide = 'LONG' | 'SHORT';
+export type MarketType = 'spot' | 'futures';
+export type PositionMode = 'one_way' | 'hedge';
 
 export interface Order {
   id: number;
@@ -100,6 +103,10 @@ export interface Order {
   executed_qty: number;
   is_closing: boolean;
   profit: number;
+  position_side?: PositionSide | string;
+  initial_margin?: number;
+  liquidation_price?: number;
+  accumulated_funding?: number;
   created_at: string;
   updated_at: string;
 }
@@ -110,6 +117,7 @@ export interface Signal {
   strategy_id: number;
   status: SignalStatus;
   mode?: StrategyMode | string;
+  position_side?: PositionSide | string;
   orders: Order[];
   created_at: string;
   updated_at: string;
@@ -194,6 +202,12 @@ export interface BacktestRun {
   html_report_path: string;
   equity_curve: EquityPoint[];
   execution_trace?: TraceRecord[];
+  market_type?: MarketType | string;
+  leverage?: number;
+  margin_type?: MarginType | string;
+  total_fees_paid?: number;
+  total_funding_paid?: number;
+  liquidations?: number;
   trade_log?: Array<{
     entry_time: string;
     exit_time: string;
@@ -203,6 +217,11 @@ export interface BacktestRun {
     profit: number;
     exit_reason?: string;
     symbol: string;
+    position_side?: PositionSide | string;
+    leverage?: number;
+    initial_margin?: number;
+    liquidation_price?: number;
+    funding_paid?: number;
   }>;
   created_at: string;
 }
@@ -383,6 +402,8 @@ export interface PlatformSettings {
   broker_testnet_api_key: string;
   broker_testnet_api_secret: string;
   mode: 'backtest' | 'dryrun' | 'paper' | 'live';
+  market_type?: MarketType;
+  position_mode?: PositionMode;
   testnet: boolean;
   webhook_url: string;
   dry_run: DryRunSettings;
@@ -409,6 +430,8 @@ export interface PlatformSettingsUpdateRequest {
   broker_testnet_api_key?: string;
   broker_testnet_api_secret?: string;
   mode: PlatformSettings['mode'];
+  market_type?: MarketType;
+  position_mode?: PositionMode;
   confirm_live?: boolean;
   testnet: boolean;
   webhook_url: string;

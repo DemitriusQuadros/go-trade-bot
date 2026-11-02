@@ -1,6 +1,9 @@
 package exchange
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // OrderSide is the direction of a placed order.
 type OrderSide string
@@ -44,6 +47,8 @@ type PlaceOrderRequest struct {
 	Quantity      float64
 	StopPrice     float64 // required iff Type == OrderTypeStopMarket; ignored otherwise
 	ClientOrderID string  // caller-supplied idempotency key, see Spec 02 Idempotency
+	PositionSide  PositionSide // "LONG" or "SHORT" (mapped by Futures adapter based on One-Way vs Hedge mode; ignored on Spot)
+	ReduceOnly    bool         // Futures One-Way: true for protective stops and position-closing market orders; ignored on Spot and suppressed in Hedge Mode
 }
 
 // OrderResult is the ACL's response shape, returned by PlaceOrder/GetOrder.
@@ -90,4 +95,55 @@ type AccountBalance struct {
 	Asset  string
 	Free   float64
 	Locked float64
+}
+
+// PositionSide specifies the target position leg on Futures.
+type PositionSide string
+
+const (
+	PositionSideBoth  PositionSide = "BOTH"
+	PositionSideLong  PositionSide = "LONG"
+	PositionSideShort PositionSide = "SHORT"
+)
+
+// MarginMode represents Isolated or Cross margin on Futures.
+type MarginMode string
+
+const (
+	MarginModeIsolated MarginMode = "ISOLATED"
+	MarginModeCross    MarginMode = "CROSSED"
+)
+
+// PositionMode represents One-Way ("one_way") vs Hedge ("hedge", dualSidePosition=true) mode.
+type PositionMode string
+
+const (
+	PositionModeOneWay PositionMode = "one_way"
+	PositionModeHedge  PositionMode = "hedge"
+)
+
+// PositionRisk represents an open Futures position from GET /fapi/v2/positionRisk.
+type PositionRisk struct {
+	Symbol           string
+	PositionSide     PositionSide // "BOTH" (One-Way) or "LONG"/"SHORT" (Hedge)
+	PositionAmt      float64      // >0 for Long, <0 for Short, 0 for Flat
+	EntryPrice       float64
+	MarkPrice        float64
+	UnRealizedProfit float64
+	LiquidationPrice float64
+	Leverage         int
+	MarginType       string // "isolated" or "cross"
+	IsolatedMargin   float64
+}
+
+// FuturesClient is an optional capability interface implemented by
+// BinanceFuturesAdapter, BinanceFuturesTestnetAdapter, SwappableExchangeClient,
+// ReadOnlyClient, DryRunExchange, and SimulatedFillExchange.
+type FuturesClient interface {
+	SetLeverage(ctx context.Context, symbol string, leverage int) error
+	SetMarginType(ctx context.Context, symbol string, marginMode MarginMode) error
+	SetPositionMode(ctx context.Context, mode PositionMode) error
+	GetPositionMode(ctx context.Context) (PositionMode, error)
+	GetPositionRisk(ctx context.Context, symbol string, side PositionSide) (PositionRisk, error)
+	GetMarkPrice(ctx context.Context, symbol string) (markPrice float64, fundingRate float64, nextFundingTime time.Time, err error)
 }

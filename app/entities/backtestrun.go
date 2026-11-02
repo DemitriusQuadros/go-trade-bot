@@ -36,6 +36,12 @@ type BacktestRun struct {
 	HTMLReportPath string         `json:"html_report_path"`
 	TradeLogJSON   datatypes.JSON `json:"trade_log_json"`
 	InitialCapital float64        `json:"initial_capital"`
+	MarketType       string  `json:"market_type" gorm:"size:16;default:'spot'"`
+	Leverage         int     `json:"leverage" gorm:"default:1"`
+	MarginType       string  `json:"margin_type" gorm:"size:16;default:'isolated'"`
+	TotalFeesPaid    float64 `json:"total_fees_paid" gorm:"default:0"`
+	TotalFundingPaid float64 `json:"total_funding_paid" gorm:"default:0"`
+	Liquidations     int     `json:"liquidations" gorm:"default:0"`
 	// MonteCarloJSON caches the most recently computed engine.MonteCarloResult
 	// for this run.
 	MonteCarloJSON datatypes.JSON `json:"monte_carlo_json,omitempty" gorm:"type:jsonb"`

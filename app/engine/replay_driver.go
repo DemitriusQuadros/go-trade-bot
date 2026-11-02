@@ -103,6 +103,11 @@ func (d *ReplayDriver) collectTradeLog(lastCandle exchange.Candle) ([]metrics_pr
 			entryTime = s.CreatedAt
 		}
 
+		side := string(order.PositionSide)
+		if side == "" {
+			side = "LONG"
+		}
+
 		if s.Status == entities.Closed {
 			exitTime := order.UpdatedAt
 			if exitTime.IsZero() {
@@ -123,14 +128,18 @@ func (d *ReplayDriver) collectTradeLog(lastCandle exchange.Candle) ([]metrics_pr
 			}
 
 			tradeLog = append(tradeLog, metrics_provider.TradeLogEntry{
-				Symbol:     s.Symbol,
-				EntryTime:  entryTime,
-				EntryPrice: float64(order.EntryPrice),
-				ExitTime:   exitTime,
-				ExitPrice:  float64(order.ExitPrice),
-				Quantity:   float64(order.Quantity),
-				Profit:     float64(order.Profit),
-				ExitReason: exitReason,
+				Symbol:           s.Symbol,
+				EntryTime:        entryTime,
+				EntryPrice:       float64(order.EntryPrice),
+				ExitTime:         exitTime,
+				ExitPrice:        float64(order.ExitPrice),
+				Quantity:         float64(order.Quantity),
+				Profit:           float64(order.Profit),
+				ExitReason:       exitReason,
+				Side:             side,
+				Leverage:         float64(order.Leverage),
+				LiquidationPrice: float64(order.LiquidationPrice),
+				FundingPaid:      float64(order.AccumulatedFunding),
 			})
 		} else if s.Status == entities.Open {
 			// Mark-to-market for open position at end
@@ -138,18 +147,26 @@ func (d *ReplayDriver) collectTradeLog(lastCandle exchange.Candle) ([]metrics_pr
 			if lastCandle.Close > 0 {
 				exitPrice = lastCandle.Close
 			}
-			unrealizedProfit := (exitPrice - float64(order.EntryPrice)) * float64(order.Quantity)
-			unrealizedProfit -= float64(order.EntryFee + order.ExitFee)
+			var unrealizedProfit float64
+			if order.PositionSide == entities.PositionSideShort {
+				unrealizedProfit = (float64(order.EntryPrice) - exitPrice) * float64(order.Quantity) - float64(order.EntryFee+order.ExitFee+order.AccumulatedFunding)
+			} else {
+				unrealizedProfit = (exitPrice - float64(order.EntryPrice)) * float64(order.Quantity) - float64(order.EntryFee+order.ExitFee+order.AccumulatedFunding)
+			}
 
 			tradeLog = append(tradeLog, metrics_provider.TradeLogEntry{
-				Symbol:     s.Symbol,
-				EntryTime:  entryTime,
-				EntryPrice: float64(order.EntryPrice),
-				ExitTime:   lastCandle.OpenTime,
-				ExitPrice:  exitPrice,
-				Quantity:   float64(order.Quantity),
-				Profit:     unrealizedProfit,
-				ExitReason: "open_at_end",
+				Symbol:           s.Symbol,
+				EntryTime:        entryTime,
+				EntryPrice:       float64(order.EntryPrice),
+				ExitTime:         lastCandle.OpenTime,
+				ExitPrice:        exitPrice,
+				Quantity:         float64(order.Quantity),
+				Profit:           unrealizedProfit,
+				ExitReason:       "open_at_end",
+				Side:             side,
+				Leverage:         float64(order.Leverage),
+				LiquidationPrice: float64(order.LiquidationPrice),
+				FundingPaid:      float64(order.AccumulatedFunding),
 			})
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go-trade-bot/internal/futuresmath"
 	"go-trade-bot/internal/metrics"
 )
 
@@ -87,11 +88,16 @@ type DryRunExchange struct {
 	mu        sync.Mutex
 	triggered map[string]OrderResult // stops fired by TriggerStop, not yet cleared
 	fills     map[string]OrderResult // recent market fills, for GetOrder
+
+	leverage     map[string]int
+	marginMode   map[string]MarginMode
+	positionMode PositionMode
 }
 
 var (
 	_ ExchangeClient  = (*DryRunExchange)(nil)
 	_ SimulatedClient = (*DryRunExchange)(nil)
+	_ FuturesClient   = (*DryRunExchange)(nil)
 )
 
 // NewDryRunExchange wraps real in a ReadOnlyClient and simulates every order
@@ -101,11 +107,14 @@ func NewDryRunExchange(real ExchangeClient, slippagePct float64, collector *metr
 		readOnly: NewReadOnlyClient(real, func(op string) {
 			log.Printf("SAFETY: dryrun exchange blocked a real %s call - simulated orders must never reach the exchange", op)
 		}),
-		slippagePct: slippagePct,
-		metrics:     collector,
-		Now:         time.Now,
-		triggered:   make(map[string]OrderResult),
-		fills:       make(map[string]OrderResult),
+		slippagePct:  slippagePct,
+		metrics:      collector,
+		Now:          time.Now,
+		triggered:    make(map[string]OrderResult),
+		fills:        make(map[string]OrderResult),
+		leverage:     make(map[string]int),
+		marginMode:   make(map[string]MarginMode),
+		positionMode: PositionModeOneWay,
 	}
 }
 
@@ -186,6 +195,27 @@ func (d *DryRunExchange) pruneFillsLocked(now time.Time) {
 	}
 }
 
+// TriggerStopWithSide marks the resting simulated stop orderID as filled at
+// stopPrice moved against the side direction by SlippagePct (higher for Buy, lower for Sell).
+func (d *DryRunExchange) TriggerStopWithSide(orderID string, side OrderSide, quantity, stopPrice float64, at time.Time) OrderResult {
+	fillPrice := stopPrice * (1 - d.slippagePct/100)
+	if side == SideBuy {
+		fillPrice = stopPrice * (1 + d.slippagePct/100)
+	}
+	res := OrderResult{
+		BrokerOrderID: orderID,
+		Status:        OrderStatusFilled,
+		ExecutedQty:   quantity,
+		AvgFillPrice:  fillPrice,
+		FilledAt:      at,
+	}
+	d.mu.Lock()
+	d.triggered[orderID] = res
+	d.mu.Unlock()
+	d.countOrder(string(side), OrderTypeStopMarketTriggered)
+	return res
+}
+
 // TriggerStop marks the resting simulated stop orderID as filled at
 // stopPrice moved against the seller by SlippagePct. Until ClearTriggeredStop,
 // CancelOrder(orderID) reports ErrOrderNotFound and GetOrder(orderID) returns
@@ -193,18 +223,7 @@ func (d *DryRunExchange) pruneFillsLocked(now time.Time) {
 // so SignalUseCase.GenerateSellSignal closes the position through its normal
 // stop reconciliation path.
 func (d *DryRunExchange) TriggerStop(orderID string, quantity, stopPrice float64, at time.Time) OrderResult {
-	res := OrderResult{
-		BrokerOrderID: orderID,
-		Status:        OrderStatusFilled,
-		ExecutedQty:   quantity,
-		AvgFillPrice:  stopPrice * (1 - d.slippagePct/100),
-		FilledAt:      at,
-	}
-	d.mu.Lock()
-	d.triggered[orderID] = res
-	d.mu.Unlock()
-	d.countOrder(string(SideSell), OrderTypeStopMarketTriggered)
-	return res
+	return d.TriggerStopWithSide(orderID, SideSell, quantity, stopPrice, at)
 }
 
 // ClearTriggeredStop forgets a TriggerStop record once the position is
@@ -272,4 +291,74 @@ func (d *DryRunExchange) SubscribeKline(ctx context.Context, symbol, interval st
 
 func (d *DryRunExchange) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
 	return d.readOnly.SubscribeBookTicker(ctx, symbol)
+}
+
+// SetLeverage sets simulated leverage purely in memory without reaching the real exchange.
+func (d *DryRunExchange) SetLeverage(ctx context.Context, symbol string, leverage int) error {
+	if leverage <= 0 {
+		leverage = 1
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.leverage[symbol] = leverage
+	return nil
+}
+
+// SetMarginType sets simulated margin mode purely in memory without reaching the real exchange.
+func (d *DryRunExchange) SetMarginType(ctx context.Context, symbol string, marginMode MarginMode) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.marginMode[symbol] = marginMode
+	return nil
+}
+
+// SetPositionMode sets simulated position mode purely in memory without reaching the real exchange.
+func (d *DryRunExchange) SetPositionMode(ctx context.Context, mode PositionMode) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.positionMode = mode
+	return nil
+}
+
+// GetPositionMode returns simulated position mode purely from in-memory state.
+func (d *DryRunExchange) GetPositionMode(ctx context.Context) (PositionMode, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.positionMode == "" {
+		return PositionModeOneWay, nil
+	}
+	return d.positionMode, nil
+}
+
+// GetPositionRisk returns position risk from inner client if available, or zero PositionRisk without error.
+func (d *DryRunExchange) GetPositionRisk(ctx context.Context, symbol string, side PositionSide) (PositionRisk, error) {
+	if fc, ok := any(d.readOnly).(FuturesClient); ok {
+		risk, err := fc.GetPositionRisk(ctx, symbol, side)
+		if err == nil {
+			return risk, nil
+		}
+	}
+	return PositionRisk{
+		Symbol:       symbol,
+		PositionSide: side,
+	}, nil
+}
+
+// GetMarkPrice returns mark price and funding rate from read-only client if supported,
+// or falls back to ticker price and DefaultFundingRate8h.
+func (d *DryRunExchange) GetMarkPrice(ctx context.Context, symbol string) (markPrice float64, fundingRate float64, nextFundingTime time.Time, err error) {
+	if fc, ok := any(d.readOnly).(FuturesClient); ok {
+		mp, fr, nft, err := fc.GetMarkPrice(ctx, symbol)
+		if err == nil {
+			return mp, fr, nft, nil
+		}
+	}
+	prices, err := d.readOnly.ListTickerPrices(ctx, symbol)
+	if err != nil {
+		return 0, 0, time.Time{}, err
+	}
+	if len(prices) == 0 || prices[0].Price <= 0 {
+		return 0, 0, time.Time{}, fmt.Errorf("dryrun: no ticker price for %s", symbol)
+	}
+	return prices[0].Price, futuresmath.DefaultFundingRate8h, d.Now().Add(8 * time.Hour), nil
 }

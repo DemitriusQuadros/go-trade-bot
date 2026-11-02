@@ -119,7 +119,9 @@ func riskBearingChanged(current, next entities.Settings) bool {
 		current.BrokerTestnetApiKey != next.BrokerTestnetApiKey ||
 		current.BrokerTestnetApiSecret != next.BrokerTestnetApiSecret ||
 		current.Testnet != next.Testnet ||
-		current.Mode != next.Mode
+		current.Mode != next.Mode ||
+		current.EffectiveMarketType() != next.EffectiveMarketType() ||
+		current.EffectivePositionMode() != next.EffectivePositionMode()
 }
 
 // Apply is the single entry point PUT /settings calls (Spec backend-05 SS4).

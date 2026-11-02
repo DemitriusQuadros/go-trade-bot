@@ -91,12 +91,18 @@ type BacktestRunResponse struct {
 	ExecutionTrace any `json:"execution_trace,omitempty"`
 	// Status is queued|running|done|failed (B-02); rows from before async
 	// runs existed read as done. ErrorMessage is set only when failed.
-	Status       string     `json:"status"`
-	ErrorMessage string     `json:"error_message,omitempty"`
-	Timeframe    string     `json:"timeframe,omitempty"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
+	Status           string     `json:"status"`
+	ErrorMessage     string     `json:"error_message,omitempty"`
+	Timeframe        string     `json:"timeframe,omitempty"`
+	MarketType       string     `json:"market_type,omitempty"`
+	Leverage         int        `json:"leverage,omitempty"`
+	MarginType       string     `json:"margin_type,omitempty"`
+	TotalFeesPaid    float64    `json:"total_fees_paid"`
+	TotalFundingPaid float64    `json:"total_funding_paid"`
+	Liquidations     int        `json:"liquidations"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunResponse {
@@ -106,28 +112,34 @@ func ToRunResponse(run entities.BacktestRun, includeTradeLog bool) BacktestRunRe
 	}
 
 	res := BacktestRunResponse{
-		ID:             run.ID,
-		StrategyID:     run.StrategyID,
-		StrategyName:   run.Strategy.Name,
-		Symbol:         run.Symbol,
-		StartDate:      run.StartDate,
-		EndDate:        run.EndDate,
-		IsWalkForward:  run.IsWalkForward,
-		Sharpe:         run.Sharpe,
-		MaxDrawdownPct: run.MaxDrawdownPct,
-		WinRatePct:     run.WinRatePct,
-		ProfitFactor:   pf,
-		TotalTrades:    run.TotalTrades,
-		TotalReturnPct: run.TotalReturnPct,
-		Passed:         run.Passed,
-		HTMLReportPath: run.HTMLReportPath,
-		EquityCurve:    []metrics_provider.EquityPoint{},
-		Status:         string(run.Status),
-		ErrorMessage:   run.ErrorMessage,
-		Timeframe:      run.Timeframe,
-		StartedAt:      run.StartedAt,
-		FinishedAt:     run.FinishedAt,
-		CreatedAt:      run.CreatedAt,
+		ID:               run.ID,
+		StrategyID:       run.StrategyID,
+		StrategyName:     run.Strategy.Name,
+		Symbol:           run.Symbol,
+		StartDate:        run.StartDate,
+		EndDate:          run.EndDate,
+		IsWalkForward:    run.IsWalkForward,
+		Sharpe:           run.Sharpe,
+		MaxDrawdownPct:   run.MaxDrawdownPct,
+		WinRatePct:       run.WinRatePct,
+		ProfitFactor:     pf,
+		TotalTrades:      run.TotalTrades,
+		TotalReturnPct:   run.TotalReturnPct,
+		Passed:           run.Passed,
+		HTMLReportPath:   run.HTMLReportPath,
+		EquityCurve:      []metrics_provider.EquityPoint{},
+		Status:           string(run.Status),
+		ErrorMessage:     run.ErrorMessage,
+		Timeframe:        run.Timeframe,
+		MarketType:       run.MarketType,
+		Leverage:         run.Leverage,
+		MarginType:       run.MarginType,
+		TotalFeesPaid:    run.TotalFeesPaid,
+		TotalFundingPaid: run.TotalFundingPaid,
+		Liquidations:     run.Liquidations,
+		StartedAt:        run.StartedAt,
+		FinishedAt:       run.FinishedAt,
+		CreatedAt:        run.CreatedAt,
 	}
 	if res.Status == "" {
 		res.Status = string(entities.BacktestDone)

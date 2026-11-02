@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScriptEditorState } from '@/pages/WorkbenchShell';
-import { StrategyStatus } from '@/api/types';
+import { StrategyStatus, MarketType, MarginType } from '@/api/types';
 import { useT } from '@/i18n';
 
 interface StrategyMetadataFormProps {
@@ -141,6 +141,65 @@ export function StrategyMetadataForm({
               placeholder="10"
               className="w-full bg-background border border-border rounded px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
             />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="space-y-1">
+            <label htmlFor="strategy-market-type" className="block text-[11px] text-muted-foreground uppercase font-semibold">
+              {t('workbench.marketType')}
+            </label>
+            <select
+              id="strategy-market-type"
+              value={draft.marketType || 'spot'}
+              onChange={(e) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  marketType: e.target.value as MarketType,
+                }))
+              }
+              className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
+            >
+              <option value="spot">{t('workbench.optSpot')}</option>
+              <option value="futures">{t('workbench.optFutures')}</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="strategy-leverage" className="block text-[11px] text-muted-foreground uppercase font-semibold">
+              {t('workbench.leverage')}
+            </label>
+            <input
+              id="strategy-leverage"
+              type="number"
+              min={1}
+              max={125}
+              step={1}
+              value={draft.leverage ?? 1}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                const clamped = isNaN(val) ? 1 : Math.max(1, Math.min(125, val));
+                setDraft((prev) => ({ ...prev, leverage: clamped }));
+              }}
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="strategy-margin-type" className="block text-[11px] text-muted-foreground uppercase font-semibold">
+              {t('workbench.marginType')}
+            </label>
+            <select
+              id="strategy-margin-type"
+              value={draft.marginType || 'isolated'}
+              onChange={(e) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  marginType: e.target.value as MarginType,
+                }))
+              }
+              className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary"
+            >
+              <option value="isolated">{t('workbench.optIsolated')}</option>
+              <option value="cross">{t('workbench.optCross')}</option>
+            </select>
           </div>
         </div>
       </div>

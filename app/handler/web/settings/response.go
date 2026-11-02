@@ -53,6 +53,8 @@ type SettingsResponseDTO struct {
 	BrokerTestnetApiKey    string            `json:"broker_testnet_api_key"`
 	BrokerTestnetApiSecret string            `json:"broker_testnet_api_secret"`
 	Mode                   string            `json:"mode"`
+	MarketType             string            `json:"market_type"`
+	PositionMode           string            `json:"position_mode"`
 	Testnet                bool              `json:"testnet"`
 	WebhookURL             string            `json:"webhook_url"`
 	DryRun                 DryRunSettingsDTO `json:"dry_run"`
@@ -76,6 +78,8 @@ func ToSettingsResponse(s entities.Settings) SettingsResponseDTO {
 		BrokerTestnetApiKey:    MaskSecret(s.BrokerTestnetApiKey),
 		BrokerTestnetApiSecret: MaskSecret(s.BrokerTestnetApiSecret),
 		Mode:                   s.Mode,
+		MarketType:             s.EffectiveMarketType(),
+		PositionMode:           s.EffectivePositionMode(),
 		Testnet:                s.Testnet,
 		WebhookURL:             s.WebhookURL,
 		DryRun: DryRunSettingsDTO{

@@ -150,6 +150,7 @@ func (s *stubExchange) SubscribeBookTicker(context.Context, string) (<-chan exch
 type stubSignalUC struct{}
 
 func (s *stubSignalUC) GenerateBuySignal(signalusecase.EntrySignal) error { return nil }
+func (s *stubSignalUC) GenerateShortSignal(signalusecase.EntrySignal) error { return nil }
 func (s *stubSignalUC) GenerateSellSignal(signalusecase.ExitSignal) error { return nil }
 func (s *stubSignalUC) RealizedPnL(uint, time.Time, time.Time) (float64, error) { return 0, nil }
 func (s *stubSignalUC) GetOpenSignal(string, uint) (entities.Signal, error) {

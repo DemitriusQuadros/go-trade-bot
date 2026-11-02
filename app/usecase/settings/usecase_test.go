@@ -312,3 +312,69 @@ func TestApply_WorkerClientFails_OnRiskBearingChange_DoesNotPersist(t *testing.T
 	assert.ErrorIs(t, err, ErrDrainTimeout)
 	repo.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
 }
+
+func TestApply_RiskBearing_MarketTypeChange_TriggersDrainAndSwap(t *testing.T) {
+	repo := new(mockRepo)
+	exch := new(mockExchange)
+	notif := new(mockNotifier)
+	gate := newMockGate(0)
+
+	current := baseSettings()
+	current.MarketType = "spot"
+	repo.On("Get", mock.Anything).Return(&current, nil)
+
+	next := current
+	next.MarketType = "futures"
+
+	gate.On("SetDraining", true).Return()
+	gate.On("SetDraining", false).Return()
+	gate.On("SetCeiling", strategies.ModeDryRun).Return()
+	gate.On("SetTestnet", true).Return()
+	exch.On("SwapFromConfig", mock.MatchedBy(func(cfg *configuration.Configuration) bool {
+		return cfg.MarketType == "futures"
+	})).Return(nil)
+	notif.On("Swap", mock.Anything).Return(nil)
+	repo.On("Save", mock.Anything, &next).Return(nil)
+
+	u := NewUseCase(repo, exch, notif, gate, nil)
+	got, err := u.Apply(context.Background(), next, false)
+
+	assert.NoError(t, err)
+	assert.Equal(t, next, got)
+	exch.AssertExpectations(t)
+	gate.AssertExpectations(t)
+	repo.AssertExpectations(t)
+}
+
+func TestApply_RiskBearing_PositionModeChange_TriggersDrainAndSwap(t *testing.T) {
+	repo := new(mockRepo)
+	exch := new(mockExchange)
+	notif := new(mockNotifier)
+	gate := newMockGate(0)
+
+	current := baseSettings()
+	current.PositionMode = "one_way"
+	repo.On("Get", mock.Anything).Return(&current, nil)
+
+	next := current
+	next.PositionMode = "hedge"
+
+	gate.On("SetDraining", true).Return()
+	gate.On("SetDraining", false).Return()
+	gate.On("SetCeiling", strategies.ModeDryRun).Return()
+	gate.On("SetTestnet", true).Return()
+	exch.On("SwapFromConfig", mock.MatchedBy(func(cfg *configuration.Configuration) bool {
+		return cfg.PositionMode == "hedge"
+	})).Return(nil)
+	notif.On("Swap", mock.Anything).Return(nil)
+	repo.On("Save", mock.Anything, &next).Return(nil)
+
+	u := NewUseCase(repo, exch, notif, gate, nil)
+	got, err := u.Apply(context.Background(), next, false)
+
+	assert.NoError(t, err)
+	assert.Equal(t, next, got)
+	exch.AssertExpectations(t)
+	gate.AssertExpectations(t)
+	repo.AssertExpectations(t)
+}

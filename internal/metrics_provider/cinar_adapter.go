@@ -45,8 +45,14 @@ func (a *CinarMetricsAdapter) Compute(trades []TradeLogEntry, startingBalance fl
 	grossLoss := 0.0
 	var totalDuration time.Duration
 	closedTradesCount := 0
+	totalFundingPaid := 0.0
+	liquidations := 0
 
 	for _, t := range trades {
+		totalFundingPaid += t.FundingPaid
+		if t.ExitReason == "liquidation" {
+			liquidations++
+		}
 		currentEquity += t.Profit
 		ptTime := t.ExitTime
 		if ptTime.IsZero() {
@@ -122,6 +128,8 @@ func (a *CinarMetricsAdapter) Compute(trades []TradeLogEntry, startingBalance fl
 		AvgTradeDuration: avgDuration,
 		TotalReturnPct:   totalReturnPct,
 		EquityCurve:      equityCurve,
+		TotalFundingPaid: totalFundingPaid,
+		Liquidations:     liquidations,
 	}
 }
 

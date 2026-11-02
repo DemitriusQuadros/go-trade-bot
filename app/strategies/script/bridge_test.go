@@ -226,3 +226,67 @@ end`
 	require.NotNil(t, res.Signal.Sell)
 	assert.Equal(t, 1.0, res.Signal.Sell.Qty)
 }
+
+func TestCallHook_PositionFuturesFieldsAndUnrealizedPnL(t *testing.T) {
+	r := NewRunner(time.Second, nil)
+
+	t.Run("short position exposes side, leverage, liquidation_price, margin_type and unrealized_pnl", func(t *testing.T) {
+		cctx := baseContext()
+		cctx.Price = 90.0 // price dropped from 100 to 90 -> unrealized profit for short!
+		cctx.Position = &strategies.Position{
+			Symbol:           "BTCUSDT",
+			Side:             "short",
+			EntryPrice:       100.0,
+			Quantity:         2.0,
+			Leverage:         10.0,
+			MarginType:       "isolated",
+			LiquidationPrice: 110.0,
+		}
+		// Unrealized PnL for short: (100 - 90) * 2 = 20
+		src := `function update_position(c)
+  if c.position.side == "short" and
+     c.position.leverage == 10 and
+     c.position.margin_type == "isolated" and
+     c.position.liquidation_price == 110 and
+     c.position.unrealized_pnl == 20 then
+    return { buy = { qty = c.position.quantity, price = c.price } }
+  end
+  return nil
+end`
+		res, _, err := r.CallHook("s", "update_position", cctx, nil, src, HookOptSignal, nil)
+		require.NoError(t, err)
+		require.NotNil(t, res.Signal)
+		require.NotNil(t, res.Signal.Buy)
+		assert.Equal(t, 2.0, res.Signal.Buy.Qty)
+	})
+
+	t.Run("long position unrealized_pnl calculation", func(t *testing.T) {
+		cctx := baseContext()
+		cctx.Price = 115.0 // price rose from 100 to 115 -> unrealized profit for long!
+		cctx.Position = &strategies.Position{
+			Symbol:           "BTCUSDT",
+			Side:             "long",
+			EntryPrice:       100.0,
+			Quantity:         3.0,
+			Leverage:         5.0,
+			MarginType:       "cross",
+			LiquidationPrice: 85.0,
+		}
+		// Unrealized PnL for long: (115 - 100) * 3 = 45
+		src := `function update_position(c)
+  if c.position.side == "long" and
+     c.position.leverage == 5 and
+     c.position.margin_type == "cross" and
+     c.position.liquidation_price == 85 and
+     c.position.unrealized_pnl == 45 then
+    return { sell = { qty = c.position.quantity, price = c.price } }
+  end
+  return nil
+end`
+		res, _, err := r.CallHook("s", "update_position", cctx, nil, src, HookOptSignal, nil)
+		require.NoError(t, err)
+		require.NotNil(t, res.Signal)
+		require.NotNil(t, res.Signal.Sell)
+		assert.Equal(t, 3.0, res.Signal.Sell.Qty)
+	})
+}

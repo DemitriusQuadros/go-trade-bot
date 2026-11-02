@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"go-trade-bot/app/engine"
@@ -29,6 +30,10 @@ import (
 
 type StrategyRepository interface {
 	GetByID(ctx context.Context, id uint) (entities.Strategy, error)
+}
+
+type FundingRateRepository interface {
+	ListInRange(ctx context.Context, symbol string, from, to time.Time) ([]entities.FundingRate, error)
 }
 
 type BacktestRepository interface {
@@ -90,6 +95,7 @@ type BacktestUseCase struct {
 	candleRepo      candle.Repository
 	backtestRepo    BacktestRepository
 	strategyRepo    StrategyRepository
+	fundingRepo     FundingRateRepository
 	metricsProvider metrics_provider.MetricsProvider
 	policy          ThresholdPolicy
 	reportsDir      string
@@ -128,6 +134,10 @@ func NewBacktestUseCase(
 
 func (u *BacktestUseCase) SetMetricsCollector(collector *metrics.MetricsCollector) {
 	u.collector = collector
+}
+
+func (u *BacktestUseCase) SetFundingRateRepository(repo FundingRateRepository) {
+	u.fundingRepo = repo
 }
 
 func (u *BacktestUseCase) Run(ctx context.Context, req RunRequest) (entities.BacktestRun, error) {
@@ -386,6 +396,16 @@ func (u *BacktestUseCase) simulate(ctx context.Context, strat entities.Strategy,
 		dbProfitFactor = math.MaxFloat64
 	}
 
+	marketType, stratLeverage, marginType := parseStrategyMarketParams(strat)
+	var totalFundingPaid float64
+	var liquidations int
+	for _, t := range tradeLog {
+		totalFundingPaid += t.FundingPaid
+		if t.ExitReason == entities.ExitReasonLiquidation || t.ExitReason == "liquidation" {
+			liquidations++
+		}
+	}
+
 	return entities.BacktestRun{
 		StrategyID:         strat.ID,
 		Symbol:             req.Symbol,
@@ -405,6 +425,12 @@ func (u *BacktestUseCase) simulate(ctx context.Context, strat entities.Strategy,
 		MetricsJSON:        datatypes.JSON(metricsBytes),
 		ExecutionTraceJSON: executionTraceBytes,
 		InitialCapital:     req.InitialCapital,
+		MarketType:         marketType,
+		Leverage:           stratLeverage,
+		MarginType:         marginType,
+		TotalFeesPaid:      metrics.TotalFeesPaid,
+		TotalFundingPaid:   totalFundingPaid,
+		Liquidations:       liquidations,
 		CreatedAt:          time.Now().UTC(),
 	}, nil
 }
@@ -552,6 +578,16 @@ func (u *BacktestUseCase) computeWalkForward(ctx context.Context, strat entities
 		dbProfitFactor = math.MaxFloat64
 	}
 
+	marketType, stratLeverage, marginType := parseStrategyMarketParams(strat)
+	var totalFundingPaid float64
+	var liquidations int
+	for _, t := range allOOSTrades {
+		totalFundingPaid += t.FundingPaid
+		if t.ExitReason == entities.ExitReasonLiquidation || t.ExitReason == "liquidation" {
+			liquidations++
+		}
+	}
+
 	run := entities.BacktestRun{
 		StrategyID:     strat.ID,
 		Symbol:         req.Symbol,
@@ -570,8 +606,14 @@ func (u *BacktestUseCase) computeWalkForward(ctx context.Context, strat entities
 		HTMLReportPath: htmlPath,
 		TradeLogJSON:   datatypes.JSON(tradeLogBytes),
 		MetricsJSON:    datatypes.JSON(metricsBytes),
-		InitialCapital: req.InitialCapital,
-		CreatedAt:      time.Now().UTC(),
+		InitialCapital:      req.InitialCapital,
+		MarketType:          marketType,
+		Leverage:            stratLeverage,
+		MarginType:          marginType,
+		TotalFeesPaid:       metrics.TotalFeesPaid,
+		TotalFundingPaid:    totalFundingPaid,
+		Liquidations:        liquidations,
+		CreatedAt:           time.Now().UTC(),
 
 		CandidateSourceHash: req.CandidateSourceHash,
 	}
@@ -857,7 +899,23 @@ func (u *BacktestUseCase) executeReplay(
 	eng := engine.NewEngine(simExchange, indicatorProvider, signalUC, accountUC, nil, cache, nil)
 	// A resting stop that fills inside the replay must close the position;
 	// otherwise it stays "open" until a take-profit/exit happens to run.
-	eng.PreCycle = engine.NewBacktestStopEvaluator(signalUC, simExchange)
+	stopEval := engine.NewBacktestStopEvaluator(signalUC, simExchange)
+	if u.fundingRepo != nil {
+		rates, err := u.fundingRepo.ListInRange(ctx, symbol, from, to)
+		if err == nil && len(rates) > 0 {
+			rateMap := make(map[int64]float64, len(rates))
+			for _, r := range rates {
+				rateMap[r.FundingTime.UTC().Unix()] = r.Rate
+			}
+			stopEval.FundingRateLookup = func(sym string, at time.Time) (float64, error) {
+				if r, ok := rateMap[at.UTC().Unix()]; ok {
+					return r, nil
+				}
+				return 0, fmt.Errorf("funding rate not found for %s at %v", sym, at)
+			}
+		}
+	}
+	eng.PreCycle = stopEval
 	// Without this, buildContext fetches candles at the strategy's own live
 	// Cycle interval (e.g. 15m) instead of the timeframe this backtest was
 	// requested at (e.g. 1h) - historical depth for the strategy's Cycle
@@ -1050,4 +1108,38 @@ func (m *memSignalRepo) ListClosedBetween(_ context.Context, strategyID uint, fr
 		}
 	}
 	return res, nil
+}
+
+func parseStrategyMarketParams(strat entities.Strategy) (marketType string, leverage int, marginType string) {
+	marketType = "spot"
+	leverage = 1
+	marginType = "isolated"
+	if len(strat.StrategyConfiguration.Configuration) == 0 {
+		return
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(strat.StrategyConfiguration.Configuration, &config); err != nil {
+		return
+	}
+	if mt, ok := config["market_type"].(string); ok && mt != "" {
+		marketType = strings.ToLower(mt)
+	}
+	if mgt, ok := config["margin_type"].(string); ok && mgt != "" {
+		marginType = strings.ToLower(mgt)
+	}
+	switch v := config["leverage"].(type) {
+	case float64:
+		if v >= 1 {
+			leverage = int(v)
+		}
+	case int:
+		if v >= 1 {
+			leverage = v
+		}
+	case int64:
+		if v >= 1 {
+			leverage = int(v)
+		}
+	}
+	return
 }

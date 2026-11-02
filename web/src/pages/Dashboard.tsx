@@ -81,6 +81,10 @@ export function Dashboard() {
         ((signal.mode as any) || (strat?.mode as any) || 'dryrun').toLowerCase();
 
       const entryOrder = signal.orders?.[0];
+      const positionSide = signal.position_side || entryOrder?.position_side;
+      const leverage = entryOrder?.leverage || 1;
+      const liquidationPrice = entryOrder?.liquidation_price || 0;
+      const accumulatedFunding = entryOrder?.accumulated_funding || 0;
       const brokerOrderId =
         entryOrder?.broker_order_id || (effectiveMode === 'dryrun' ? `SIM-${signal.id}` : undefined);
 
@@ -128,6 +132,10 @@ export function Dashboard() {
         quantity,
         unrealizedPnL,
         unrealizedPnLPct,
+        positionSide,
+        leverage,
+        liquidationPrice,
+        accumulatedFunding,
       };
     }).filter((pos) => pos.quantity > 0);
   }, [openSignals, ssePositions, tickers, strategies]);
@@ -451,7 +459,41 @@ export function Dashboard() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="font-semibold text-foreground">{pos.symbol}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-foreground">{pos.symbol}</span>
+                          {pos.positionSide && (
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                pos.positionSide === 'SHORT'
+                                  ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                                  : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                              }`}
+                            >
+                              {pos.positionSide}
+                            </span>
+                          )}
+                          {pos.leverage > 1 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                              {pos.leverage}x
+                            </span>
+                          )}
+                        </div>
+                        {(pos.liquidationPrice > 0 || pos.accumulatedFunding !== 0) && (
+                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground font-mono">
+                            {pos.liquidationPrice > 0 && (
+                              <span className="text-destructive font-semibold" title={t('dashboard.liquidationPrice')}>
+                                Liq: ${formatNumber(pos.liquidationPrice, { digits: 2 })}
+                              </span>
+                            )}
+                            {pos.accumulatedFunding !== 0 && (
+                              <span title={t('dashboard.accumulatedFunding')}>
+                                Fund: {formatUsd(pos.accumulatedFunding, { signed: true, digits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-xs">
                         <Link to={`/strategies/${pos.strategy_id}`} className="hover:text-primary hover:underline">
                           {pos.strategy_name}

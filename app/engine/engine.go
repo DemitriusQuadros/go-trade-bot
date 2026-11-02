@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"go-trade-bot/app/entities"
@@ -34,6 +35,7 @@ const candleWindow = 100
 // translating a Strategy's declarative Signal into a real order (Spec 02/03).
 type SignalUseCase interface {
 	GenerateBuySignal(e usecase.EntrySignal) error
+	GenerateShortSignal(e usecase.EntrySignal) error
 	GenerateSellSignal(e usecase.ExitSignal) error
 	GetOpenSignal(symbol string, strategyId uint) (entities.Signal, error)
 	// RealizedPnL sums Order.Profit of strategyID's signals closed in [from, to).
@@ -132,7 +134,9 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 	// the level intra-candle doesn't count - the exit is a market order at
 	// the price actually observed.
 	if strategyCtx.Position != nil {
-		if tp := e.takeProfitPrice(symbol, dbStrategy.ID); tp > 0 && strategyCtx.Price >= tp {
+		tp := e.takeProfitPrice(symbol, dbStrategy.ID)
+		isShort := strings.EqualFold(strategyCtx.Position.Side, "short")
+		if (!isShort && tp > 0 && strategyCtx.Price >= tp) || (isShort && tp > 0 && strategyCtx.Price <= tp) {
 			return e.SignalUseCase.GenerateSellSignal(usecase.ExitSignal{
 				Symbol:       symbol,
 				StrategyID:   dbStrategy.ID,
@@ -158,14 +162,8 @@ func (e *Engine) Run(ctx context.Context, strategy strategies.Strategy, dbStrate
 			signal := strategy.GoLong(strategyCtx)
 			err = e.processGoLong(strategy, dbStrategy, symbol, mode, signal)
 		} else if strategy.ShouldShort(strategyCtx) {
-			// Phase 1's ExchangeClient is spot-only (Spec 01) - no short
-			// execution path exists. This is logged/webhooked but does NOT
-			// fail the cycle (Spec 05 AC#7 says "completes without a panic",
-			// not "recorded as Error" - unlike AC#4's GoLong-with-no-Buy case).
-			_ = strategy.GoShort(strategyCtx)
-			msg := "short positions not supported in Phase 1"
-			log.Printf("[engine] %s/%s: %s", dbStrategy.Name, symbol, msg)
-			e.notifyError(dbStrategy, symbol, mode, msg)
+			signal := strategy.GoShort(strategyCtx)
+			err = e.processGoShort(strategy, dbStrategy, symbol, mode, signal)
 		}
 	} else {
 		signal := strategy.UpdatePosition(strategyCtx)
@@ -262,13 +260,21 @@ func (e *Engine) buildPosition(symbol string, strategyID uint) (*strategies.Posi
 	}
 
 	order := openSignal.Orders[0]
+	side := strings.ToLower(string(order.PositionSide))
+	if side != "short" {
+		side = "long"
+	}
 	return &strategies.Position{
-		Symbol:          symbol,
-		EntryPrice:      float64(order.EntryPrice),
-		Quantity:        float64(order.Quantity),
-		StopLossPrice:   stopLossPricePtr(order.StopLossPrice),
-		StopLossOrderID: order.StopLossOrderID,
-		OpenedAt:        order.CreatedAt,
+		Symbol:           symbol,
+		Side:             side,
+		EntryPrice:       float64(order.EntryPrice),
+		Quantity:         float64(order.Quantity),
+		StopLossPrice:    stopLossPricePtr(order.StopLossPrice),
+		StopLossOrderID:  order.StopLossOrderID,
+		OpenedAt:         order.CreatedAt,
+		Leverage:         float64(order.Leverage),
+		MarginType:       string(order.MarginType),
+		LiquidationPrice: float64(order.LiquidationPrice),
 	}, nil
 }
 
@@ -331,8 +337,11 @@ func (e *Engine) processGoLong(strategy strategies.Strategy, dbStrategy entities
 		StrategyID:     dbStrategy.ID,
 		StrategyName:   dbStrategy.Name,
 		Mode:           mode.String(),
+		PositionSide:   entities.PositionSideLong,
 		EntryPrice:     float32(signal.Buy.Price),
-		MarginType:     entities.Isolated,
+		MarginType:     strategyMarginType(dbStrategy),
+		Leverage:       strategyLeverage(dbStrategy),
+		MarketType:     strategyMarketType(dbStrategy),
 		StopLossPct:    strategyStopLossPct(dbStrategy),
 		PositionSizing: strategyPositionSizing(dbStrategy),
 		RequestedQty:   signal.Buy.Qty,
@@ -357,8 +366,55 @@ func (e *Engine) processGoLong(strategy strategies.Strategy, dbStrategy entities
 	return nil
 }
 
-func (e *Engine) processUpdatePosition(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, signal strategies.Signal) error {
+func (e *Engine) processGoShort(strategy strategies.Strategy, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, signal strategies.Signal) error {
 	if signal.Sell == nil {
+		msg := fmt.Sprintf("strategy %s: GoShort returned no Sell order despite ShouldShort=true", dbStrategy.Name)
+		log.Print(msg)
+		e.notifyError(dbStrategy, symbol, mode, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
+	entry := usecase.EntrySignal{
+		Symbol:         symbol,
+		StrategyID:     dbStrategy.ID,
+		StrategyName:   dbStrategy.Name,
+		Mode:           mode.String(),
+		PositionSide:   entities.PositionSideShort,
+		EntryPrice:     float32(signal.Sell.Price),
+		MarginType:     strategyMarginType(dbStrategy),
+		Leverage:       strategyLeverage(dbStrategy),
+		MarketType:     strategyMarketType(dbStrategy),
+		StopLossPct:    strategyStopLossPct(dbStrategy),
+		PositionSizing: strategyPositionSizing(dbStrategy),
+		RequestedQty:   signal.Sell.Qty,
+	}
+	entry.OnClamp = func(requested, allowed float64) {
+		e.traceLog(strategy, "qty_clamped", map[string]float64{"requested": requested, "allowed": allowed})
+	}
+	if signal.StopLoss != nil {
+		price := signal.StopLoss.Price
+		entry.StopLossPrice = &price
+	}
+	if signal.TakeProfit != nil {
+		price := signal.TakeProfit.Price
+		entry.TakeProfitPrice = &price
+	}
+
+	if err := e.SignalUseCase.GenerateShortSignal(entry); err != nil {
+		log.Printf("[engine] %s/%s: short failed: %v", dbStrategy.Name, symbol, err)
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) processUpdatePosition(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, signal strategies.Signal) error {
+	var exitOrder *strategies.Order
+	if signal.Sell != nil {
+		exitOrder = signal.Sell
+	} else if signal.Buy != nil {
+		exitOrder = signal.Buy
+	}
+	if exitOrder == nil {
 		return nil // hold, or a trailing-stop-only adjustment (Out of Scope, Spec 03/05)
 	}
 
@@ -367,12 +423,12 @@ func (e *Engine) processUpdatePosition(dbStrategy entities.Strategy, symbol stri
 		StrategyID:   dbStrategy.ID,
 		StrategyName: dbStrategy.Name,
 		Mode:         mode.String(),
-		ExitPrice:    float32(signal.Sell.Price),
+		ExitPrice:    float32(exitOrder.Price),
 		ExitReason:   ExitReasonStrategy,
 	}
 
 	if err := e.SignalUseCase.GenerateSellSignal(exit); err != nil {
-		log.Printf("[engine] %s/%s: sell failed: %v", dbStrategy.Name, symbol, err)
+		log.Printf("[engine] %s/%s: exit failed: %v", dbStrategy.Name, symbol, err)
 		return err
 	}
 	return nil
@@ -451,4 +507,48 @@ func strategyPositionSizing(dbStrategy entities.Strategy) *usecase.PositionSizin
 		Type:  usecase.SizingType(stType),
 		Value: val,
 	}
+}
+
+func strategyLeverage(dbStrategy entities.Strategy) float32 {
+	var config map[string]interface{}
+	if err := json.Unmarshal(dbStrategy.StrategyConfiguration.Configuration, &config); err != nil {
+		return 1
+	}
+	switch v := config["leverage"].(type) {
+	case float64:
+		if v >= 1 {
+			return float32(v)
+		}
+	case int:
+		if v >= 1 {
+			return float32(v)
+		}
+	case int64:
+		if v >= 1 {
+			return float32(v)
+		}
+	}
+	return 1
+}
+
+func strategyMarginType(dbStrategy entities.Strategy) entities.MarginType {
+	var config map[string]interface{}
+	if err := json.Unmarshal(dbStrategy.StrategyConfiguration.Configuration, &config); err != nil {
+		return entities.Isolated
+	}
+	if mt, ok := config["margin_type"].(string); ok && strings.EqualFold(mt, "cross") {
+		return entities.Cross
+	}
+	return entities.Isolated
+}
+
+func strategyMarketType(dbStrategy entities.Strategy) string {
+	var config map[string]interface{}
+	if err := json.Unmarshal(dbStrategy.StrategyConfiguration.Configuration, &config); err != nil {
+		return "spot"
+	}
+	if mt, ok := config["market_type"].(string); ok && mt != "" {
+		return strings.ToLower(mt)
+	}
+	return "spot"
 }

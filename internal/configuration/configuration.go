@@ -15,6 +15,8 @@ type Configuration struct {
 	Redis               Redis
 	Prometheus          Prometheus
 	Mode                string // process-wide execution-mode ceiling, from MODE env var, e.g. "paper" (Spec 10)
+	MarketType          string // "spot" or "futures", default "spot"
+	PositionMode        string // "one_way" or "hedge", default "one_way"
 	ConfirmLive         bool   // from --confirm-live CLI flag (Spec 10)
 	Testnet             bool   // whether the exchange adapter should target Binance testnet (Spec 01/10)
 	WebhookURL          string // outbound trade-event notification target (Spec 09)
@@ -161,6 +163,8 @@ type Broker struct {
 	// (ModePaper, Spec 10) - never the production ApiKey/ApiSecret.
 	TestnetApiKey    string
 	TestnetApiSecret string
+	MarketType       string
+	PositionMode     string
 }
 
 type Prometheus struct {
@@ -253,6 +257,22 @@ func NewConfiguration() *Configuration {
 	testnetKey := viper.GetString("BROKER.TESTNET_KEY")
 	testnetSecret := viper.GetString("BROKER.TESTNET_SECRET")
 
+	marketType := strings.ToLower(strings.TrimSpace(viper.GetString("MARKET_TYPE")))
+	if marketType == "" {
+		marketType = strings.ToLower(strings.TrimSpace(viper.GetString("BROKER.MARKET_TYPE")))
+	}
+	if marketType == "" {
+		marketType = "spot"
+	}
+
+	positionMode := strings.ToLower(strings.TrimSpace(viper.GetString("POSITION_MODE")))
+	if positionMode == "" {
+		positionMode = strings.ToLower(strings.TrimSpace(viper.GetString("BROKER.POSITION_MODE")))
+	}
+	if positionMode == "" {
+		positionMode = "one_way"
+	}
+
 	dryRunSlippage := viper.GetFloat64("DRY_RUN.SLIPPAGE_PCT")
 	dryRunFeePct := viper.GetFloat64("DRY_RUN.FEE_PCT")
 	if dryRunFeePct == 0 {
@@ -316,6 +336,8 @@ func NewConfiguration() *Configuration {
 			ApiSecret:        secret,
 			TestnetApiKey:    testnetKey,
 			TestnetApiSecret: testnetSecret,
+			MarketType:       marketType,
+			PositionMode:     positionMode,
 		},
 		DB: DB{
 			Host:     host,
@@ -332,6 +354,8 @@ func NewConfiguration() *Configuration {
 			Address: prometheus,
 		},
 		Mode:                 mode,
+		MarketType:           marketType,
+		PositionMode:         positionMode,
 		ConfirmLive:          confirmLive,
 		Testnet:              testnet,
 		WebhookURL:           webhookURL,

@@ -63,8 +63,36 @@ func (fix01Strategy) ShouldShort(strategies.Context) bool                  { ret
 func (fix01Strategy) GoShort(strategies.Context) strategies.Signal         { return strategies.Signal{} }
 func (fix01Strategy) UpdatePosition(strategies.Context) *strategies.Signal { return nil }
 
+const fixFuturesShortStrategyName = "futures-short-test"
+
+var futuresShortEnabled atomic.Bool
+var futuresShortStopLossDisabled atomic.Bool
+
+type fixFuturesShortStrategy struct{}
+
+func (fixFuturesShortStrategy) Name() string                 { return fixFuturesShortStrategyName }
+func (fixFuturesShortStrategy) Before(strategies.Context)    {}
+func (fixFuturesShortStrategy) After(strategies.Context)     {}
+func (fixFuturesShortStrategy) Terminate(strategies.Context) {}
+func (fixFuturesShortStrategy) ShouldLong(strategies.Context) bool { return false }
+func (fixFuturesShortStrategy) GoLong(strategies.Context) strategies.Signal { return strategies.Signal{} }
+func (fixFuturesShortStrategy) ShouldShort(ctx strategies.Context) bool {
+	return ctx.Position == nil && futuresShortEnabled.Load()
+}
+func (fixFuturesShortStrategy) GoShort(ctx strategies.Context) strategies.Signal {
+	sig := strategies.Signal{
+		Sell: &strategies.Order{Price: ctx.Price},
+	}
+	if !futuresShortStopLossDisabled.Load() {
+		sig.StopLoss = &strategies.Order{Price: ctx.Price * 1.02} // stop-loss 2% above entry (102 for entry 100)
+	}
+	return sig
+}
+func (fixFuturesShortStrategy) UpdatePosition(strategies.Context) *strategies.Signal { return nil }
+
 func init() {
 	strategies.Register(fix01StrategyName, func(entities.Strategy) strategies.Strategy { return fix01Strategy{} })
+	strategies.Register(fixFuturesShortStrategyName, func(entities.Strategy) strategies.Strategy { return fixFuturesShortStrategy{} })
 }
 
 // fakeRealExchange stands in for the worker's real client (production
@@ -135,6 +163,10 @@ func (f *fakeRealExchange) SubscribeKline(context.Context, string, string) (<-ch
 	return make(chan exchange.Candle), nil
 }
 
+func (f *fakeRealExchange) SubscribeBookTicker(context.Context, string) (<-chan exchange.BookTicker, error) {
+	return make(chan exchange.BookTicker), nil
+}
+
 type captureNotifier struct {
 	mu     sync.Mutex
 	events []notifier.Event
@@ -171,13 +203,23 @@ type workerStack struct {
 
 func newWorkerStack(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool) *workerStack {
 	t.Helper()
-	return newWorkerStackWithSender(t, mode, ceiling, testnet, allowRealOrders, nil)
+	return newWorkerStackWithSenderAndStrategy(t, mode, ceiling, testnet, allowRealOrders, nil, nil)
+}
+
+func newWorkerStackWithStrategy(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool, strat *entities.Strategy) *workerStack {
+	t.Helper()
+	return newWorkerStackWithSenderAndStrategy(t, mode, ceiling, testnet, allowRealOrders, nil, strat)
 }
 
 // newWorkerStackWithSender is newWorkerStack with the NotificationSender
 // the trading path receives built by sender (nil = the capture notifier
 // itself). Used by the agents-platform C-01 bridge fan-out test.
 func newWorkerStackWithSender(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool, sender func(*captureNotifier) notifier.NotificationSender) *workerStack {
+	t.Helper()
+	return newWorkerStackWithSenderAndStrategy(t, mode, ceiling, testnet, allowRealOrders, sender, nil)
+}
+
+func newWorkerStackWithSenderAndStrategy(t *testing.T, mode string, ceiling strategies.ExecutionMode, testnet, allowRealOrders bool, sender func(*captureNotifier) notifier.NotificationSender, strat *entities.Strategy) *workerStack {
 	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
@@ -215,13 +257,17 @@ func newWorkerStackWithSender(t *testing.T, mode string, ceiling strategies.Exec
 	)
 	require.NoError(t, app.Err())
 
-	s.strategy = entities.Strategy{
-		ID: 42, Name: "fix01", StrategyName: fix01StrategyName, Status: entities.Productive, Mode: mode,
-		MonitoredSymbols: datatypes.JSONSlice[string]{"BTCUSDT"},
-		StrategyConfiguration: entities.StrategyConfiguration{
-			Cycle:         entities.OneMinute,
-			Configuration: datatypes.JSON(`{"stop_loss_pct": 2}`),
-		},
+	if strat != nil {
+		s.strategy = *strat
+	} else {
+		s.strategy = entities.Strategy{
+			ID: 42, Name: "fix01", StrategyName: fix01StrategyName, Status: entities.Productive, Mode: mode,
+			MonitoredSymbols: datatypes.JSONSlice[string]{"BTCUSDT"},
+			StrategyConfiguration: entities.StrategyConfiguration{
+				Cycle:         entities.OneMinute,
+				Configuration: datatypes.JSON(`{"stop_loss_pct": 2}`),
+			},
+		}
 	}
 
 	repo := new(handlermocks.StrategyRepository)
@@ -407,4 +453,171 @@ func TestWorkerBacktestCycle_Refused(t *testing.T) {
 	assert.Empty(t, s.signals(t))
 	assert.Empty(t, s.real.placed)
 	require.Len(t, s.notes.ofType(notifier.EventStrategyError), 1)
+}
+
+// Phase 6 acceptance test: Futures Short dryrun cycle through the real worker wiring
+// opens a short position with simulated stop-loss, deducts initial margin (not 10x notional),
+// never touches the real exchange order methods, and closes via SimulatedStopEvaluator
+// when candle breaches the stop-loss with upward slippage. Also verifies liquidation path.
+func TestWorkerDryRunCycle_FuturesShortEntryStopAndLiquidationNeverTouchRealExchange(t *testing.T) {
+	t.Run("short entry and stop-loss close never touch real exchange", func(t *testing.T) {
+		strat := entities.Strategy{
+			ID: 43, Name: "futures-short", StrategyName: fixFuturesShortStrategyName, Status: entities.Productive, Mode: "dryrun",
+			MonitoredSymbols: datatypes.JSONSlice[string]{"BTCUSDT"},
+			StrategyConfiguration: entities.StrategyConfiguration{
+				Cycle:         entities.OneMinute,
+				Configuration: datatypes.JSON(`{"market_type": "futures", "leverage": 10, "margin_type": "isolated", "stop_loss_pct": 2}`),
+			},
+		}
+		s := newWorkerStackWithStrategy(t, "dryrun", strategies.ModeLive, false, false, &strat)
+
+		// Cycle 1: Short entry at price 100 with stop loss enabled
+		futuresShortEnabled.Store(true)
+		futuresShortStopLossDisabled.Store(false)
+		s.setClock(fix01T0)
+		s.real.setMarket([]exchange.Candle{minuteCandle(-3, 99.5), minuteCandle(-2, 99.5), minuteCandle(-1, 99.5)}, 100)
+		s.cycle(t)
+
+		// 1. Assert s.real.placed is empty (zero real exchange calls)
+		assert.Empty(t, s.real.placed, "real exchange PlaceOrder must never be called on a futures dryrun cycle")
+
+		// 2. Assert persisted signal
+		sigs := s.signals(t)
+		require.Len(t, sigs, 1)
+		sig := sigs[0]
+		assert.Equal(t, entities.Open, sig.Status)
+		assert.Equal(t, entities.PositionSideShort, sig.PositionSide)
+		assert.Equal(t, "dryrun", sig.Mode)
+
+		require.Len(t, sig.Orders, 1)
+		order := sig.Orders[0]
+		assert.Equal(t, entities.PositionSideShort, order.PositionSide)
+		assert.Equal(t, float32(10), order.Leverage)
+		assert.Greater(t, order.InitialMargin, float32(0))
+		assert.Greater(t, order.LiquidationPrice, float32(100), "short liquidation price must be above entry price")
+		assert.InDelta(t, 102.0, order.StopLossPrice, 1e-3)
+		assert.True(t, exchange.IsSimulatedOrderID(order.BrokerOrderID))
+		assert.True(t, exchange.IsSimulatedOrderID(order.StopLossOrderID))
+
+		// 3. Assert s.account(t).Amount only deducted InitialMargin (not 10x notional)
+		acc := s.account(t)
+		assert.InDelta(t, 1000.0-float64(order.InitialMargin), float64(acc.Amount), 1e-2)
+		assert.Greater(t, acc.Amount, float32(0), "account must not be depleted by 10x leveraged notional")
+
+		// Cycle 2: A closed candle whose High >= 102 breaches the short stop-loss
+		futuresShortEnabled.Store(false)
+		s.setClock(fix01T0.Add(90 * time.Second))
+
+		// Forming candle at 10:01, while closed candle at 10:00 (fix01T0) has High >= 102.0
+		cStop := exchange.Candle{
+			Symbol:    "BTCUSDT",
+			Timeframe: "1m",
+			OpenTime:  fix01T0,
+			Open:      100,
+			High:      102.5, // breaches short stop at 102.0
+			Low:       99.5,
+			Close:     102.0,
+			Volume:    10,
+		}
+		cNext := exchange.Candle{
+			Symbol:    "BTCUSDT",
+			Timeframe: "1m",
+			OpenTime:  fix01T0.Add(time.Minute),
+			Open:      102.0,
+			High:      102.5,
+			Low:       101.5,
+			Close:     102.0,
+			Volume:    10,
+		}
+		s.real.setMarket([]exchange.Candle{minuteCandle(-1, 99.5), cStop, cNext}, 102)
+		s.cycle(t)
+
+		// 4. Assert SimulatedStopEvaluator closes the SHORT position
+		sigs = s.signals(t)
+		require.Len(t, sigs, 1)
+		closed := sigs[0]
+		assert.Equal(t, entities.Closed, closed.Status)
+		require.Len(t, closed.Orders, 1)
+
+		// Upward slippage on short stop-Buy: 102 * (1 + 0.001)
+		expectedExitPrice := 102.0 * (1 + 0.001)
+		assert.InDelta(t, expectedExitPrice, float64(closed.Orders[0].ExitPrice), 1e-3)
+		assert.True(t, closed.Orders[0].IsClosing)
+		assert.Equal(t, signalusecase.ExitReasonSimulatedStopLoss, closed.Orders[0].ExitReason)
+
+		closedEvents := s.notes.ofType(notifier.EventPositionClosed)
+		require.Len(t, closedEvents, 1)
+		assert.Equal(t, signalusecase.ExitReasonSimulatedStopLoss, closedEvents[0].Data["exit_reason"])
+		assert.Equal(t, "dryrun", closedEvents[0].Mode)
+
+		// Assert s.real.placed remains empty throughout
+		assert.Empty(t, s.real.placed, "real exchange PlaceOrder must remain empty after simulated stop fill")
+	})
+
+	t.Run("short liquidation closes position when high breaches liquidation price without touching real exchange", func(t *testing.T) {
+		strat := entities.Strategy{
+			ID: 44, Name: "futures-short-liq", StrategyName: fixFuturesShortStrategyName, Status: entities.Productive, Mode: "dryrun",
+			MonitoredSymbols: datatypes.JSONSlice[string]{"BTCUSDT"},
+			StrategyConfiguration: entities.StrategyConfiguration{
+				Cycle:         entities.OneMinute,
+				Configuration: datatypes.JSON(`{"market_type": "futures", "leverage": 10, "margin_type": "isolated"}`),
+			},
+		}
+		s := newWorkerStackWithStrategy(t, "dryrun", strategies.ModeLive, false, false, &strat)
+
+		// Cycle 1: Short entry at price 100 with stop loss disabled
+		futuresShortEnabled.Store(true)
+		futuresShortStopLossDisabled.Store(true)
+		defer futuresShortStopLossDisabled.Store(false)
+		s.setClock(fix01T0)
+		s.real.setMarket([]exchange.Candle{minuteCandle(-3, 99.5), minuteCandle(-2, 99.5), minuteCandle(-1, 99.5)}, 100)
+		s.cycle(t)
+
+		assert.Empty(t, s.real.placed)
+		sigs := s.signals(t)
+		require.Len(t, sigs, 1)
+		order := sigs[0].Orders[0]
+		liqPrice := float64(order.LiquidationPrice)
+		require.Greater(t, liqPrice, 100.0)
+
+		// Cycle 2: Candle High reaches liquidation price
+		futuresShortEnabled.Store(false)
+		s.setClock(fix01T0.Add(90 * time.Second))
+
+		cLiq := exchange.Candle{
+			Symbol:    "BTCUSDT",
+			Timeframe: "1m",
+			OpenTime:  fix01T0,
+			Open:      100,
+			High:      liqPrice + 1.0, // Pierces short liquidation price
+			Low:       99.5,
+			Close:     liqPrice,
+			Volume:    10,
+		}
+		cNext := exchange.Candle{
+			Symbol:    "BTCUSDT",
+			Timeframe: "1m",
+			OpenTime:  fix01T0.Add(time.Minute),
+			Open:      liqPrice,
+			High:      liqPrice + 1.0,
+			Low:       liqPrice - 0.5,
+			Close:     liqPrice,
+			Volume:    10,
+		}
+		s.real.setMarket([]exchange.Candle{minuteCandle(-1, 99.5), cLiq, cNext}, liqPrice)
+		s.cycle(t)
+
+		sigs = s.signals(t)
+		require.Len(t, sigs, 1)
+		closed := sigs[0]
+		assert.Equal(t, entities.Closed, closed.Status)
+		assert.InDelta(t, liqPrice, float64(closed.Orders[0].ExitPrice), 1e-3)
+		assert.Equal(t, entities.ExitReasonLiquidation, closed.Orders[0].ExitReason)
+
+		closedEvents := s.notes.ofType(notifier.EventPositionClosed)
+		require.Len(t, closedEvents, 1)
+		assert.Equal(t, entities.ExitReasonLiquidation, closedEvents[0].Data["exit_reason"])
+
+		assert.Empty(t, s.real.placed, "real exchange PlaceOrder must remain empty after liquidation")
+	})
 }

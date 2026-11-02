@@ -35,17 +35,38 @@ func buildCtxTable(L *lua.LState, cctx strategies.Context) *lua.LTable {
 	if cctx.Position != nil {
 		p := L.NewTable()
 		L.SetField(p, "symbol", lua.LString(cctx.Position.Symbol))
-		// The exchange client is spot-only (no short execution path), so an
-		// open position is always long. Exposed because scripts naturally
-		// check `ctx.position.side == "long"`; without it that comparison
-		// was always false and such scripts never exited a position.
-		L.SetField(p, "side", lua.LString("long"))
+		side := strings.ToLower(cctx.Position.Side)
+		if side != "short" {
+			side = "long"
+		}
+		L.SetField(p, "side", lua.LString(side))
 		L.SetField(p, "entry_price", lua.LNumber(cctx.Position.EntryPrice))
 		L.SetField(p, "quantity", lua.LNumber(cctx.Position.Quantity))
 		if cctx.Position.StopLossPrice != nil {
 			L.SetField(p, "stop_loss_price", lua.LNumber(*cctx.Position.StopLossPrice))
 		}
 		L.SetField(p, "opened_at", lua.LNumber(cctx.Position.OpenedAt.Unix()))
+
+		lev := cctx.Position.Leverage
+		if lev <= 0 {
+			lev = 1
+		}
+		L.SetField(p, "leverage", lua.LNumber(lev))
+
+		mt := cctx.Position.MarginType
+		if mt == "" {
+			mt = "isolated"
+		}
+		L.SetField(p, "margin_type", lua.LString(mt))
+
+		L.SetField(p, "liquidation_price", lua.LNumber(cctx.Position.LiquidationPrice))
+
+		unrealizedPnL := (cctx.Price - cctx.Position.EntryPrice) * cctx.Position.Quantity
+		if side == "short" {
+			unrealizedPnL = (cctx.Position.EntryPrice - cctx.Price) * cctx.Position.Quantity
+		}
+		L.SetField(p, "unrealized_pnl", lua.LNumber(unrealizedPnL))
+
 		L.SetField(t, "position", p)
 	} else {
 		L.SetField(t, "position", lua.LNil)

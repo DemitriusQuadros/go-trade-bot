@@ -86,3 +86,53 @@ func (s *SwappableExchangeClient) SubscribeKline(ctx context.Context, symbol, in
 func (s *SwappableExchangeClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
 	return (*s.current.Load()).SubscribeBookTicker(ctx, symbol)
 }
+
+var _ FuturesClient = (*SwappableExchangeClient)(nil)
+
+func (s *SwappableExchangeClient) SetLeverage(ctx context.Context, symbol string, leverage int) error {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return ErrFuturesNotSupported
+	}
+	return fc.SetLeverage(ctx, symbol, leverage)
+}
+
+func (s *SwappableExchangeClient) SetMarginType(ctx context.Context, symbol string, marginMode MarginMode) error {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return ErrFuturesNotSupported
+	}
+	return fc.SetMarginType(ctx, symbol, marginMode)
+}
+
+func (s *SwappableExchangeClient) SetPositionMode(ctx context.Context, mode PositionMode) error {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return ErrFuturesNotSupported
+	}
+	return fc.SetPositionMode(ctx, mode)
+}
+
+func (s *SwappableExchangeClient) GetPositionMode(ctx context.Context) (PositionMode, error) {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return "", ErrFuturesNotSupported
+	}
+	return fc.GetPositionMode(ctx)
+}
+
+func (s *SwappableExchangeClient) GetPositionRisk(ctx context.Context, symbol string, side PositionSide) (PositionRisk, error) {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return PositionRisk{}, ErrFuturesNotSupported
+	}
+	return fc.GetPositionRisk(ctx, symbol, side)
+}
+
+func (s *SwappableExchangeClient) GetMarkPrice(ctx context.Context, symbol string) (markPrice float64, fundingRate float64, nextFundingTime time.Time, err error) {
+	fc, ok := (*s.current.Load()).(FuturesClient)
+	if !ok {
+		return 0, 0, time.Time{}, ErrFuturesNotSupported
+	}
+	return fc.GetMarkPrice(ctx, symbol)
+}

@@ -36,6 +36,19 @@ func (r SignalRepository) GetOpenSignals(symbol string, strategyId uint) (entiti
 	return signals[0], err
 }
 
+func (r SignalRepository) GetOpenSignalsBySide(symbol string, strategyId uint, side entities.PositionSideType) (entities.Signal, error) {
+	var signals []entities.Signal
+	err := r.db.
+		Preload("Orders").
+		Where("symbol = ? AND status = ? AND strategy_id = ? AND position_side = ?", symbol, entities.Open, strategyId, side).
+		Find(&signals).Error
+
+	if len(signals) == 0 {
+		return entities.Signal{}, nil
+	}
+	return signals[0], err
+}
+
 func (r SignalRepository) GetAllOpenSignals() ([]entities.Signal, error) {
 	var signals []entities.Signal
 	err := r.db.
@@ -115,6 +128,17 @@ func (r SignalRepository) UpdateSimStopEvaluatedAt(orderID uint, evaluatedAt tim
 	return r.db.Model(&entities.Order{}).
 		Where("id = ?", orderID).
 		Update("sim_stop_evaluated_at", evaluatedAt).Error
+}
+
+// UpdateFundingWatermark persists the futures funding watermark and updated liquidation price on the order row.
+func (r SignalRepository) UpdateFundingWatermark(orderID uint, accumulatedFunding float32, liquidationPrice float32, lastFundingTime time.Time) error {
+	return r.db.Model(&entities.Order{}).
+		Where("id = ?", orderID).
+		Updates(map[string]interface{}{
+			"accumulated_funding": accumulatedFunding,
+			"liquidation_price":   liquidationPrice,
+			"last_funding_time":    lastFundingTime,
+		}).Error
 }
 
 // ListClosedBetween returns strategyID's closed signals (with orders) whose

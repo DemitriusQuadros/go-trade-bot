@@ -63,12 +63,16 @@ func ParseExecutionMode(s string) (ExecutionMode, error) {
 // deliberately distinct from the future app/entities read-model slated for
 // the TUI's Open Positions page (Phase 3) - see Spec 05's "Judgment call".
 type Position struct {
-	Symbol          string
-	EntryPrice      float64
-	Quantity        float64
-	StopLossPrice   *float64 // nil if no resting stop (shouldn't happen post-Spec 03, but hooks must handle nil)
-	StopLossOrderID string
-	OpenedAt        time.Time
+	Symbol           string
+	Side             string   // "long" or "short" (defaults to "long" when empty)
+	EntryPrice       float64
+	Quantity         float64
+	StopLossPrice    *float64 // nil if no resting stop (shouldn't happen post-Spec 03, but hooks must handle nil)
+	StopLossOrderID  string
+	OpenedAt         time.Time
+	Leverage         float64
+	MarginType       string
+	LiquidationPrice float64
 }
 
 // Account is the slice of entities.Account a strategy hook is allowed to see.

@@ -84,6 +84,26 @@ func (h *SettingsHandler) PutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !req.ValidMarketType() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "invalid_market_type",
+			"message": "market_type must be one of spot, futures",
+		})
+		return
+	}
+
+	if !req.ValidPositionMode() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "invalid_position_mode",
+			"message": "position_mode must be one of one_way, hedge",
+		})
+		return
+	}
+
 	existing, err := h.UseCase.Get(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -26,15 +26,17 @@ const (
 
 // WatchedPosition holds the runtime targets for an open position.
 type WatchedPosition struct {
-	SignalID        uint
-	StrategyID      uint
-	StrategyName    string
-	Symbol          string
-	Mode            string
-	TakeProfitPrice float64
-	StopLossPrice   float64
-	Quantity        float64
-	EntryPrice      float64
+	SignalID         uint
+	StrategyID       uint
+	StrategyName     string
+	Symbol           string
+	Mode             string
+	PositionSide     entities.PositionSideType
+	TakeProfitPrice  float64
+	StopLossPrice    float64
+	LiquidationPrice float64
+	Quantity         float64
+	EntryPrice       float64
 }
 
 // SignalSeller is what PositionWatcher needs to execute an exit.
@@ -156,16 +158,25 @@ func (w *PositionWatcher) TrackSignal(s entities.Signal) {
 	}
 
 	order := s.Orders[0]
+	posSide := s.PositionSide
+	if posSide == "" {
+		posSide = order.PositionSide
+	}
+	if posSide == "" {
+		posSide = entities.PositionSideLong
+	}
 	wp := &WatchedPosition{
-		SignalID:        s.ID,
-		StrategyID:      s.StrategyID,
-		StrategyName:    s.Strategy.Name,
-		Symbol:          s.Symbol,
-		Mode:            s.Mode,
-		TakeProfitPrice: float64(order.TakeProfitPrice),
-		StopLossPrice:   float64(order.StopLossPrice),
-		Quantity:        float64(order.Quantity),
-		EntryPrice:      float64(order.EntryPrice),
+		SignalID:         s.ID,
+		StrategyID:       s.StrategyID,
+		StrategyName:     s.Strategy.Name,
+		Symbol:           s.Symbol,
+		Mode:             s.Mode,
+		PositionSide:     posSide,
+		TakeProfitPrice:  float64(order.TakeProfitPrice),
+		StopLossPrice:    float64(order.StopLossPrice),
+		LiquidationPrice: float64(order.LiquidationPrice),
+		Quantity:         float64(order.Quantity),
+		EntryPrice:       float64(order.EntryPrice),
 	}
 
 	w.mu.Lock()
@@ -232,6 +243,37 @@ func (w *PositionWatcher) evaluatePosition(wp *WatchedPosition, ticker exchange.
 		return
 	}
 
+	isShort := wp.PositionSide == entities.PositionSideShort
+	if isShort {
+		// For buying back out of a short position, BestAskPrice is the available market fill price.
+		askPrice := ticker.BestAskPrice
+		if askPrice <= 0 {
+			askPrice = ticker.BestBidPrice
+		}
+		if askPrice <= 0 {
+			return
+		}
+
+		// 1. Check Take-Profit (SHORT profits when price drops to or below TakeProfitPrice)
+		if wp.TakeProfitPrice > 0 && askPrice <= wp.TakeProfitPrice {
+			w.triggerExit(wp, askPrice, ExitReasonTakeProfit)
+			return
+		}
+
+		// 2. Check Dry-Run Simulated Liquidation & Stop-Loss (SHORT loses when price rises to or above threshold)
+		if wp.Mode == "dryrun" {
+			if wp.LiquidationPrice > 0 && askPrice >= wp.LiquidationPrice {
+				w.triggerExit(wp, askPrice, entities.ExitReasonLiquidation)
+				return
+			}
+			if wp.StopLossPrice > 0 && askPrice >= wp.StopLossPrice {
+				w.triggerExit(wp, askPrice, ExitReasonSimulatedStopLoss)
+				return
+			}
+		}
+		return
+	}
+
 	// For selling out of a long position, BestBidPrice is the available market fill price.
 	bidPrice := ticker.BestBidPrice
 	if bidPrice <= 0 {
@@ -244,11 +286,17 @@ func (w *PositionWatcher) evaluatePosition(wp *WatchedPosition, ticker exchange.
 		return
 	}
 
-	// 2. Check Dry-Run Simulated Stop-Loss
-	// Live mode stop-losses are exchange-native STOP_MARKET orders on Binance.
-	if wp.Mode == "dryrun" && wp.StopLossPrice > 0 && bidPrice <= wp.StopLossPrice {
-		w.triggerExit(wp, bidPrice, ExitReasonSimulatedStopLoss)
-		return
+	// 2. Check Dry-Run Simulated Liquidation & Stop-Loss
+	// Live mode stop-losses and liquidations are exchange-native on Binance.
+	if wp.Mode == "dryrun" {
+		if wp.LiquidationPrice > 0 && bidPrice <= wp.LiquidationPrice {
+			w.triggerExit(wp, bidPrice, entities.ExitReasonLiquidation)
+			return
+		}
+		if wp.StopLossPrice > 0 && bidPrice <= wp.StopLossPrice {
+			w.triggerExit(wp, bidPrice, ExitReasonSimulatedStopLoss)
+			return
+		}
 	}
 }
 

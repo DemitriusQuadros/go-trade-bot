@@ -34,6 +34,24 @@ func (_m *SignalUseCase) GenerateBuySignal(e usecase.EntrySignal) error {
 	return r0
 }
 
+// GenerateShortSignal provides a mock function with given fields: e
+func (_m *SignalUseCase) GenerateShortSignal(e usecase.EntrySignal) error {
+	ret := _m.Called(e)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerateShortSignal")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(usecase.EntrySignal) error); ok {
+		r0 = rf(e)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // GenerateSellSignal provides a mock function with given fields: e
 func (_m *SignalUseCase) GenerateSellSignal(e usecase.ExitSignal) error {
 	ret := _m.Called(e)

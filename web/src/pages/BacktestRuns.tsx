@@ -95,9 +95,16 @@ export function BacktestRuns() {
                   className="block p-3 bg-background/50 hover:bg-card/20 border border-border/30 rounded-lg transition-colors group"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono font-bold text-xs text-foreground">
-                      #{run.id} {run.symbol}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono font-bold text-xs text-foreground">
+                        #{run.id} {run.symbol}
+                      </span>
+                      {run.market_type === 'futures' && (
+                        <span className="px-1 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                          {t('settings.optFutures').toUpperCase()}{run.leverage && run.leverage > 1 ? ` ${run.leverage}x` : ''}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className={`font-mono text-xs font-bold ${isPositive ? 'text-success' : 'text-destructive'}`}>
                         {formatPct(run.total_return_pct, 2, { signed: true })}

@@ -232,17 +232,31 @@ func (u *UseCase) FastRerun(ctx context.Context, req FastRerunRequest) (FastReru
 					}
 					position = &strategies.Position{
 						Symbol:     req.Symbol,
+						Side:       "long",
 						EntryPrice: entry,
 						Quantity:   sig.Buy.Qty,
 						OpenedAt:   c.OpenTime,
 					}
 				}
 			} else if strat.ShouldShort(cctx) {
-				_ = strat.GoShort(cctx)
+				sig := strat.GoShort(cctx)
+				if sig.Sell != nil {
+					entry := sig.Sell.Price
+					if entry == 0 {
+						entry = cctx.Price
+					}
+					position = &strategies.Position{
+						Symbol:     req.Symbol,
+						Side:       "short",
+						EntryPrice: entry,
+						Quantity:   sig.Sell.Qty,
+						OpenedAt:   c.OpenTime,
+					}
+				}
 			}
 		} else {
 			sig := strat.UpdatePosition(cctx)
-			if sig != nil && sig.Sell != nil {
+			if sig != nil && (sig.Sell != nil || sig.Buy != nil) {
 				position = nil
 			}
 		}

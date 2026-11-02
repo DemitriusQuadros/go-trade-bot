@@ -9,6 +9,8 @@ import (
 type Settings struct {
 	ID                     uint   `gorm:"primaryKey"`
 	Mode                   string // execution-mode ceiling
+	MarketType             string `gorm:"size:16;default:spot"`
+	PositionMode           string `gorm:"size:16;default:one_way"`
 	ConfirmLive            bool
 	Testnet                bool
 	WebhookURL             string
@@ -68,6 +70,22 @@ func (s Settings) BacktestTimeout() time.Duration {
 	return time.Duration(m) * time.Minute
 }
 
+// EffectiveMarketType returns "futures" if s.MarketType == "futures", otherwise "spot".
+func (s Settings) EffectiveMarketType() string {
+	if s.MarketType == "futures" {
+		return "futures"
+	}
+	return "spot"
+}
+
+// EffectivePositionMode returns "hedge" if s.PositionMode == "hedge", otherwise "one_way".
+func (s Settings) EffectivePositionMode() string {
+	if s.PositionMode == "hedge" {
+		return "hedge"
+	}
+	return "one_way"
+}
+
 // ToConfiguration builds a *configuration.Configuration carrying just the
 // fields exchange.NewExchangeClientFromConfig / notifier.NewWebhookNotifier
 // consult, so a Settings row can be fed straight into
@@ -76,10 +94,12 @@ func (s Settings) BacktestTimeout() time.Duration {
 // directly.
 func (s Settings) ToConfiguration() *configuration.Configuration {
 	return &configuration.Configuration{
-		Mode:        s.Mode,
-		ConfirmLive: s.ConfirmLive,
-		Testnet:     s.Testnet,
-		WebhookURL:  s.WebhookURL,
+		Mode:         s.Mode,
+		MarketType:   s.EffectiveMarketType(),
+		PositionMode: s.EffectivePositionMode(),
+		ConfirmLive:  s.ConfirmLive,
+		Testnet:      s.Testnet,
+		WebhookURL:   s.WebhookURL,
 		Broker: configuration.Broker{
 			ApiKey:           s.BrokerApiKey,
 			ApiSecret:        s.BrokerApiSecret,

@@ -419,6 +419,74 @@ func TestToRunResponse_ExecutionTraceOptIn(t *testing.T) {
 	assert.Contains(t, string(optedIn), "execution_trace")
 }
 
+func TestToRunResponse_FuturesFields(t *testing.T) {
+	run := entities.BacktestRun{
+		ID:               1,
+		Symbol:           "BTCUSDT",
+		MarketType:       "futures",
+		Leverage:         10,
+		MarginType:       "isolated",
+		TotalFeesPaid:    25.5,
+		TotalFundingPaid: -3.25,
+		Liquidations:     2,
+	}
+
+	resp := handler.ToRunResponse(run, false)
+	assert.Equal(t, "futures", resp.MarketType)
+	assert.Equal(t, 10, resp.Leverage)
+	assert.Equal(t, "isolated", resp.MarginType)
+	assert.Equal(t, 25.5, resp.TotalFeesPaid)
+	assert.Equal(t, -3.25, resp.TotalFundingPaid)
+	assert.Equal(t, 2, resp.Liquidations)
+
+	data, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	var jsonMap map[string]any
+	require.NoError(t, json.Unmarshal(data, &jsonMap))
+
+	assert.Equal(t, "futures", jsonMap["market_type"])
+	assert.Equal(t, float64(10), jsonMap["leverage"])
+	assert.Equal(t, "isolated", jsonMap["margin_type"])
+	assert.Equal(t, 25.5, jsonMap["total_fees_paid"])
+	assert.Equal(t, -3.25, jsonMap["total_funding_paid"])
+	assert.Equal(t, float64(2), jsonMap["liquidations"])
+}
+
+func TestToRunResponse_FuturesFields_Defaults(t *testing.T) {
+	run := entities.BacktestRun{
+		ID:     1,
+		Symbol: "BTCUSDT",
+	}
+
+	resp := handler.ToRunResponse(run, false)
+	assert.Empty(t, resp.MarketType)
+	assert.Equal(t, 0, resp.Leverage)
+	assert.Empty(t, resp.MarginType)
+	assert.Equal(t, 0.0, resp.TotalFeesPaid)
+	assert.Equal(t, 0.0, resp.TotalFundingPaid)
+	assert.Equal(t, 0, resp.Liquidations)
+
+	data, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	var jsonMap map[string]any
+	require.NoError(t, json.Unmarshal(data, &jsonMap))
+
+	// omitempty fields
+	assert.NotContains(t, jsonMap, "market_type")
+	assert.NotContains(t, jsonMap, "leverage")
+	assert.NotContains(t, jsonMap, "margin_type")
+
+	// non-omitempty fields
+	assert.Contains(t, jsonMap, "total_fees_paid")
+	assert.Equal(t, float64(0), jsonMap["total_fees_paid"])
+	assert.Contains(t, jsonMap, "total_funding_paid")
+	assert.Equal(t, float64(0), jsonMap["total_funding_paid"])
+	assert.Contains(t, jsonMap, "liquidations")
+	assert.Equal(t, float64(0), jsonMap["liquidations"])
+}
+
 func TestBacktestHandler_DeleteBacktest_Success(t *testing.T) {
 	mockUC := &mockUseCase{}
 	h := handler.NewBacktestHandler(mockUC)
