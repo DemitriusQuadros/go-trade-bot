@@ -431,7 +431,7 @@ const luaScriptAPISection = `
 
 Hooks are global Lua functions; any may be omitted (a safe default is used):
 ` + "`before(ctx)`, `should_long(ctx)` -> bool, `go_long(ctx)` -> signal table, `should_short(ctx)` -> bool, " +
-	"`go_short(ctx)` -> signal table (short execution is not supported: spot only), `update_position(ctx)` -> signal table or nil (nil = hold), " +
+	"`go_short(ctx)` -> signal table (opens a short position when `market_type = \"futures\"`), `update_position(ctx)` -> signal table or nil (nil = hold), " +
 	"`after(ctx)`, `terminate(ctx)`." + `
 
 The ` + "`ctx`" + ` table:
@@ -439,14 +439,23 @@ The ` + "`ctx`" + ` table:
 - ` + "`ctx.symbol`, `ctx.timeframe`, `ctx.mode`" + ` (strings), ` + "`ctx.price`" + ` (latest close)
 - ` + "`ctx.candles`" + ` - array (oldest first) of ` + "`{o, h, l, c, v, t}`" + ` (t = open time, unix seconds)
 - ` + "`ctx.account.available`" + ` - available quote balance
-- ` + "`ctx.config`" + ` - the strategy's JSON config (e.g. ` + "`stop_loss_pct`, `position_sizing`" + `, custom keys)
-- ` + "`ctx.position`" + ` - nil when flat, otherwise ` + "`{symbol, side, entry_price, quantity, stop_loss_price, opened_at}`" + `. ` +
-	"`side` is always `\"long\"` (spot only); `stop_loss_price` is nil when no stop rests; `opened_at` is unix seconds." + `
+- ` + "`ctx.config`" + ` - the strategy's JSON config (e.g. ` + "`market_type` (`\"spot\"` | `\"futures\"`), `leverage` (1..125), `margin_type` (`\"isolated\"` | `\"cross\"`), `stop_loss_pct`, `position_sizing`" + `, and custom keys)
+- ` + "`ctx.position`" + ` - nil when flat, otherwise ` + "`{symbol, side, entry_price, quantity, stop_loss_price, opened_at, leverage, margin_type, liquidation_price, unrealized_pnl, unrealized_pnl_pct}`" + `. ` +
+	"`side` is `\"long\"` or `\"short\"`; `stop_loss_price` is nil when no stop rests; `opened_at` is unix seconds." + `
 
 A signal table has up to four optional sub-tables, each ` + "`{qty = n, price = n}`" + `:
 
-- ` + "`buy`" + ` - required from ` + "`go_long`" + ` (open a long at market). ` + "`buy.qty`" + `, if > 0, is the size you want and is honoured, but the engine clamps it to a ceiling you cannot change: the free balance (` + "`ctx.account.available`" + `), further limited by the strategy's ` + "`position_sizing`" + ` config if set. A clamp is logged and notified, never silent. With ` + "`qty`" + ` 0 or missing, the size comes from ` + "`position_sizing`" + `, or one per-order slot of the balance if none is set.
-- ` + "`sell`" + ` - from ` + "`update_position`" + ` to close the position at market.
-- ` + "`stop_loss = { price = n }`" + ` - from ` + "`go_long`" + `: placed as a real exchange-side STOP_MARKET (simulated in dryrun/backtest) and takes precedence over ` + "`stop_loss_pct`" + `. It must be below the fill price, otherwise ` + "`stop_loss_pct`" + ` is used and the operator is notified.
-- ` + "`take_profit = { price = n }`" + ` - from ` + "`go_long`" + `: stored with the position; at the start of every cycle, once ` + "`ctx.price`" + ` reaches it the engine closes the position at market (exit reason ` + "`take_profit`" + `) and skips the hooks for that cycle. Ignored unless above the fill price.
+- ` + "`buy`" + ` - from ` + "`go_long`" + ` to open a long at market, OR from ` + "`update_position`" + ` when ` + "`ctx.position.side == \"short\"`" + ` to close/cover a short position at market. ` + "`buy.qty`" + `, if > 0, is the size you want and is honoured, clamped to the free balance (` + "`ctx.account.available`" + `) and ` + "`position_sizing`" + ` ceiling (scaled by ` + "`leverage`" + ` in futures mode). With ` + "`qty`" + ` 0 or missing, the size comes from ` + "`position_sizing`" + ` (initial margin * leverage in futures mode), or one per-order slot of the balance if none is set.
+- ` + "`sell`" + ` - from ` + "`go_short`" + ` to open a short position at market (requires ` + "`market_type = \"futures\"`" + ` in strategy ` + "`configuration`" + `), OR from ` + "`update_position`" + ` when ` + "`ctx.position.side == \"long\"`" + ` to close a long position at market.
+- ` + "`stop_loss = { price = n }`" + ` - from ` + "`go_long`" + ` (must be below fill price) or ` + "`go_short`" + ` (must be above fill price): placed as an exchange-side STOP_MARKET (simulated in dryrun/backtest) and takes precedence over ` + "`stop_loss_pct`" + `.
+- ` + "`take_profit = { price = n }`" + ` - from ` + "`go_long`" + ` (must be above fill price) or ` + "`go_short`" + ` (must be below fill price): stored with the position; at the start of every cycle, once ` + "`ctx.price`" + ` reaches it the engine closes the position at market (exit reason ` + "`take_profit`" + `) and skips the hooks for that cycle.
+
+### Futures & Leverage Configuration (` + "`configuration`" + ` JSON)
+
+Strategies support both Spot (` + "`\"spot\"`" + `) and Binance USD-M Perpetual Futures (` + "`\"futures\"`" + `) via the ` + "`configuration`" + ` JSON object passed to ` + "`save_strategy_script`" + ` or ` + "`create_strategy`" + `:
+- ` + "`\"market_type\": \"futures\"`" + ` (or ` + "`\"spot\"`" + `, default ` + "`\"spot\"`" + `): enables leveraged long & short execution, 8h UTC funding rate settlement, and tiered maintenance-margin liquidation simulation.
+- ` + "`\"leverage\": 10`" + ` (integer ` + "`1`" + ` to ` + "`125`" + `, default ` + "`1`" + `): multiplies committed initial margin (` + "`Notional = InitialMargin * Leverage`" + `).
+- ` + "`\"margin_type\": \"isolated\"`" + ` (or ` + "`\"cross\"`" + `, default ` + "`\"isolated\"`" + `).
+- ` + "`\"stop_loss_pct\": 1.5`" + `: fallback stop-loss percentage (below entry for long, above entry for short).
+- ` + "`\"position_sizing\": {\"type\": \"pct_capital\", \"value\": 10}`" + ` (or ` + "`\"fixed_amount\"`" + `): in futures mode, specifies the Initial Margin committed per trade before multiplying by ` + "`leverage`" + `.
 `

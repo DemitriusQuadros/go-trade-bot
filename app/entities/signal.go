@@ -11,6 +11,15 @@ const (
 	Closed SignalStatus = "closed"
 )
 
+type PositionSideType string
+
+const (
+	PositionSideLong  PositionSideType = "LONG"
+	PositionSideShort PositionSideType = "SHORT"
+)
+
+const ExitReasonLiquidation = "liquidation"
+
 type MarginType string
 
 const (
@@ -26,6 +35,7 @@ type Signal struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Status     SignalStatus `gorm:"type:varchar(10);not null"`
+	PositionSide PositionSideType `gorm:"type:varchar(10);default:'LONG'"`
 	// Mode is the effective execution mode ("live", "paper", "dryrun") the
 	// position was opened under (fix-01). Dryrun rows are simulated: their
 	// order IDs carry exchange.SimulatedOrderIDPrefix ("SIM-") and no real
@@ -37,6 +47,7 @@ type Signal struct {
 type Order struct {
 	ID            uint   `gorm:"primaryKey"`
 	SignalID      uint   `gorm:"not null"`
+	PositionSide       PositionSideType `gorm:"type:varchar(10);default:'LONG'"`
 	BrokerOrderID string `gorm:"type:varchar(50);"`
 	// StopLossOrderID is the BrokerOrderID of the resting STOP_MARKET order
 	// (Spec 03); empty if none/not-yet-triggered/cancelled.
@@ -59,6 +70,10 @@ type Order struct {
 	ExitFee        float32    `gorm:"not null"`
 	Leverage       float32    `gorm:"not null"`
 	ExecutedQty    float32    `gorm:"not null"`
+	InitialMargin      float32          `gorm:"default:0"`
+	LiquidationPrice   float32          `gorm:"default:0"`
+	AccumulatedFunding float32          `gorm:"default:0"`
+	LastFundingTime    *time.Time
 	IsClosing      bool       `gorm:"default:false"`
 	Profit         float32    `gorm:"not null"`
 	// SimStopEvaluatedAt is the OpenTime of the last closed candle the

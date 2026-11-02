@@ -41,6 +41,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -125,7 +127,14 @@ func NewHTTPServer(
 	// Cloudflare Access (auth-01 §4) guards the whole hostname - /api and the
 	// SPA - when CF_ACCESS.TEAM_DOMAIN and CF_ACCESS.AUD are both set.
 	wrappedMux := middleware.ConfigMiddleware(cfg, collector)(cfaccess.Wrap(cfg.CFAccess.TeamDomain, cfg.CFAccess.AUD, router))
-	srv := &http.Server{Addr: ":8080", Handler: wrappedMux}
+	addr := ":8080"
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		if !strings.HasPrefix(p, ":") {
+			p = ":" + p
+		}
+		addr = p
+	}
+	srv := &http.Server{Addr: addr, Handler: wrappedMux}
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -226,6 +235,7 @@ func Migrate(db *gorm.DB) error {
 		&entities.Order{},
 		&entities.Account{},
 		&entities.Candle{},
+		&entities.FundingRate{},
 		&entities.CandleDataset{},
 		&entities.CandleSegment{},
 		&entities.CandleChunk{},

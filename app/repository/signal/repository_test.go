@@ -229,3 +229,82 @@ func TestSignalRepository_UpdateSimStopEvaluatedAt(t *testing.T) {
 	assert.Equal(t, float32(98), open.Orders[0].StopLossPrice)
 	assert.Equal(t, "SIM-STOP-1-2", open.Orders[0].StopLossOrderID)
 }
+
+func TestSignalRepository_GetOpenSignalsBySide(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	assert.NoError(t, db.AutoMigrate(&entities.Signal{}, &entities.Order{}))
+	repo := repository.NewSignalRepository(db)
+
+	longSignal := entities.Signal{
+		Symbol:       "BTCUSDT",
+		StrategyID:   10,
+		Status:       entities.Open,
+		PositionSide: entities.PositionSideLong,
+		Orders: []entities.Order{
+			{BrokerOrderID: "LONG-1", PositionSide: entities.PositionSideLong, EntryPrice: 50000, Quantity: 0.1, MarginType: entities.Isolated},
+		},
+	}
+	shortSignal := entities.Signal{
+		Symbol:       "BTCUSDT",
+		StrategyID:   10,
+		Status:       entities.Open,
+		PositionSide: entities.PositionSideShort,
+		Orders: []entities.Order{
+			{BrokerOrderID: "SHORT-1", PositionSide: entities.PositionSideShort, EntryPrice: 50000, Quantity: 0.1, MarginType: entities.Isolated},
+		},
+	}
+
+	assert.NoError(t, repo.Create(longSignal))
+	assert.NoError(t, repo.Create(shortSignal))
+
+	gotLong, err := repo.GetOpenSignalsBySide("BTCUSDT", 10, entities.PositionSideLong)
+	assert.NoError(t, err)
+	assert.Equal(t, entities.PositionSideLong, gotLong.PositionSide)
+	assert.Len(t, gotLong.Orders, 1)
+	assert.Equal(t, "LONG-1", gotLong.Orders[0].BrokerOrderID)
+
+	gotShort, err := repo.GetOpenSignalsBySide("BTCUSDT", 10, entities.PositionSideShort)
+	assert.NoError(t, err)
+	assert.Equal(t, entities.PositionSideShort, gotShort.PositionSide)
+	assert.Len(t, gotShort.Orders, 1)
+	assert.Equal(t, "SHORT-1", gotShort.Orders[0].BrokerOrderID)
+
+	// Non-existent symbol or strategyID
+	notFound, err := repo.GetOpenSignalsBySide("ETHUSDT", 10, entities.PositionSideLong)
+	assert.NoError(t, err)
+	assert.Equal(t, uint(0), notFound.ID)
+}
+
+func TestSignalRepository_UpdateFundingWatermark(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	assert.NoError(t, db.AutoMigrate(&entities.Signal{}, &entities.Order{}))
+	repo := repository.NewSignalRepository(db)
+
+	assert.NoError(t, repo.Create(entities.Signal{
+		Symbol: "BTCUSDT", StrategyID: 20, Status: entities.Open,
+		Orders: []entities.Order{
+			{BrokerOrderID: "FUT-1", EntryPrice: 50000, Quantity: 1, MarginType: entities.Isolated, InitialMargin: 5000},
+		},
+	}))
+
+	open, err := repo.GetOpenSignals("BTCUSDT", 20)
+	assert.NoError(t, err)
+	orderID := open.Orders[0].ID
+	assert.Equal(t, float32(0), open.Orders[0].AccumulatedFunding)
+	assert.Equal(t, float32(0), open.Orders[0].LiquidationPrice)
+	assert.Nil(t, open.Orders[0].LastFundingTime)
+
+	fundingTime := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
+	assert.NoError(t, repo.UpdateFundingWatermark(orderID, 12.5, 45200.0, fundingTime))
+
+	open, err = repo.GetOpenSignals("BTCUSDT", 20)
+	assert.NoError(t, err)
+	assert.Equal(t, float32(12.5), open.Orders[0].AccumulatedFunding)
+	assert.Equal(t, float32(45200.0), open.Orders[0].LiquidationPrice)
+	if assert.NotNil(t, open.Orders[0].LastFundingTime) {
+		assert.True(t, open.Orders[0].LastFundingTime.Equal(fundingTime))
+	}
+}
+

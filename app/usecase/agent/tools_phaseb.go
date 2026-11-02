@@ -314,7 +314,11 @@ var deployToTestingSchema = json.RawMessage(`{
 		"strategy_id": {"type": "integer", "description": "a non-live, non-productive strategy in your scope (e.g. a challenger or dryrun strategy)"},
 		"script_source": {"type": "string", "description": "the complete new Lua source"},
 		"rationale": {"type": "string", "description": "why this change should be better"},
-		"skip_gate": {"type": "boolean", "description": "set to true to skip the backtest gate and apply code directly when the operator explicitly approves in chat without testing"}
+		"skip_gate": {"type": "boolean", "description": "set to true to skip the backtest gate and apply code directly when the operator explicitly approves in chat without testing"},
+		"configuration": {
+			"type": "object",
+			"description": "optional updated strategy configuration JSON, e.g. {\"market_type\": \"futures\", \"leverage\": 10, \"margin_type\": \"isolated\", \"stop_loss_pct\": 1.5, \"position_sizing\": {\"type\": \"pct_capital\", \"value\": 10}} plus any custom ctx.config.* parameters"
+		}
 	},
 	"required": ["strategy_id", "script_source", "rationale"]
 }`)
@@ -323,7 +327,7 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name: "deploy_to_testing",
-			Description: "Deploy new code to a non-live, non-productive strategy in your scope. Set skip_gate=true if the operator explicitly approved applying the code via chat without testing, which deploys directly without running the slow walk-forward backtest gate. Otherwise, runs the server-side metric gate (two walk-forward backtests). Live/productive strategies are never modified directly.",
+			Description: "Deploy new code (and optionally updated configuration such as market_type, leverage, margin_type, stop_loss_pct) to a non-live, non-productive strategy in your scope. Set skip_gate=true if the operator explicitly approved applying the code via chat without testing, which deploys directly without running the slow walk-forward backtest gate. Otherwise, runs the server-side metric gate (two walk-forward backtests). Live/productive strategies are never modified directly.",
 			InputSchema: deployToTestingSchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -336,10 +340,11 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 			// Only these fields are read; any threshold/metric-like
 			// keys in the args are ignored (the gate reads DeployGateConfig).
 			var in struct {
-				StrategyID   uint   `json:"strategy_id"`
-				ScriptSource string `json:"script_source"`
-				Rationale    string `json:"rationale"`
-				SkipGate     bool   `json:"skip_gate"`
+				StrategyID    uint            `json:"strategy_id"`
+				ScriptSource  string          `json:"script_source"`
+				Rationale     string          `json:"rationale"`
+				SkipGate      bool            `json:"skip_gate"`
+				Configuration json.RawMessage `json:"configuration"`
 			}
 			if err := json.Unmarshal(raw, &in); err != nil {
 				return "", fmt.Errorf("deploy_to_testing: invalid args: %w", err)
@@ -366,6 +371,9 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 				return "", fmt.Errorf("deploy_to_testing: %w", err)
 			}
 
+			rawCfg := strings.TrimSpace(string(in.Configuration))
+			hasCfgUpdate := len(rawCfg) > 0 && rawCfg != "null"
+
 			if in.SkipGate {
 				if sc, ok := scopeFrom(ctx); ok && isScheduledTrigger(sc.trigger) {
 					return "", fmt.Errorf("deploy_to_testing: skip_gate is only permitted during interactive chat when approved by the operator")
@@ -379,7 +387,7 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 				if err := u.validator().Validate(in.ScriptSource); err != nil {
 					return "", fmt.Errorf("deploy_to_testing: script_source does not compile: %v", err)
 				}
-				if in.ScriptSource == target.ScriptSource {
+				if in.ScriptSource == target.ScriptSource && !hasCfgUpdate {
 					return "", fmt.Errorf("deploy_to_testing: script_source is identical to strategy %d's current source", target.ID)
 				}
 
@@ -393,6 +401,9 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 
 				updated := current
 				updated.ScriptSource = in.ScriptSource
+				if hasCfgUpdate {
+					updated.StrategyConfiguration.Configuration = datatypes.JSON(rawCfg)
+				}
 				updated.Mode = clampAgentMode(updated.Mode)
 				if updated.Status != entities.Disabled {
 					updated.Status = entities.Testing
@@ -437,7 +448,7 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 			if err := u.validator().Validate(in.ScriptSource); err != nil {
 				return "", fmt.Errorf("deploy_to_testing: script_source does not compile: %v", err)
 			}
-			if in.ScriptSource == target.ScriptSource {
+			if in.ScriptSource == target.ScriptSource && !hasCfgUpdate {
 				return "", fmt.Errorf("deploy_to_testing: script_source is identical to strategy %d's current source", target.ID)
 			}
 
@@ -476,6 +487,9 @@ func (u AgentUseCase) deployToTestingTool() Tool {
 
 			updated := current
 			updated.ScriptSource = in.ScriptSource
+			if hasCfgUpdate {
+				updated.StrategyConfiguration.Configuration = datatypes.JSON(rawCfg)
+			}
 			updated.Mode = clampAgentMode(updated.Mode) // Phase A clamp: backtest stays, anything else -> dryrun
 			if updated.Status != entities.Disabled {
 				updated.Status = entities.Testing
@@ -705,7 +719,11 @@ var createStrategySchema = json.RawMessage(`{
 		"script_source": {"type": "string", "description": "Lua source implementing the Strategy hook contract"},
 		"symbols": {"type": "array", "items": {"type": "string"}},
 		"cycle_minutes": {"type": "integer", "description": "one of 1, 5, 15, 30, 60"},
-		"mode": {"type": "string", "enum": ["backtest", "dryrun"], "description": "anything but backtest is saved as dryrun"}
+		"mode": {"type": "string", "enum": ["backtest", "dryrun"], "description": "anything but backtest is saved as dryrun"},
+		"configuration": {
+			"type": "object",
+			"description": "optional strategy configuration JSON, e.g. {\"market_type\": \"futures\", \"leverage\": 10, \"margin_type\": \"isolated\", \"stop_loss_pct\": 1.5, \"position_sizing\": {\"type\": \"pct_capital\", \"value\": 10}} plus any custom ctx.config.* parameters"
+		}
 	},
 	"required": ["name", "description", "script_source", "symbols", "cycle_minutes"]
 }`)
@@ -746,6 +764,10 @@ func (u AgentUseCase) createStrategyTool() Tool {
 			if !ok {
 				return "", fmt.Errorf("create_strategy: agent %q already created %d strategies today (UTC) - the limit is %d per day", agent.Name, MaxStrategiesCreatedPerDay, MaxStrategiesCreatedPerDay)
 			}
+			var cfgJSON datatypes.JSON
+			if rawCfg := strings.TrimSpace(string(in.Configuration)); len(rawCfg) > 0 && rawCfg != "null" {
+				cfgJSON = datatypes.JSON(rawCfg)
+			}
 			agentID := agent.ID
 			saved, err := u.Strategy.Save(ctx, entities.Strategy{
 				Name:             in.Name,
@@ -756,7 +778,8 @@ func (u AgentUseCase) createStrategyTool() Tool {
 				Mode:             clampAgentMode(in.Mode),
 				MonitoredSymbols: in.Symbols,
 				StrategyConfiguration: entities.StrategyConfiguration{
-					Cycle: entities.Cycle(in.CycleMinutes),
+					Cycle:         entities.Cycle(in.CycleMinutes),
+					Configuration: cfgJSON,
 				},
 				CreatedByAgentID: &agentID,
 			})

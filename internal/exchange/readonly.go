@@ -3,6 +3,7 @@ package exchange
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrReadOnlyClient is returned by ReadOnlyClient's order-mutating methods.
@@ -25,7 +26,10 @@ func NewReadOnlyClient(inner ExchangeClient, onBlocked func(op string)) *ReadOnl
 	return &ReadOnlyClient{inner: inner, onBlocked: onBlocked}
 }
 
-var _ ExchangeClient = (*ReadOnlyClient)(nil)
+var (
+	_ ExchangeClient = (*ReadOnlyClient)(nil)
+	_ FuturesClient  = (*ReadOnlyClient)(nil)
+)
 
 func (c *ReadOnlyClient) blocked(op string) {
 	if c.onBlocked != nil {
@@ -67,4 +71,43 @@ func (c *ReadOnlyClient) SubscribeKline(ctx context.Context, symbol, interval st
 
 func (c *ReadOnlyClient) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan BookTicker, error) {
 	return c.inner.SubscribeBookTicker(ctx, symbol)
+}
+
+func (c *ReadOnlyClient) SetLeverage(ctx context.Context, symbol string, leverage int) error {
+	c.blocked("set_leverage")
+	return ErrReadOnlyClient
+}
+
+func (c *ReadOnlyClient) SetMarginType(ctx context.Context, symbol string, marginMode MarginMode) error {
+	c.blocked("set_margin_type")
+	return ErrReadOnlyClient
+}
+
+func (c *ReadOnlyClient) SetPositionMode(ctx context.Context, mode PositionMode) error {
+	c.blocked("set_position_mode")
+	return ErrReadOnlyClient
+}
+
+func (c *ReadOnlyClient) GetPositionMode(ctx context.Context) (PositionMode, error) {
+	fc, ok := c.inner.(FuturesClient)
+	if !ok {
+		return "", ErrFuturesNotSupported
+	}
+	return fc.GetPositionMode(ctx)
+}
+
+func (c *ReadOnlyClient) GetPositionRisk(ctx context.Context, symbol string, side PositionSide) (PositionRisk, error) {
+	fc, ok := c.inner.(FuturesClient)
+	if !ok {
+		return PositionRisk{}, ErrFuturesNotSupported
+	}
+	return fc.GetPositionRisk(ctx, symbol, side)
+}
+
+func (c *ReadOnlyClient) GetMarkPrice(ctx context.Context, symbol string) (markPrice float64, fundingRate float64, nextFundingTime time.Time, err error) {
+	fc, ok := c.inner.(FuturesClient)
+	if !ok {
+		return 0, 0, time.Time{}, ErrFuturesNotSupported
+	}
+	return fc.GetMarkPrice(ctx, symbol)
 }

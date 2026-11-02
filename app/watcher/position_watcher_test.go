@@ -222,3 +222,98 @@ func TestPositionWatcher_UntrackStopsStreamWhenEmpty(t *testing.T) {
 	assert.NotContains(t, w.bySymbol, "DOGEUSDT")
 	assert.NotContains(t, w.positions, uint(404))
 }
+
+func TestPositionWatcher_ShortTakeProfitAndStopLoss(t *testing.T) {
+	liveSeller := &mockSeller{}
+	drySeller := &mockSeller{}
+	ex := &mockExchange{}
+	ex.On("SubscribeBookTicker", mock.Anything, "SOLUSDT").Return(make(<-chan exchange.BookTicker), nil)
+
+	w := NewPositionWatcher(ex, liveSeller, drySeller, nil, nil)
+	w.ctx, w.cancel = context.WithCancel(context.Background())
+	defer w.Stop()
+
+	sig := entities.Signal{
+		ID:           505,
+		Symbol:       "SOLUSDT",
+		StrategyID:   5,
+		Strategy:     entities.Strategy{ID: 5, Name: "ShortStrat"},
+		Mode:         "dryrun",
+		PositionSide: entities.PositionSideShort,
+		Orders: []entities.Order{
+			{
+				ID:               5,
+				SignalID:         505,
+				PositionSide:     entities.PositionSideShort,
+				EntryPrice:       150.0,
+				TakeProfitPrice:  140.0,
+				StopLossPrice:    155.0,
+				LiquidationPrice: 165.0,
+				Quantity:         2.0,
+			},
+		},
+	}
+
+	w.TrackSignal(sig)
+
+	// 1. Price at 142: neither TP (<=140) nor SL (>=155) hit
+	w.OnTick(exchange.BookTicker{Symbol: "SOLUSDT", BestAskPrice: 142.0, BestBidPrice: 141.9})
+	assert.False(t, w.IsClosing(505))
+
+	// 2. Price drops to 139.5 (<= 140 TP): triggers SHORT Take-Profit
+	var wg sync.WaitGroup
+	wg.Add(1)
+	drySeller.On("GenerateSellSignal", mock.MatchedBy(func(e usecase.ExitSignal) bool {
+		return e.Symbol == "SOLUSDT" && e.ExitReason == ExitReasonTakeProfit && e.ExitPrice <= 140.0
+	})).Run(func(args mock.Arguments) {
+		wg.Done()
+	}).Return(nil).Once()
+
+	w.OnTick(exchange.BookTicker{Symbol: "SOLUSDT", BestAskPrice: 139.5, BestBidPrice: 139.4})
+	wg.Wait()
+	drySeller.AssertExpectations(t)
+}
+
+func TestPositionWatcher_DryRunLiquidationTrigger(t *testing.T) {
+	liveSeller := &mockSeller{}
+	drySeller := &mockSeller{}
+	ex := &mockExchange{}
+	ex.On("SubscribeBookTicker", mock.Anything, "BTCUSDT").Return(make(<-chan exchange.BookTicker), nil)
+
+	w := NewPositionWatcher(ex, liveSeller, drySeller, nil, nil)
+	w.ctx, w.cancel = context.WithCancel(context.Background())
+	defer w.Stop()
+
+	sig := entities.Signal{
+		ID:           606,
+		Symbol:       "BTCUSDT",
+		StrategyID:   6,
+		Strategy:     entities.Strategy{ID: 6, Name: "FuturesDry"},
+		Mode:         "dryrun",
+		PositionSide: entities.PositionSideShort,
+		Orders: []entities.Order{
+			{
+				ID:               6,
+				SignalID:         606,
+				PositionSide:     entities.PositionSideShort,
+				EntryPrice:       60000.0,
+				LiquidationPrice: 65000.0,
+				Quantity:         0.5,
+			},
+		},
+	}
+
+	w.TrackSignal(sig)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	drySeller.On("GenerateSellSignal", mock.MatchedBy(func(e usecase.ExitSignal) bool {
+		return e.Symbol == "BTCUSDT" && e.ExitReason == entities.ExitReasonLiquidation && e.ExitPrice >= 65000.0
+	})).Run(func(args mock.Arguments) {
+		wg.Done()
+	}).Return(nil).Once()
+
+	w.OnTick(exchange.BookTicker{Symbol: "BTCUSDT", BestAskPrice: 65100.0, BestBidPrice: 65090.0})
+	wg.Wait()
+	drySeller.AssertExpectations(t)
+}

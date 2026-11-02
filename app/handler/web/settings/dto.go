@@ -18,6 +18,8 @@ type PlatformSettingsUpdateRequestDTO struct {
 	BrokerTestnetApiKey    string            `json:"broker_testnet_api_key"`
 	BrokerTestnetApiSecret string            `json:"broker_testnet_api_secret"`
 	Mode                   string            `json:"mode"`
+	MarketType             string            `json:"market_type"`
+	PositionMode           string            `json:"position_mode"`
 	ConfirmLive            bool              `json:"confirm_live"`
 	Testnet                bool              `json:"testnet"`
 	WebhookURL             string            `json:"webhook_url"`
@@ -50,9 +52,20 @@ func resolveSecret(requested, existing string) string {
 // non-secret fields always take the request's value (they're not optional in
 // the DTO), secret fields fall back to existing per resolveSecret.
 func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) entities.Settings {
+	marketType := existing.EffectiveMarketType()
+	if r.MarketType != "" {
+		marketType = r.MarketType
+	}
+	positionMode := existing.EffectivePositionMode()
+	if r.PositionMode != "" {
+		positionMode = r.PositionMode
+	}
+
 	return entities.Settings{
 		ID:                     existing.ID,
 		Mode:                   r.Mode,
+		MarketType:             marketType,
+		PositionMode:           positionMode,
 		Testnet:                r.Testnet,
 		WebhookURL:             r.WebhookURL,
 		APIBaseURL:             existing.APIBaseURL,
@@ -77,6 +90,20 @@ func (r PlatformSettingsUpdateRequestDTO) MergeInto(existing entities.Settings) 
 		DefaultLocale:          r.mergedDefaultLocale(existing.DefaultLocale),
 		BacktestTimeoutMinutes: r.mergedBacktestTimeout(existing.BacktestTimeoutMinutes),
 	}
+}
+
+// ValidMarketType reports whether the request's market_type is acceptable:
+// empty/omitted (""), "spot", or "futures".
+func (r PlatformSettingsUpdateRequestDTO) ValidMarketType() bool {
+	s := strings.TrimSpace(r.MarketType)
+	return s == "" || s == "spot" || s == "futures"
+}
+
+// ValidPositionMode reports whether the request's position_mode is acceptable:
+// empty/omitted (""), "one_way", or "hedge".
+func (r PlatformSettingsUpdateRequestDTO) ValidPositionMode() bool {
+	s := strings.TrimSpace(r.PositionMode)
+	return s == "" || s == "one_way" || s == "hedge"
 }
 
 // mergedDefaultLocale is the DefaultLocale PUT /settings stores: the

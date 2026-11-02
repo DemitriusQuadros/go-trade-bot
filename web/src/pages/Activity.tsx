@@ -127,6 +127,12 @@ function PositionsTab() {
       let pnl = 0;
       let pnlPct = 0;
 
+      const positionSide = sig.position_side || firstOrder?.position_side;
+      const leverage = firstOrder?.leverage || 1;
+      const liquidationPrice = firstOrder?.liquidation_price || 0;
+      const accumulatedFunding = firstOrder?.accumulated_funding || 0;
+      const exitReason = firstOrder?.exit_reason;
+
       if (sig.status === 'open') {
         if (livePos) {
           pnl = livePos.unrealized_pnl;
@@ -151,6 +157,11 @@ function PositionsTab() {
         invested,
         pnl,
         pnlPct,
+        positionSide,
+        leverage,
+        liquidationPrice,
+        accumulatedFunding,
+        exitReason,
       };
     });
   }, [signals, strategyMap, ssePositions, ssePrices, tickers]);
@@ -258,7 +269,41 @@ function PositionsTab() {
                   return (
                     <tr key={pos.id}>
                       <td className="font-mono text-muted-foreground">#{pos.id}</td>
-                      <td className="font-mono font-bold text-foreground">{pos.symbol}</td>
+                      <td className="font-mono font-bold text-foreground">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{pos.symbol}</span>
+                          {pos.positionSide && (
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                pos.positionSide === 'SHORT'
+                                  ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                                  : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                              }`}
+                            >
+                              {pos.positionSide}
+                            </span>
+                          )}
+                          {pos.leverage > 1 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                              {pos.leverage}x
+                            </span>
+                          )}
+                        </div>
+                        {(pos.liquidationPrice > 0 || pos.accumulatedFunding !== 0) && (
+                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground font-mono">
+                            {pos.liquidationPrice > 0 && (
+                              <span className="text-destructive font-semibold">
+                                Liq: ${formatNumber(pos.liquidationPrice, { digits: 2 })}
+                              </span>
+                            )}
+                            {pos.accumulatedFunding !== 0 && (
+                              <span>
+                                Fund: {formatUsd(pos.accumulatedFunding, { signed: true, digits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <span className="font-medium text-foreground">{pos.strategyName}</span>
                       </td>
@@ -276,11 +321,19 @@ function PositionsTab() {
                         </td>
                       ) : (
                         <td className="font-mono text-muted-foreground">
-                          {pos.stopLossPrice > 0 ? (
+                          {pos.exitReason === 'liquidation' ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive text-destructive-foreground animate-pulse">
+                              {t.enum('exitReason', 'liquidation').toUpperCase()}
+                            </span>
+                          ) : pos.stopLossPrice > 0 ? (
                             <div className="flex items-center gap-1 text-warning/90">
                               <Shield className="w-3 h-3 flex-shrink-0" />
                               <span>${formatNumber(pos.stopLossPrice, { digits: 2 })}</span>
                             </div>
+                          ) : pos.exitReason ? (
+                            <span className="text-xs text-muted-foreground">
+                              {t.enum('exitReason', pos.exitReason)}
+                            </span>
                           ) : (
                             '—'
                           )}
@@ -505,16 +558,61 @@ function FillsTab() {
                           '—'
                         )}
                       </td>
-                      <td className="font-mono font-bold text-foreground text-xs">{signal.symbol}</td>
+                      <td className="font-mono font-bold text-foreground text-xs">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{signal.symbol}</span>
+                          {(order.position_side || signal.position_side) && (
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                (order.position_side || signal.position_side) === 'SHORT'
+                                  ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                                  : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                              }`}
+                            >
+                              {order.position_side || signal.position_side}
+                            </span>
+                          )}
+                          {order.leverage > 1 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                              {order.leverage}x
+                            </span>
+                          )}
+                        </div>
+                        {((order.liquidation_price && order.liquidation_price > 0) || (order.accumulated_funding && order.accumulated_funding !== 0)) && (
+                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground font-mono">
+                            {order.liquidation_price && order.liquidation_price > 0 && (
+                              <span className="text-destructive font-semibold">
+                                Liq: ${formatNumber(order.liquidation_price, { digits: 2 })}
+                              </span>
+                            )}
+                            {order.accumulated_funding && order.accumulated_funding !== 0 && (
+                              <span>
+                                Fund: {formatUsd(order.accumulated_funding, { signed: true, digits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="text-xs text-muted-foreground font-medium">{strategyName}</td>
                       <td className="font-mono text-xs">${formatNumber(order.entry_price, { digits: 2 })}</td>
                       <td className="font-mono text-xs">{order.exit_price > 0 ? `$${formatNumber(order.exit_price, { digits: 2 })}` : '—'}</td>
                       <td className="font-mono text-xs">{formatNumber(order.quantity, { digits: 4 })}</td>
                       <td className="font-mono text-xs text-muted-foreground">${formatNumber(totalFee, { digits: 3 })}</td>
                       <td className="font-mono text-xs">
-                        <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
-                          {formatUsd(order.profit, { signed: true, digits: 2 })}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
+                            {formatUsd(order.profit, { signed: true, digits: 2 })}
+                          </span>
+                          {order.exit_reason === 'liquidation' ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive text-destructive-foreground animate-pulse">
+                              {t.enum('exitReason', 'liquidation').toUpperCase()}
+                            </span>
+                          ) : order.exit_reason ? (
+                            <span className="text-[10px] text-muted-foreground bg-card/40 px-1 py-0.5 rounded border border-border/30">
+                              {t.enum('exitReason', order.exit_reason)}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="text-xs text-muted-foreground font-mono">{formatDateTime(order.created_at)}</td>
                     </tr>

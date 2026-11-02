@@ -19,6 +19,8 @@ const emptyObject = `{"type":"object","properties":{}}`
 // client, and neither are display-only monitoring links.
 type settingsView struct {
 	Mode                   string  `json:"mode"`
+	MarketType             string  `json:"market_type"`
+	PositionMode           string  `json:"position_mode"`
 	Testnet                bool    `json:"testnet"`
 	DryRunSlippagePct      float64 `json:"dry_run_slippage_pct"`
 	DryRunFeePct           float64 `json:"dry_run_fee_pct"`
@@ -31,7 +33,7 @@ type settingsView struct {
 func settingsTools(r SettingsReader) []Tool {
 	return []Tool{{
 		Name:        "get_settings",
-		Description: "Platform settings that matter for reasoning about risk: the execution-mode ceiling (dryrun/paper/live), testnet, dry-run fee/slippage, the agents kill switch, default locale and backtest timeout. Credentials and URLs are never included.",
+		Description: "Platform settings that matter for reasoning about risk: the execution-mode ceiling (dryrun/paper/live), market_type ceiling (spot/futures), position_mode (one_way), testnet, dry-run fee/slippage, the agents kill switch, default locale and backtest timeout. Credentials and URLs are never included.",
 		InputSchema: json.RawMessage(emptyObject),
 		Run: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			s, err := r.Get(ctx)
@@ -42,8 +44,16 @@ func settingsTools(r SettingsReader) []Tool {
 			if locale == "" {
 				locale = "en"
 			}
+			marketType := s.MarketType
+			if marketType == "" {
+				marketType = "spot"
+			}
+			positionMode := s.PositionMode
+			if positionMode == "" {
+				positionMode = "one_way"
+			}
 			return settingsView{
-				Mode: s.Mode, Testnet: s.Testnet,
+				Mode: s.Mode, MarketType: marketType, PositionMode: positionMode, Testnet: s.Testnet,
 				DryRunSlippagePct: s.DryRunSlippagePct, DryRunFeePct: s.DryRunFeePct, DryRunFillDelayMs: s.DryRunFillDelayMs,
 				AgentsPaused: s.AgentsPaused, DefaultLocale: locale,
 				BacktestTimeoutMinutes: int(s.BacktestTimeout() / time.Minute),
@@ -84,41 +94,51 @@ func accountTools(r AccountReader) []Tool {
 // --- signals -------------------------------------------------------------------
 
 type orderView struct {
-	ID              uint    `json:"id"`
-	EntryPrice      float32 `json:"entry_price"`
-	ExitPrice       float32 `json:"exit_price"`
-	Quantity        float32 `json:"quantity"`
-	InvestedAmount  float32 `json:"invested_amount"`
-	StopLossPrice   float32 `json:"stop_loss_price,omitempty"`
-	TakeProfitPrice float32 `json:"take_profit_price,omitempty"`
-	EntryFee        float32 `json:"entry_fee"`
-	ExitFee         float32 `json:"exit_fee"`
-	Profit          float32 `json:"profit"`
-	ExitReason      string  `json:"exit_reason,omitempty"`
-	Simulated       bool    `json:"simulated"`
-	OpenedAt        string  `json:"opened_at"`
-	ClosedAt        string  `json:"closed_at,omitempty"`
+	ID                 uint    `json:"id"`
+	PositionSide       string  `json:"position_side,omitempty"`
+	Leverage           float32 `json:"leverage,omitempty"`
+	MarginType         string  `json:"margin_type,omitempty"`
+	InitialMargin      float32 `json:"initial_margin,omitempty"`
+	LiquidationPrice   float32 `json:"liquidation_price,omitempty"`
+	AccumulatedFunding float32 `json:"accumulated_funding,omitempty"`
+	EntryPrice         float32 `json:"entry_price"`
+	ExitPrice          float32 `json:"exit_price"`
+	Quantity           float32 `json:"quantity"`
+	InvestedAmount     float32 `json:"invested_amount"`
+	StopLossPrice      float32 `json:"stop_loss_price,omitempty"`
+	TakeProfitPrice    float32 `json:"take_profit_price,omitempty"`
+	EntryFee           float32 `json:"entry_fee"`
+	ExitFee            float32 `json:"exit_fee"`
+	Profit             float32 `json:"profit"`
+	ExitReason         string  `json:"exit_reason,omitempty"`
+	Simulated          bool    `json:"simulated"`
+	OpenedAt           string  `json:"opened_at"`
+	ClosedAt           string  `json:"closed_at,omitempty"`
 }
 
 type signalView struct {
-	ID         uint        `json:"id"`
-	Symbol     string      `json:"symbol"`
-	StrategyID uint        `json:"strategy_id"`
-	Status     string      `json:"status"`
-	Mode       string      `json:"mode,omitempty"`
-	OpenedAt   string      `json:"opened_at"`
-	UpdatedAt  string      `json:"updated_at"`
-	Orders     []orderView `json:"orders"`
+	ID           uint        `json:"id"`
+	Symbol       string      `json:"symbol"`
+	StrategyID   uint        `json:"strategy_id"`
+	Status       string      `json:"status"`
+	Mode         string      `json:"mode,omitempty"`
+	PositionSide string      `json:"position_side,omitempty"`
+	OpenedAt     string      `json:"opened_at"`
+	UpdatedAt    string      `json:"updated_at"`
+	Orders       []orderView `json:"orders"`
 }
 
 func toSignalView(s entities.Signal) signalView {
 	v := signalView{
 		ID: s.ID, Symbol: s.Symbol, StrategyID: s.StrategyID, Status: string(s.Status), Mode: s.Mode,
-		OpenedAt: ts(s.CreatedAt), UpdatedAt: ts(s.UpdatedAt), Orders: make([]orderView, 0, len(s.Orders)),
+		PositionSide: string(s.PositionSide),
+		OpenedAt:     ts(s.CreatedAt), UpdatedAt: ts(s.UpdatedAt), Orders: make([]orderView, 0, len(s.Orders)),
 	}
 	for _, o := range s.Orders {
 		ov := orderView{
-			ID: o.ID, EntryPrice: o.EntryPrice, ExitPrice: o.ExitPrice, Quantity: o.Quantity, InvestedAmount: o.InvestedAmount,
+			ID: o.ID, PositionSide: string(o.PositionSide), Leverage: o.Leverage, MarginType: string(o.MarginType),
+			InitialMargin: o.InitialMargin, LiquidationPrice: o.LiquidationPrice, AccumulatedFunding: o.AccumulatedFunding,
+			EntryPrice: o.EntryPrice, ExitPrice: o.ExitPrice, Quantity: o.Quantity, InvestedAmount: o.InvestedAmount,
 			StopLossPrice: o.StopLossPrice, TakeProfitPrice: o.TakeProfitPrice, EntryFee: o.EntryFee, ExitFee: o.ExitFee,
 			Profit: o.Profit, ExitReason: o.ExitReason, Simulated: strings.HasPrefix(o.BrokerOrderID, "SIM-"),
 			OpenedAt: ts(o.CreatedAt),

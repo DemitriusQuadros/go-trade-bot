@@ -192,10 +192,8 @@ func TestEngine_Run_UpdatePosition_Sell_CallsGenerateSellSignal(t *testing.T) {
 	signalUC.AssertExpectations(t)
 }
 
-// AC#7: ShouldShort=true => no exchange call, strategy.error
-// logged/webhooked, cycle completes without a panic (and without being
-// recorded as an error - Run returns nil).
-func TestEngine_Run_ShouldShort_NotSupported(t *testing.T) {
+// Phase 3: ShouldShort=true with no Sell order => strategy.error logged/webhooked and error returned.
+func TestEngine_Run_GoShort_NoSellOrder_IsAnError(t *testing.T) {
 	e, signalUC, accountReader, exchangeClient, notifySender := newTestEngine()
 	stubCandleFetches(exchangeClient, "BTCUSDT")
 	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
@@ -212,9 +210,30 @@ func TestEngine_Run_ShouldShort_NotSupported(t *testing.T) {
 	strategy.On("After", mock.Anything).Return()
 
 	err := e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun)
+	assert.Error(t, err)
+	signalUC.AssertNotCalled(t, "GenerateShortSignal", mock.Anything)
+	notifySender.AssertExpectations(t)
+}
+
+func TestEngine_Run_GoShort_CallsGenerateShortSignal(t *testing.T) {
+	e, signalUC, accountReader, exchangeClient, _ := newTestEngine()
+	stubCandleFetches(exchangeClient, "BTCUSDT")
+	accountReader.On("GetAccount").Return(entities.Account{Amount: 1000}, nil)
+	signalUC.On("GetOpenSignal", "BTCUSDT", uint(1)).Return(entities.Signal{}, nil)
+	signalUC.On("GenerateShortSignal", mock.MatchedBy(func(e usecase.EntrySignal) bool {
+		return e.Symbol == "BTCUSDT" && e.PositionSide == entities.PositionSideShort && e.EntryPrice == 100 && e.RequestedQty == 1
+	})).Return(nil)
+
+	strategy := new(mocks.Strategy)
+	strategy.On("Before", mock.Anything).Return()
+	strategy.On("ShouldLong", mock.Anything).Return(false)
+	strategy.On("ShouldShort", mock.Anything).Return(true)
+	strategy.On("GoShort", mock.Anything).Return(strategies.Signal{Sell: &strategies.Order{Price: 100, Qty: 1}})
+	strategy.On("After", mock.Anything).Return()
+
+	err := e.Run(context.Background(), strategy, dbStrategyFixture(), "BTCUSDT", strategies.ModeDryRun)
 	assert.NoError(t, err)
-	signalUC.AssertNotCalled(t, "GenerateBuySignal", mock.Anything)
-	signalUC.AssertNotCalled(t, "GenerateSellSignal", mock.Anything)
+	signalUC.AssertExpectations(t)
 }
 
 // AC#9: a panic from any hook is recovered at the cycle boundary (not

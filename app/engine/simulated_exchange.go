@@ -8,6 +8,7 @@ import (
 
 	"go-trade-bot/app/repository/candle"
 	"go-trade-bot/internal/exchange"
+	"go-trade-bot/internal/futuresmath"
 )
 
 type MarketDataSource interface {
@@ -69,6 +70,9 @@ type SimulatedFillExchange struct {
 	executedOrders map[string]exchange.OrderResult
 	pendingOrders  []*pendingDelayedOrder
 	orderSeq       int64
+	leverage       map[string]int
+	marginMode     map[string]exchange.MarginMode
+	positionMode   exchange.PositionMode
 	mu             sync.Mutex
 }
 
@@ -79,6 +83,9 @@ func NewSimulatedFillExchange(source MarketDataSource, policy FillPolicy) *Simul
 		restingOrders:  make(map[string]*restingOrder),
 		executedOrders: make(map[string]exchange.OrderResult),
 		pendingOrders:  make([]*pendingDelayedOrder, 0),
+		leverage:       make(map[string]int),
+		marginMode:     make(map[string]exchange.MarginMode),
+		positionMode:   exchange.PositionModeOneWay,
 	}
 }
 
@@ -125,9 +132,18 @@ func (e *SimulatedFillExchange) SetSimulatedTime(t time.Time, currentCandle exch
 	// 2. Check resting STOP_MARKET orders
 	for id, order := range e.restingOrders {
 		if order.Type == exchange.OrderTypeStopMarket {
+			var triggered bool
+			var fillPrice float64
 			if order.Side == exchange.SideSell && currentCandle.Low <= order.StopPrice {
-				// Stop loss triggered
-				fillPrice := order.StopPrice
+				// Long stop loss triggered
+				triggered = true
+				fillPrice = order.StopPrice * (1 - e.policy.SlippagePct/100.0)
+			} else if order.Side == exchange.SideBuy && currentCandle.High >= order.StopPrice {
+				// Short stop loss triggered
+				triggered = true
+				fillPrice = order.StopPrice * (1 + e.policy.SlippagePct/100.0)
+			}
+			if triggered {
 				res := exchange.OrderResult{
 					BrokerOrderID: order.OrderID,
 					ClientOrderID: order.ClientOrderID,
@@ -262,6 +278,9 @@ func (e *SimulatedFillExchange) ListKline(ctx context.Context, symbol, interval 
 	asOf := e.currentSimTime
 	e.mu.Unlock()
 
+	if e.source == nil {
+		return nil, nil
+	}
 	return e.source.ListKlineBefore(ctx, symbol, interval, asOf, limit)
 }
 
@@ -294,4 +313,57 @@ func (e *SimulatedFillExchange) SubscribeKline(ctx context.Context, symbol, inte
 func (e *SimulatedFillExchange) SubscribeBookTicker(ctx context.Context, symbol string) (<-chan exchange.BookTicker, error) {
 	ch := make(chan exchange.BookTicker)
 	return ch, nil
+}
+
+func (e *SimulatedFillExchange) CurrentCandle() exchange.Candle {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.currentCandle
+}
+
+var _ exchange.FuturesClient = (*SimulatedFillExchange)(nil)
+
+func (e *SimulatedFillExchange) SetLeverage(ctx context.Context, symbol string, leverage int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.leverage[symbol] = leverage
+	return nil
+}
+
+func (e *SimulatedFillExchange) SetMarginType(ctx context.Context, symbol string, marginMode exchange.MarginMode) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.marginMode[symbol] = marginMode
+	return nil
+}
+
+func (e *SimulatedFillExchange) SetPositionMode(ctx context.Context, mode exchange.PositionMode) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.positionMode = mode
+	return nil
+}
+
+func (e *SimulatedFillExchange) GetPositionMode(ctx context.Context) (exchange.PositionMode, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.positionMode, nil
+}
+
+func (e *SimulatedFillExchange) GetPositionRisk(ctx context.Context, symbol string, side exchange.PositionSide) (exchange.PositionRisk, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return exchange.PositionRisk{
+		Symbol:       symbol,
+		PositionSide: side,
+	}, nil
+}
+
+func (e *SimulatedFillExchange) GetMarkPrice(ctx context.Context, symbol string) (markPrice float64, fundingRate float64, nextFundingTime time.Time, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	markPrice = e.currentCandle.Close
+	fundingRate = futuresmath.DefaultFundingRate8h
+	nextFundingTime = e.currentSimTime.Add(8 * time.Hour)
+	return markPrice, fundingRate, nextFundingTime, nil
 }

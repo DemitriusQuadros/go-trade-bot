@@ -18,6 +18,8 @@ import (
 	optimizeusecase "go-trade-bot/app/usecase/optimize"
 	"go-trade-bot/internal/metrics_provider"
 	"go-trade-bot/internal/modelprovider"
+
+	"gorm.io/datatypes"
 )
 
 // Tool is one entry in the closed tool registry: a provider-agnostic
@@ -205,12 +207,24 @@ func (u AgentUseCase) getOpenPositionsTool() Tool {
 			}
 			var b strings.Builder
 			for _, s := range signals {
-				var entryPrice float32
+				var entryPrice, leverage, liqPrice float32
+				side := s.PositionSide
 				if len(s.Orders) > 0 {
 					entryPrice = s.Orders[0].EntryPrice
+					leverage = s.Orders[0].Leverage
+					liqPrice = s.Orders[0].LiquidationPrice
+					if side == "" {
+						side = s.Orders[0].PositionSide
+					}
 				}
-				fmt.Fprintf(&b, "signal_id=%d strategy_id=%d symbol=%s status=%s entry_price=%.4f\n",
-					s.ID, s.StrategyID, s.Symbol, s.Status, entryPrice)
+				if side == "" {
+					side = "LONG"
+				}
+				if leverage <= 0 {
+					leverage = 1
+				}
+				fmt.Fprintf(&b, "signal_id=%d strategy_id=%d symbol=%s side=%s leverage=%.0fx status=%s entry_price=%.4f liquidation_price=%.4f\n",
+					s.ID, s.StrategyID, s.Symbol, side, leverage, s.Status, entryPrice, liqPrice)
 			}
 			if b.Len() == 0 {
 				return "no open positions", nil
@@ -261,13 +275,14 @@ func (u AgentUseCase) getPerformanceSnapshotsTool() Tool {
 // Deliberately has no `status` field - the model has no channel to request
 // Productive (Backend Spec 03 AC#3).
 type saveStrategyArgs struct {
-	StrategyID   uint     `json:"strategy_id"` // 0 = create
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	ScriptSource string   `json:"script_source"`
-	Symbols      []string `json:"symbols"`
-	CycleMinutes int      `json:"cycle_minutes"`
-	Mode         string   `json:"mode"` // model-supplied; see the clamp below - this value is advisory only
+	StrategyID    uint            `json:"strategy_id"` // 0 = create
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	ScriptSource  string          `json:"script_source"`
+	Symbols       []string        `json:"symbols"`
+	CycleMinutes  int             `json:"cycle_minutes"`
+	Mode          string          `json:"mode"` // model-supplied; see the clamp below - this value is advisory only
+	Configuration json.RawMessage `json:"configuration,omitempty"`
 }
 
 var saveStrategySchema = json.RawMessage(`{
@@ -279,7 +294,11 @@ var saveStrategySchema = json.RawMessage(`{
 		"script_source": {"type": "string", "description": "Lua source implementing the Strategy hook contract"},
 		"symbols": {"type": "array", "items": {"type": "string"}},
 		"cycle_minutes": {"type": "integer", "description": "one of 1, 5, 15, 30, 60"},
-		"mode": {"type": "string", "description": "advisory only - always clamped to backtest or dryrun server-side, see tool description"}
+		"mode": {"type": "string", "description": "advisory only - always clamped to backtest or dryrun server-side, see tool description"},
+		"configuration": {
+			"type": "object",
+			"description": "optional strategy configuration JSON, e.g. {\"market_type\": \"futures\", \"leverage\": 10, \"margin_type\": \"isolated\", \"stop_loss_pct\": 1.5, \"position_sizing\": {\"type\": \"pct_capital\", \"value\": 10}} plus any custom ctx.config.* parameters"
+		}
 	},
 	"required": ["name", "description", "script_source", "symbols", "cycle_minutes"]
 }`)
@@ -313,6 +332,11 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 				mode = in.Mode
 			}
 
+			var cfgJSON datatypes.JSON
+			if rawCfg := strings.TrimSpace(string(in.Configuration)); len(rawCfg) > 0 && rawCfg != "null" {
+				cfgJSON = datatypes.JSON(rawCfg)
+			}
+
 			s := entities.Strategy{
 				ID:               in.StrategyID,
 				Name:             in.Name,
@@ -323,7 +347,8 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 				Mode:             mode,
 				MonitoredSymbols: in.Symbols,
 				StrategyConfiguration: entities.StrategyConfiguration{
-					Cycle: entities.Cycle(in.CycleMinutes),
+					Cycle:         entities.Cycle(in.CycleMinutes),
+					Configuration: cfgJSON,
 				},
 			}
 
@@ -344,6 +369,9 @@ func (u AgentUseCase) saveStrategyScriptTool() Tool {
 				existing, getErr := u.Strategy.GetByID(ctx, in.StrategyID)
 				if getErr != nil {
 					return "", fmt.Errorf("save_strategy_script: could not load strategy %d: %w", in.StrategyID, getErr)
+				}
+				if len(s.StrategyConfiguration.Configuration) == 0 && len(existing.StrategyConfiguration.Configuration) > 0 {
+					s.StrategyConfiguration.Configuration = existing.StrategyConfiguration.Configuration
 				}
 				if existing.IsLiveOrProductive() {
 					return "", fmt.Errorf("save_strategy_script: strategy %d is %s/%s - agents may only edit non-productive, non-live strategies; use create_challenger + propose_promotion, or record a finding or write a report instead", in.StrategyID, existing.Status, existing.Mode)
@@ -558,8 +586,8 @@ func summarizeBacktestForModel(run entities.BacktestRun) string {
 		return fmt.Sprintf("backtest_id=%d strategy_id=%d status=failed symbol=%s\nerror: %s", run.ID, run.StrategyID, run.Symbol, run.ErrorMessage)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "backtest_id=%d strategy_id=%d\nsymbol=%s\nsharpe=%.4f max_drawdown_pct=%.2f win_rate_pct=%.2f profit_factor=%s total_trades=%d total_return_pct=%.2f passed=%v initial_capital=%.2f\n",
-		run.ID, run.StrategyID, run.Symbol, run.Sharpe, run.MaxDrawdownPct, run.WinRatePct, formatProfitFactorForModel(run.ProfitFactor), run.TotalTrades, run.TotalReturnPct, run.Passed, run.InitialCapital)
+	fmt.Fprintf(&b, "backtest_id=%d strategy_id=%d\nsymbol=%s market_type=%s leverage=%d margin_type=%s\nsharpe=%.4f max_drawdown_pct=%.2f win_rate_pct=%.2f profit_factor=%s total_trades=%d total_return_pct=%.2f passed=%v initial_capital=%.2f liquidations=%d total_funding_paid=%.4f total_fees_paid=%.4f\n",
+		run.ID, run.StrategyID, run.Symbol, run.MarketType, run.Leverage, run.MarginType, run.Sharpe, run.MaxDrawdownPct, run.WinRatePct, formatProfitFactorForModel(run.ProfitFactor), run.TotalTrades, run.TotalReturnPct, run.Passed, run.InitialCapital, run.Liquidations, run.TotalFundingPaid, run.TotalFeesPaid)
 
 	var trades []metrics_provider.TradeLogEntry
 	if len(run.TradeLogJSON) > 0 {
@@ -572,8 +600,8 @@ func summarizeBacktestForModel(run entities.BacktestRun) string {
 		}
 		fmt.Fprintf(&b, "trade log (last %d of %d trades):\n", len(tail), len(trades))
 		for _, t := range tail {
-			fmt.Fprintf(&b, "  %s entry=%.4f exit=%.4f qty=%.6f profit=%.4f reason=%s\n",
-				t.ExitTime.Format(time.RFC3339), t.EntryPrice, t.ExitPrice, t.Quantity, t.Profit, t.ExitReason)
+			fmt.Fprintf(&b, "  %s side=%s entry=%.4f exit=%.4f qty=%.6f profit=%.4f reason=%s\n",
+				t.ExitTime.Format(time.RFC3339), t.Side, t.EntryPrice, t.ExitPrice, t.Quantity, t.Profit, t.ExitReason)
 		}
 	}
 

@@ -12,6 +12,8 @@ import {
   StrategyMode,
   TraceRecord,
   BacktestRun,
+  MarketType,
+  MarginType,
 } from '@/api/types';
 import { SharedPriceChart } from '@/components/charts/SharedPriceChart';
 import { TraceAnnotationPanel } from '@/components/charts/TraceAnnotationPanel';
@@ -81,6 +83,9 @@ export interface ScriptEditorState {
   status: StrategyStatus;
   mode: StrategyMode;
   previewSymbol: string;
+  marketType: MarketType;
+  leverage: number;
+  marginType: MarginType;
 }
 
 export const DEFAULT_LUA_TEMPLATE = `-- Lua Strategy Script (gopher-lua sandboxed)
@@ -161,6 +166,9 @@ export function toEditorState(strat: Strategy): ScriptEditorState {
   const sizing = (cfg.position_sizing as any) || { type: 'pct_capital', value: 10 };
   const stopLoss = typeof cfg.stop_loss_pct === 'number' ? cfg.stop_loss_pct : null;
   const symbols = strat.monitored_symbols || ['BTCUSDT'];
+  const marketType: MarketType = (cfg.market_type as MarketType) === 'futures' ? 'futures' : 'spot';
+  const leverage = typeof cfg.leverage === 'number' && cfg.leverage >= 1 ? Math.min(125, Math.floor(cfg.leverage)) : 1;
+  const marginType: MarginType = (cfg.margin_type as MarginType) === 'cross' ? 'cross' : 'isolated';
 
   return {
     strategyId: strat.id,
@@ -177,17 +185,30 @@ export function toEditorState(strat: Strategy): ScriptEditorState {
     status: strat.status || 'disabled',
     mode: strat.mode || 'dryrun',
     previewSymbol: symbols[0] || 'BTCUSDT',
+    marketType,
+    leverage,
+    marginType,
   };
 }
 
 export function toStrategyConfiguration(state: ScriptEditorState): Record<string, unknown> {
-  return {
+  const config: Record<string, unknown> = {
     stop_loss_pct: state.stopLossPct,
     position_sizing: {
       type: state.positionSizing.type,
       value: state.positionSizing.value,
     },
   };
+  if (state.marketType) {
+    config.market_type = state.marketType;
+  }
+  if (typeof state.leverage === 'number') {
+    config.leverage = state.leverage;
+  }
+  if (state.marginType) {
+    config.margin_type = state.marginType;
+  }
+  return config;
 }
 
 // --- Console log (frontend-06) ---------------------------------------------
@@ -254,6 +275,9 @@ const DEFAULT_DRAFT: ScriptEditorState = {
   status: 'disabled',
   mode: 'dryrun',
   previewSymbol: 'BTCUSDT',
+  marketType: 'spot',
+  leverage: 1,
+  marginType: 'isolated',
 };
 
 

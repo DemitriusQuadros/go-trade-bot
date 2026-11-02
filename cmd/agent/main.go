@@ -85,6 +85,7 @@ func Migrate(db *gorm.DB) error {
 		&entities.Order{},
 		&entities.Account{},
 		&entities.Candle{},
+		&entities.FundingRate{},
 		&entities.CandleDataset{},
 		&entities.CandleSegment{},
 		&entities.CandleChunk{},

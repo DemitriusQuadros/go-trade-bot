@@ -22,6 +22,7 @@ import {
   Activity,
   AlertTriangle,
   ExternalLink,
+  Shield,
 } from 'lucide-react';
 import { formatDateTime, formatNumber, formatPct, formatUsd, formatUtcDay } from '@/lib/format';
 import { useT } from '@/i18n';
@@ -189,6 +190,16 @@ export function BacktestPane() {
               {t('backtest.runTitle', { id: run.id, symbol: run.symbol })}
             </h2>
             <StatusBadge status={run.passed ? 'passed' : 'failed'} />
+            {run.market_type === 'futures' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border bg-amber-500/15 text-amber-500 border-amber-500/30">
+                {t('settings.optFutures').toUpperCase()}
+              </span>
+            )}
+            {typeof run.leverage === 'number' && run.leverage > 1 && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border bg-amber-500/15 text-amber-500 border-amber-500/30">
+                {run.leverage}x
+              </span>
+            )}
             {run.is_walk_forward && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border bg-accent text-accent-foreground border-border">
                 {t('backtest.walkForward')}
@@ -258,6 +269,65 @@ export function BacktestPane() {
           icon={<Percent className="w-4 h-4 text-warning" />}
         />
       </div>
+
+      {/* Futures Summary Metrics */}
+      {(run.market_type === 'futures' ||
+        (typeof run.leverage === 'number' && run.leverage > 1) ||
+        (typeof run.liquidations === 'number' && run.liquidations > 0) ||
+        (run.total_funding_paid !== undefined && run.total_funding_paid !== 0)) && (
+        <Card className="p-3 bg-card/40 border-border">
+          <div className="text-xs font-bold uppercase tracking-wider text-amber-500 mb-2.5 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5" />
+            <span>{t('backtest.futuresSummary')}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div>
+              <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
+                {t('backtest.marketTypeLabel')}
+              </span>
+              <span className="text-xs font-bold text-foreground">
+                {run.market_type ? run.market_type.toUpperCase() : 'FUTURES'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
+                {t('backtest.leverageLabel')}
+              </span>
+              <span className="text-xs font-bold text-amber-500 font-mono">
+                {run.leverage ? `${run.leverage}x` : '1x'}{run.margin_type ? ` (${run.margin_type})` : ''}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
+                {t('backtest.liquidations')}
+              </span>
+              <span
+                className={`text-xs font-bold font-mono ${
+                  (run.liquidations || 0) > 0 ? 'text-destructive' : 'text-foreground'
+                }`}
+              >
+                {run.liquidations || 0}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
+                {t('backtest.fundingPaid')}
+              </span>
+              <span className="text-xs font-bold font-mono text-foreground">
+                {formatUsd(run.total_funding_paid || 0, { signed: true, digits: 2 })}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
+                {t('backtest.totalFees')}
+              </span>
+              <span className="text-xs font-bold font-mono text-foreground">
+                {formatUsd(run.total_fees_paid || 0, { digits: 2 })}
+              </span>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {activeTab === 'report' ? (
         <Card className="p-0 overflow-hidden">
@@ -395,31 +465,69 @@ export function BacktestPane() {
                       return (
                         <tr key={idx} className="border-t border-border/40 hover:bg-card/10">
                           <td className="px-2 py-1.5 text-muted-foreground font-mono whitespace-nowrap">
-                            {formatTs(trade.entry_time)}
+                            <div className="flex items-center gap-1">
+                              {trade.position_side && (
+                                <span
+                                  className={`inline-flex items-center px-1 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                    trade.position_side === 'SHORT'
+                                      ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                                      : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                                  }`}
+                                >
+                                  {trade.position_side}
+                                </span>
+                              )}
+                              <span>{formatTs(trade.entry_time)}</span>
+                            </div>
                           </td>
                           <td className="px-2 py-1.5 text-muted-foreground font-mono whitespace-nowrap">
                             {formatTs(trade.exit_time)}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            ${formatNumber(Number(trade.entry_price || 0), { digits: 2 })}
+                            <div>${formatNumber(Number(trade.entry_price || 0), { digits: 2 })}</div>
+                            {typeof trade.liquidation_price === 'number' && trade.liquidation_price > 0 && (
+                              <div className="text-[10px] text-destructive font-mono">
+                                Liq: ${formatNumber(trade.liquidation_price, { digits: 2 })}
+                              </div>
+                            )}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
                             ${formatNumber(Number(trade.exit_price || 0), { digits: 2 })}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
-                            {formatNumber(Number(trade.quantity || 0), { digits: 4 })}
+                            <div>{formatNumber(Number(trade.quantity || 0), { digits: 4 })}</div>
+                            {typeof trade.leverage === 'number' && trade.leverage > 1 && (
+                              <div className="text-[10px] text-amber-500 font-mono">
+                                {trade.leverage}x
+                              </div>
+                            )}
                           </td>
                           <td className="px-2 py-1.5 font-mono text-right whitespace-nowrap">
                             {trade.profit !== undefined ? (
-                              <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
-                                {formatUsd(Number(trade.profit), { signed: true, digits: 2 })}
-                              </span>
+                              <div>
+                                <span className={`font-semibold ${isProfit ? 'text-success' : 'text-destructive'}`}>
+                                  {formatUsd(Number(trade.profit), { signed: true, digits: 2 })}
+                                </span>
+                                {typeof trade.funding_paid === 'number' && trade.funding_paid !== 0 && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    Fund: {formatUsd(trade.funding_paid, { signed: true, digits: 2 })}
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               '—'
                             )}
                           </td>
                           <td className="px-2 py-1.5 text-muted-foreground max-w-[200px] truncate" title={trade.exit_reason || ''}>
-                            {trade.exit_reason ? t.enum('exitReason', trade.exit_reason) : '—'}
+                            {trade.exit_reason === 'liquidation' ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-destructive text-destructive-foreground animate-pulse">
+                                {t.enum('exitReason', 'liquidation').toUpperCase()}
+                              </span>
+                            ) : trade.exit_reason ? (
+                              t.enum('exitReason', trade.exit_reason)
+                            ) : (
+                              '—'
+                            )}
                           </td>
                         </tr>
                       );

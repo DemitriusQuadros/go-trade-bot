@@ -11,6 +11,7 @@ import (
 	"go-trade-bot/app/strategies"
 	usecase "go-trade-bot/app/usecase/signal"
 	"go-trade-bot/internal/exchange"
+	"go-trade-bot/internal/futuresmath"
 )
 
 // CycleHook runs at the start of Engine.Run, before the Context is built and
@@ -18,6 +19,16 @@ import (
 // (SimulatedStopEvaluator); live/paper/backtest engines leave it nil.
 type CycleHook interface {
 	BeforeCycle(ctx context.Context, dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode) error
+}
+
+// FundingSettler is implemented by SignalUseCase to settle 8h funding fees.
+type FundingSettler interface {
+	SettleFunding(symbol string, strategyID uint, fundingPayment float32, newLiqPrice float32, fundingTime time.Time) error
+}
+
+// SideStopTriggerer is an optional interface on dry-run exchange supporting stop direction.
+type SideStopTriggerer interface {
+	TriggerStopWithSide(orderID string, side exchange.OrderSide, quantity, stopPrice float64, at time.Time) exchange.OrderResult
 }
 
 // SimulatedStopSignals is what SimulatedStopEvaluator needs from the dryrun
@@ -86,7 +97,17 @@ func (ev *SimulatedStopEvaluator) BeforeCycle(ctx context.Context, dbStrategy en
 		return nil
 	}
 	order := open.Orders[0]
-	if order.StopLossOrderID == "" || order.StopLossPrice <= 0 || !exchange.IsSimulatedOrderID(order.StopLossOrderID) {
+
+	isShort := open.PositionSide == entities.PositionSideShort || order.PositionSide == entities.PositionSideShort
+	isFutures := order.Leverage > 1 || isShort || order.LiquidationPrice > 0
+
+	hasSimStop := order.StopLossOrderID != "" && order.StopLossPrice > 0 && exchange.IsSimulatedOrderID(order.StopLossOrderID)
+	hasSimLiq := order.LiquidationPrice > 0 && exchange.IsSimulatedOrderID(order.BrokerOrderID)
+
+	if !hasSimStop && !hasSimLiq && !isFutures {
+		return nil
+	}
+	if !exchange.IsSimulatedOrderID(order.BrokerOrderID) && (order.StopLossOrderID == "" || !exchange.IsSimulatedOrderID(order.StopLossOrderID)) {
 		return nil
 	}
 
@@ -103,7 +124,9 @@ func (ev *SimulatedStopEvaluator) BeforeCycle(ctx context.Context, dbStrategy en
 
 	now := ev.Now()
 	stop := float64(order.StopLossPrice)
+	liq := float64(order.LiquidationPrice)
 	var lastEvaluated time.Time
+
 	for _, c := range candles {
 		closeTime := c.OpenTime.Add(candleDur)
 		if closeTime.After(now) {
@@ -115,9 +138,61 @@ func (ev *SimulatedStopEvaluator) BeforeCycle(ctx context.Context, dbStrategy en
 		if order.SimStopEvaluatedAt != nil && !c.OpenTime.After(*order.SimStopEvaluatedAt) {
 			continue // already evaluated
 		}
-		if c.Low <= stop {
-			return ev.fire(dbStrategy, symbol, mode, open, stop, closeTime)
+
+		// 1. 8h Funding Settlement
+		if isFutures {
+			fundingWatermark := order.CreatedAt
+			if order.LastFundingTime != nil {
+				fundingWatermark = *order.LastFundingTime
+			}
+			fundingTimestamps := futuresmath.FundingTimestampsInWindow(fundingWatermark, closeTime)
+			if len(fundingTimestamps) > 0 {
+				if settler, ok := ev.Signals.(FundingSettler); ok {
+					fundingRate := futuresmath.DefaultFundingRate8h
+					if fc, okFc := ev.Exchange.(exchange.FuturesClient); okFc {
+						if _, fr, _, frErr := fc.GetMarkPrice(ctx, symbol); frErr == nil && fr != 0 {
+							fundingRate = fr
+						}
+					}
+					fmSide := futuresmath.SideLong
+					if isShort {
+						fmSide = futuresmath.SideShort
+					}
+					for _, fts := range fundingTimestamps {
+						markPrice := c.Close
+						payment := futuresmath.FundingPayment(fmSide, float64(order.Quantity), markPrice, fundingRate)
+						accFunding := float64(order.AccumulatedFunding) + payment
+						newLiqPrice := futuresmath.IsolatedLiquidationPrice(symbol, fmSide, float64(order.EntryPrice), float64(order.Quantity), float64(order.Leverage), 0, accFunding)
+						if sErr := settler.SettleFunding(symbol, dbStrategy.ID, float32(payment), float32(newLiqPrice), fts); sErr == nil {
+							order.AccumulatedFunding = float32(accFunding)
+							order.LiquidationPrice = float32(newLiqPrice)
+							order.LastFundingTime = &fts
+							liq = newLiqPrice
+						}
+					}
+				}
+			}
 		}
+
+		// 2. Stop-Loss vs. Liquidation Priority
+		if !isShort {
+			stopHit := stop > 0 && order.StopLossOrderID != "" && c.Low <= stop
+			liqHit := liq > 0 && c.Low <= liq
+			if stopHit && (!liqHit || stop > liq) {
+				return ev.fireStop(dbStrategy, symbol, mode, open, exchange.SideSell, stop, closeTime)
+			} else if liqHit {
+				return ev.fireLiquidation(dbStrategy, symbol, mode, open, liq)
+			}
+		} else {
+			stopHit := stop > 0 && order.StopLossOrderID != "" && c.High >= stop
+			liqHit := liq > 0 && c.High >= liq
+			if stopHit && (!liqHit || stop < liq) {
+				return ev.fireStop(dbStrategy, symbol, mode, open, exchange.SideBuy, stop, closeTime)
+			} else if liqHit {
+				return ev.fireLiquidation(dbStrategy, symbol, mode, open, liq)
+			}
+		}
+
 		if c.OpenTime.After(lastEvaluated) {
 			lastEvaluated = c.OpenTime
 		}
@@ -131,9 +206,14 @@ func (ev *SimulatedStopEvaluator) BeforeCycle(ctx context.Context, dbStrategy en
 	return nil
 }
 
-func (ev *SimulatedStopEvaluator) fire(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, open entities.Signal, stop float64, at time.Time) error {
+func (ev *SimulatedStopEvaluator) fireStop(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, open entities.Signal, side exchange.OrderSide, stop float64, at time.Time) error {
 	order := open.Orders[0]
-	fill := ev.Exchange.TriggerStop(order.StopLossOrderID, float64(order.Quantity), stop, at)
+	var fill exchange.OrderResult
+	if st, ok := ev.Exchange.(SideStopTriggerer); ok {
+		fill = st.TriggerStopWithSide(order.StopLossOrderID, side, float64(order.Quantity), stop, at)
+	} else {
+		fill = ev.Exchange.TriggerStop(order.StopLossOrderID, float64(order.Quantity), stop, at)
+	}
 	defer ev.Exchange.ClearTriggeredStop(order.StopLossOrderID)
 
 	log.Printf("[engine] %s/%s: simulated stop-loss %s fired at %.8f (stop %.8f)",
@@ -148,6 +228,23 @@ func (ev *SimulatedStopEvaluator) fire(dbStrategy entities.Strategy, symbol stri
 		ExitReason:   usecase.ExitReasonSimulatedStopLoss,
 	}); err != nil {
 		return fmt.Errorf("simulated stop-loss close for %s failed: %w", symbol, err)
+	}
+	return nil
+}
+
+func (ev *SimulatedStopEvaluator) fireLiquidation(dbStrategy entities.Strategy, symbol string, mode strategies.ExecutionMode, open entities.Signal, liq float64) error {
+	log.Printf("[engine] %s/%s: simulated liquidation triggered at %.8f",
+		dbStrategy.Name, symbol, liq)
+
+	if err := ev.Signals.GenerateSellSignal(usecase.ExitSignal{
+		Symbol:       symbol,
+		StrategyID:   dbStrategy.ID,
+		StrategyName: dbStrategy.Name,
+		Mode:         mode.String(),
+		ExitPrice:    float32(liq),
+		ExitReason:   entities.ExitReasonLiquidation,
+	}); err != nil {
+		return fmt.Errorf("simulated liquidation close for %s failed: %w", symbol, err)
 	}
 	return nil
 }

@@ -7,6 +7,8 @@ const RISK_BEARING_KEYS: (keyof PlatformSettingsUpdateRequest)[] = [
   'broker_testnet_api_secret',
   'testnet',
   'mode',
+  'market_type',
+  'position_mode',
 ];
 
 export function isRiskBearingChange(

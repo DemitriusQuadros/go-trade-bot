@@ -104,7 +104,7 @@ func RegisterScriptStrategy(runner *script.Runner, store script.ScriptStateStore
 // can never place a real order and then fail to persist its Signal row. A
 // failure aborts startup.
 func MigrateSignalTables(db *gorm.DB) error {
-	if err := db.AutoMigrate(&entities.Signal{}, &entities.Order{}, &entities.Account{}); err != nil {
+	if err := db.AutoMigrate(&entities.Signal{}, &entities.Order{}, &entities.Account{}, &entities.FundingRate{}); err != nil {
 		return err
 	}
 	return accountrepo.NewAccountRepository(db).EnsureDefaultAccounts()

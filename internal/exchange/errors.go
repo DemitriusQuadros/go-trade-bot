@@ -27,4 +27,13 @@ var (
 	// an order for violating a symbol trading filter (e.g. LOT_SIZE,
 	// PRICE_FILTER, PERCENT_PRICE).
 	ErrFilterViolation = errors.New("exchange: order violates exchange filter")
+
+	// ErrReduceOnlyRejected is returned by PlaceOrder on Futures when a
+	// ReduceOnly exit order (or Hedge Mode closing order) is rejected because
+	// the position is already flat (-2022).
+	ErrReduceOnlyRejected = errors.New("exchange: reduce-only order rejected")
+
+	// ErrFuturesNotSupported is returned when a FuturesClient capability method
+	// is invoked against a Spot-only adapter.
+	ErrFuturesNotSupported = errors.New("exchange: futures operations not supported on spot client")
 )

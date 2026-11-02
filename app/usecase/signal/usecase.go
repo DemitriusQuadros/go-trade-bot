@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"math"
+	"strings"
+	"time"
+
 	"go-trade-bot/app/entities"
 	"go-trade-bot/internal/exchange"
+	"go-trade-bot/internal/futuresmath"
 	"go-trade-bot/internal/metrics"
 	"go-trade-bot/internal/notifier"
-	"log"
-	"time"
 )
 
 const (
@@ -29,6 +33,9 @@ type EntrySignal struct {
 	// (Spec 09/11) - not persisted on Signal/Order, which key on StrategyID.
 	StrategyName string
 	Mode         string
+	PositionSide entities.PositionSideType // default entities.PositionSideLong
+	Leverage     float32                   // default 1
+	MarketType   string                    // "spot" (default) or "futures"
 	EntryPrice   float32
 	MarginType   entities.MarginType
 	// StopLossPct is the strategy's configured stop_loss_pct, used to submit
@@ -64,6 +71,7 @@ type ExitSignal struct {
 	StrategyID   uint
 	StrategyName string
 	Mode         string
+	PositionSide entities.PositionSideType // optional
 	ExitPrice    float32
 	// ExitReason documents why the position is being closed - "take_profit" |
 	// "stop_loss" | "manual" | "band_cross" (Spec 09's position.closed
@@ -134,6 +142,51 @@ func NewSignalUseCase(
 // only then persists the Signal/Order rows - sized to what the exchange
 // actually filled, not the caller's pre-trade estimate.
 func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
+	e.PositionSide = entities.PositionSideLong
+	return s.executeEntrySignal(e, entities.PositionSideLong)
+}
+
+// GenerateShortSignal places a real market SELL order to open a short position,
+// submits the protective STOP_MARKET order (BUY side) immediately after fill,
+// and persists the Signal/Order rows with position_side="SHORT".
+func (s SignalUseCase) GenerateShortSignal(e EntrySignal) error {
+	e.PositionSide = entities.PositionSideShort
+	return s.executeEntrySignal(e, entities.PositionSideShort)
+}
+
+func (s SignalUseCase) feeRateForMarket(marketType string) float64 {
+	if strings.EqualFold(marketType, "futures") && s.FeePct == 0.1 {
+		return futuresmath.DefaultFuturesTakerFeeBps / 100.0 // 0.05%
+	}
+	if s.FeePct <= 0 {
+		return 0.1
+	}
+	return s.FeePct
+}
+
+func (s SignalUseCase) calculateEntryFeeForMarket(notional float32, marketType string) float32 {
+	feePct := s.feeRateForMarket(marketType)
+	return float32(float64(notional) * feePct / 100.0)
+}
+
+func (s SignalUseCase) configureFuturesIfSupported(ctx context.Context, e EntrySignal) {
+	if strings.EqualFold(e.MarketType, "futures") || e.Leverage > 1 || e.PositionSide == entities.PositionSideShort {
+		if fc, ok := s.Exchange.(exchange.FuturesClient); ok {
+			marginMode := exchange.MarginModeIsolated
+			if e.MarginType == entities.Cross {
+				marginMode = exchange.MarginModeCross
+			}
+			_ = fc.SetMarginType(ctx, e.Symbol, marginMode)
+			lev := int(math.Round(float64(e.Leverage)))
+			if lev < 1 {
+				lev = 1
+			}
+			_ = fc.SetLeverage(ctx, e.Symbol, lev)
+		}
+	}
+}
+
+func (s SignalUseCase) executeEntrySignal(e EntrySignal, side entities.PositionSideType) error {
 	ctx := context.Background()
 
 	canOpen, err := s.AccountUseCase.CanOpenOrder()
@@ -154,51 +207,85 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		return nil
 	}
 
+	leverage := float64(e.Leverage)
+	if leverage < 1 {
+		leverage = 1
+	}
+	e.Leverage = float32(leverage)
+
+	if e.MarginType == "" {
+		e.MarginType = entities.Isolated
+	}
+
 	available, _ := s.AccountUseCase.GetDisponibleAmout()
 	sizer := s.Sizer
 	if sizer == nil {
 		sizer = NewDefaultPositionSizer()
 	}
-	investedAmount, err := sizer.Size(e.PositionSizing, float64(available))
+	marginCommitted, err := sizer.Size(e.PositionSizing, float64(available))
 	if err != nil {
 		return fmt.Errorf("failed to compute position sizing: %w", err)
 	}
-	requestedQty := investedAmount / float64(e.EntryPrice)
+	notionalBudget := marginCommitted * leverage
+	if e.EntryPrice <= 0 {
+		return fmt.Errorf("invalid entry price %.8f", e.EntryPrice)
+	}
+	requestedQty := notionalBudget / float64(e.EntryPrice)
 	if e.RequestedQty > 0 {
-		requestedQty, err = s.resolveScriptQty(ctx, e, sizer, investedAmount)
+		requestedQty, err = s.resolveScriptQty(ctx, e, sizer, notionalBudget)
 		if err != nil {
 			return err
 		}
 	}
 
+	s.configureFuturesIfSupported(ctx, e)
+
 	ordinal := time.Now().UnixNano()
-	buyClientOrderID := fmt.Sprintf("gtb-%d-buy-%d", e.StrategyID, ordinal)
+	var clientOrderID string
+	var orderSide exchange.OrderSide
+	var posSide exchange.PositionSide
+	var durationSide string
+
+	if side == entities.PositionSideShort {
+		clientOrderID = fmt.Sprintf("gtb-%d-short-%d", e.StrategyID, ordinal)
+		orderSide = exchange.SideSell
+		posSide = exchange.PositionSideShort
+		durationSide = "sell"
+	} else {
+		clientOrderID = fmt.Sprintf("gtb-%d-buy-%d", e.StrategyID, ordinal)
+		orderSide = exchange.SideBuy
+		posSide = exchange.PositionSideLong
+		durationSide = "buy"
+	}
 
 	start := time.Now()
 	result, err := s.Exchange.PlaceOrder(ctx, exchange.PlaceOrderRequest{
 		Symbol:        e.Symbol,
-		Side:          exchange.SideBuy,
+		Side:          orderSide,
+		PositionSide:  posSide,
 		Type:          exchange.OrderTypeMarket,
 		Quantity:      requestedQty,
-		ClientOrderID: buyClientOrderID,
+		ClientOrderID: clientOrderID,
 	})
-	s.observeOrderDuration(e.StrategyName, "buy", start)
+	s.observeOrderDuration(e.StrategyName, durationSide, start)
 
 	if err != nil {
 		s.incrementOrderError(e.StrategyName, classifyOrderErrorReason(err))
-		s.notify(ctx, s.errorEvent(e, "PlaceOrder buy failed: "+err.Error()))
-		return fmt.Errorf("failed to place buy order for %s: %w", e.Symbol, err)
+		s.notify(ctx, s.errorEvent(e, fmt.Sprintf("PlaceOrder %s failed: %v", durationSide, err)))
+		return fmt.Errorf("failed to place %s order for %s: %w", durationSide, e.Symbol, err)
 	}
 
 	if result.Status == exchange.OrderStatusRejected || result.ExecutedQty == 0 {
 		s.incrementOrderError(e.StrategyName, "rejected")
-		s.notify(ctx, s.errorEvent(e, fmt.Sprintf("buy order rejected for %s (status=%s)", e.Symbol, result.Status)))
-		return fmt.Errorf("buy order rejected for symbol %s (status=%s)", e.Symbol, result.Status)
+		s.notify(ctx, s.errorEvent(e, fmt.Sprintf("%s order rejected for %s (status=%s)", durationSide, e.Symbol, result.Status)))
+		return fmt.Errorf("%s order rejected for symbol %s (status=%s)", durationSide, e.Symbol, result.Status)
 	}
 
 	filledQty := result.ExecutedQty
 	fillPrice := result.AvgFillPrice
-	spentAmount := float32(filledQty * fillPrice)
+	notional := filledQty * fillPrice
+	initialMargin := float32(futuresmath.InitialMargin(notional, leverage))
+	entryFee := s.calculateEntryFeeForMarket(float32(notional), e.MarketType)
 
 	// result.FilledAt carries the exchange/engine's own notion of "now" (real
 	// fill time live, simulated candle time in a backtest) - time.Now() here
@@ -217,38 +304,64 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 	}
 	var tpPrice float32
 	if e.TakeProfitPrice != nil {
-		if tp := *e.TakeProfitPrice; tp > fillPrice {
-			tpPrice = float32(tp)
+		tp := *e.TakeProfitPrice
+		if side == entities.PositionSideShort {
+			if tp > 0 && tp < fillPrice {
+				tpPrice = float32(tp)
+			} else {
+				log.Printf("[signal] %s/%s: take-profit %.8f is not below fill price %.8f for short - ignored", e.StrategyName, e.Symbol, tp, fillPrice)
+			}
 		} else {
-			log.Printf("[signal] %s/%s: take-profit %.8f is not above fill price %.8f - ignored", e.StrategyName, e.Symbol, tp, fillPrice)
+			if tp > fillPrice {
+				tpPrice = float32(tp)
+			} else {
+				log.Printf("[signal] %s/%s: take-profit %.8f is not above fill price %.8f - ignored", e.StrategyName, e.Symbol, tp, fillPrice)
+			}
+		}
+	}
+
+	var liqPrice float64
+	if strings.EqualFold(e.MarketType, "futures") || leverage > 1 || side == entities.PositionSideShort {
+		fmSide := futuresmath.SideLong
+		if side == entities.PositionSideShort {
+			fmSide = futuresmath.SideShort
+		}
+		if e.MarginType == entities.Cross {
+			liqPrice = futuresmath.CrossLiquidationPrice(e.Symbol, fmSide, fillPrice, filledQty, leverage, math.Max(0, float64(available)-float64(initialMargin)), 0)
+		} else {
+			liqPrice = futuresmath.IsolatedLiquidationPrice(e.Symbol, fmSide, fillPrice, filledQty, leverage, 0, 0)
 		}
 	}
 
 	signal := entities.Signal{
-		Symbol:     e.Symbol,
-		Status:     entities.Open,
-		StrategyID: e.StrategyID,
-		Mode:       e.Mode,
-		CreatedAt:  filledAt,
-		UpdatedAt:  filledAt,
+		Symbol:       e.Symbol,
+		Status:       entities.Open,
+		StrategyID:   e.StrategyID,
+		Mode:         e.Mode,
+		PositionSide: side,
+		CreatedAt:    filledAt,
+		UpdatedAt:    filledAt,
 		Orders: []entities.Order{
 			{
-				BrokerOrderID:   result.BrokerOrderID,
-				StopLossOrderID: stopLossOrderID,
-				StopLossPrice:   slPrice,
-				TakeProfitPrice: tpPrice,
-				EntryPrice:      float32(fillPrice),
-				ExitPrice:       0,
-				Quantity:        float32(filledQty),
-				InvestedAmount:  spentAmount,
-				MarginType:      e.MarginType,
-				EntryFee:        s.calculateEntryFee(spentAmount),
-				ExitFee:         0,
-				Leverage:        0,
-				ExecutedQty:     float32(filledQty),
-				IsClosing:       false,
-				CreatedAt:       filledAt,
-				UpdatedAt:       filledAt,
+				BrokerOrderID:      result.BrokerOrderID,
+				StopLossOrderID:    stopLossOrderID,
+				StopLossPrice:      slPrice,
+				TakeProfitPrice:    tpPrice,
+				EntryPrice:         float32(fillPrice),
+				ExitPrice:          0,
+				Quantity:           float32(filledQty),
+				InvestedAmount:     initialMargin,
+				InitialMargin:      initialMargin,
+				MarginType:         e.MarginType,
+				EntryFee:           entryFee,
+				ExitFee:            0,
+				Leverage:           float32(leverage),
+				LiquidationPrice:   float32(liqPrice),
+				PositionSide:       side,
+				ExecutedQty:        float32(filledQty),
+				IsClosing:          false,
+				CreatedAt:          filledAt,
+				UpdatedAt:          filledAt,
 			},
 		},
 	}
@@ -258,15 +371,20 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		return err
 	}
 
-	s.AccountUseCase.DeductOrder(spentAmount)
+	s.AccountUseCase.DeductOrder(initialMargin)
 
 	data := map[string]any{
 		"entry_price":     fillPrice,
 		"quantity":        filledQty,
 		"broker_order_id": result.BrokerOrderID,
+		"position_side":   string(side),
+		"leverage":        leverage,
 	}
 	if stopLossPrice != nil {
 		data["stop_loss_price"] = *stopLossPrice
+	}
+	if liqPrice > 0 {
+		data["liquidation_price"] = liqPrice
 	}
 	s.notify(ctx, notifier.Event{
 		Type:       notifier.EventPositionOpened,
@@ -275,7 +393,7 @@ func (s SignalUseCase) GenerateBuySignal(e EntrySignal) error {
 		Strategy:   e.StrategyName,
 		Symbol:     e.Symbol,
 		Mode:       e.Mode,
-		Message:    fmt.Sprintf("Position opened for %s", e.Symbol),
+		Message:    fmt.Sprintf("Position opened for %s (%s)", e.Symbol, side),
 		Data:       data,
 	})
 
@@ -299,10 +417,15 @@ func (s SignalUseCase) resolveScriptQty(ctx context.Context, e EntrySignal, size
 			return 0, fmt.Errorf("failed to compute position sizing ceiling: %w", err)
 		}
 	}
-	d := ResolveEntryQty(e.RequestedQty, float64(e.EntryPrice), fallbackAmount, ceiling)
+	leverage := float64(e.Leverage)
+	if leverage < 1 {
+		leverage = 1
+	}
+	leveragedCeiling := ceiling * leverage
+	d := ResolveEntryQty(e.RequestedQty, float64(e.EntryPrice), fallbackAmount, leveragedCeiling)
 	if d.Clamped {
 		msg := fmt.Sprintf("script asked for qty %.8f on %s but the size ceiling allows %.8f (%.2f quote); using the ceiling",
-			d.Requested, e.Symbol, d.Qty, ceiling)
+			d.Requested, e.Symbol, d.Qty, leveragedCeiling)
 		log.Printf("[signal] %s/%s: %s", e.StrategyName, e.Symbol, msg)
 		s.notify(ctx, s.errorEvent(e, msg))
 		if e.OnClamp != nil {
@@ -317,28 +440,40 @@ func (s SignalUseCase) resolveScriptQty(ctx context.Context, e EntrySignal, size
 // ClientOrderID (a stop placement retry can't cause an unwanted fill, unlike
 // a blind entry-order retry), and fires a strategy.error webhook identifying
 // the position as unprotected if both attempts fail. It never fails the
-// buy itself - the entry position is not rolled back.
+// entry order itself - the entry position is not rolled back.
 func (s SignalUseCase) submitStopLoss(ctx context.Context, e EntrySignal, ordinal int64, filledQty, fillPrice float64) (string, *float64) {
-	// A strategy-supplied stop price wins over stop_loss_pct (Spec 05's
-	// GoLong hook contract). It used to be ignored entirely - a script's
-	// `stop_loss = { price = ... }` placed no stop at all unless the
-	// strategy ALSO had stop_loss_pct configured. A long's stop must sit
-	// below the actual fill; a price at or above it (e.g. computed from a
-	// pre-slippage price) would trigger immediately, so it falls back to
-	// stop_loss_pct instead, and the operator is told.
 	stopPrice := 0.0
+	isShort := e.PositionSide == entities.PositionSideShort
+
 	if e.StopLossPrice != nil {
-		if p := *e.StopLossPrice; p > 0 && p < fillPrice {
-			stopPrice = p
+		p := *e.StopLossPrice
+		if isShort {
+			if p > fillPrice {
+				stopPrice = p
+			} else {
+				log.Printf("[signal] %s/%s: strategy stop price %.8f is not above fill price %.8f for short - using stop_loss_pct (%.4f%%) instead", e.StrategyName, e.Symbol, p, fillPrice, e.StopLossPct)
+				s.notify(ctx, s.errorEvent(e, fmt.Sprintf(
+					"strategy stop-loss price %.8f is not above the fill price %.8f for short %s; falling back to stop_loss_pct", p, fillPrice, e.Symbol,
+				)))
+			}
 		} else {
-			log.Printf("[signal] %s/%s: strategy stop price %.8f is not below fill price %.8f - using stop_loss_pct (%.4f%%) instead", e.StrategyName, e.Symbol, p, fillPrice, e.StopLossPct)
-			s.notify(ctx, s.errorEvent(e, fmt.Sprintf(
-				"strategy stop-loss price %.8f is not below the fill price %.8f for %s; falling back to stop_loss_pct", p, fillPrice, e.Symbol,
-			)))
+			if p > 0 && p < fillPrice {
+				stopPrice = p
+			} else {
+				log.Printf("[signal] %s/%s: strategy stop price %.8f is not below fill price %.8f - using stop_loss_pct (%.4f%%) instead", e.StrategyName, e.Symbol, p, fillPrice, e.StopLossPct)
+				s.notify(ctx, s.errorEvent(e, fmt.Sprintf(
+					"strategy stop-loss price %.8f is not below the fill price %.8f for %s; falling back to stop_loss_pct", p, fillPrice, e.Symbol,
+				)))
+			}
 		}
 	}
+
 	if stopPrice == 0 && e.StopLossPct > 0 {
-		stopPrice = fillPrice * (1 - e.StopLossPct/100)
+		if isShort {
+			stopPrice = fillPrice * (1 + e.StopLossPct/100)
+		} else {
+			stopPrice = fillPrice * (1 - e.StopLossPct/100)
+		}
 	}
 	if stopPrice == 0 {
 		return "", nil
@@ -346,9 +481,21 @@ func (s SignalUseCase) submitStopLoss(ctx context.Context, e EntrySignal, ordina
 
 	stopClientOrderID := fmt.Sprintf("gtb-%d-stop-%d", e.StrategyID, ordinal)
 
+	var stopSide exchange.OrderSide
+	var stopPosSide exchange.PositionSide
+	if isShort {
+		stopSide = exchange.SideBuy
+		stopPosSide = exchange.PositionSideShort
+	} else {
+		stopSide = exchange.SideSell
+		stopPosSide = exchange.PositionSideLong
+	}
+
 	req := exchange.PlaceOrderRequest{
 		Symbol:        e.Symbol,
-		Side:          exchange.SideSell,
+		Side:          stopSide,
+		PositionSide:  stopPosSide,
+		ReduceOnly:    true,
 		Type:          exchange.OrderTypeStopMarket,
 		Quantity:      filledQty,
 		StopPrice:     stopPrice,
@@ -383,11 +530,12 @@ func (s SignalUseCase) placeStopMarket(ctx context.Context, strategyName string,
 	return result, err
 }
 
-// GenerateSellSignal closes an open position with a real market SELL order
-// (Spec 02). If a stop-loss order still rests on the exchange, it is
-// cancelled first (Spec 03) - if the cancel fails because the stop already
-// triggered on the exchange, the position is reconciled as closed via the
-// stop's own fill data instead of placing a second sell.
+// GenerateSellSignal closes an open position with a real market order
+// (SELL for long, BUY for short) (Spec 02). If a stop-loss order still rests
+// on the exchange, it is cancelled first (Spec 03) - if the cancel fails
+// because the stop already triggered on the exchange, the position is
+// reconciled as closed via the stop's own fill data instead of placing a
+// second order.
 func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	ctx := context.Background()
 
@@ -401,6 +549,7 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	}
 
 	order := openSignal.Orders[0]
+	isShort := openSignal.PositionSide == entities.PositionSideShort || order.PositionSide == entities.PositionSideShort
 
 	// fix-01: a simulated (SIM-) position must never be closed with a real
 	// order, and a real position must never be "closed" by the simulator
@@ -430,33 +579,51 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 		}
 	}
 
-	sellClientOrderID := fmt.Sprintf("gtb-%d-sell-%d", e.StrategyID, openSignal.ID)
+	closeClientOrderID := fmt.Sprintf("gtb-%d-close-%d", e.StrategyID, openSignal.ID)
+
+	var closeSide exchange.OrderSide
+	var closePosSide exchange.PositionSide
+	if isShort {
+		closeSide = exchange.SideBuy
+		closePosSide = exchange.PositionSideShort
+	} else {
+		closeSide = exchange.SideSell
+		closePosSide = exchange.PositionSideLong
+	}
 
 	start := time.Now()
 	result, err := s.Exchange.PlaceOrder(ctx, exchange.PlaceOrderRequest{
 		Symbol:        e.Symbol,
-		Side:          exchange.SideSell,
+		Side:          closeSide,
+		PositionSide:  closePosSide,
+		ReduceOnly:    true,
 		Type:          exchange.OrderTypeMarket,
 		Quantity:      float64(order.Quantity),
-		ClientOrderID: sellClientOrderID,
+		ClientOrderID: closeClientOrderID,
 	})
-	s.observeOrderDuration(e.StrategyName, "sell", start)
+	s.observeOrderDuration(e.StrategyName, string(closeSide), start)
 
 	if err != nil {
+		if errors.Is(err, exchange.ErrReduceOnlyRejected) && order.StopLossOrderID != "" {
+			return s.reconcileAlreadyStoppedPosition(ctx, e, openSignal)
+		}
 		s.incrementOrderError(e.StrategyName, classifyOrderErrorReason(err))
-		s.notify(ctx, s.errorEventExit(e, "PlaceOrder sell failed: "+err.Error()))
+		s.notify(ctx, s.errorEventExit(e, "PlaceOrder close failed: "+err.Error()))
 		// Signal.Status remains Open - a subsequent cycle retries the close.
-		return fmt.Errorf("failed to place sell order for %s: %w", e.Symbol, err)
+		return fmt.Errorf("failed to place close order for %s: %w", e.Symbol, err)
 	}
 
 	if result.Status == exchange.OrderStatusRejected || result.ExecutedQty == 0 {
 		s.incrementOrderError(e.StrategyName, "rejected")
-		s.notify(ctx, s.errorEventExit(e, fmt.Sprintf("sell order rejected for %s (status=%s)", e.Symbol, result.Status)))
-		return fmt.Errorf("sell order rejected for symbol %s (status=%s)", e.Symbol, result.Status)
+		s.notify(ctx, s.errorEventExit(e, fmt.Sprintf("close order rejected for %s (status=%s)", e.Symbol, result.Status)))
+		return fmt.Errorf("close order rejected for symbol %s (status=%s)", e.Symbol, result.Status)
 	}
 
 	exitPrice := float32(result.AvgFillPrice)
 	exitReason := exitReasonOrDefault(e.ExitReason)
+	if exitReason == entities.ExitReasonLiquidation && e.ExitPrice > 0 {
+		exitPrice = e.ExitPrice
+	}
 
 	exitFilledAt := result.FilledAt
 	if exitFilledAt.IsZero() {
@@ -469,8 +636,19 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 	openSignal.Orders[0].UpdatedAt = exitFilledAt
 	openSignal.Orders[0].IsClosing = true
 	openSignal.Orders[0].ExitReason = exitReason
-	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
-	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
+
+	var gross float32
+	if isShort {
+		gross = (openSignal.Orders[0].EntryPrice - exitPrice) * float32(openSignal.Orders[0].Quantity)
+	} else {
+		gross = (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
+	}
+	profit := gross - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee + openSignal.Orders[0].AccumulatedFunding)
+	if exitReason == entities.ExitReasonLiquidation && openSignal.Orders[0].MarginType != entities.Cross {
+		if profit < -openSignal.Orders[0].InvestedAmount {
+			profit = -openSignal.Orders[0].InvestedAmount
+		}
+	}
 	openSignal.Orders[0].Profit = profit
 
 	err = s.Repository.Update(openSignal)
@@ -478,7 +656,11 @@ func (s SignalUseCase) GenerateSellSignal(e ExitSignal) error {
 		return err
 	}
 
-	if err := s.AccountUseCase.AddOrder(openSignal.Orders[0].InvestedAmount + profit); err != nil {
+	credit := openSignal.Orders[0].InvestedAmount + profit
+	if credit < 0 {
+		credit = 0
+	}
+	if err := s.AccountUseCase.AddOrder(credit); err != nil {
 		return err
 	}
 
@@ -518,11 +700,16 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 	}
 
 	exitPrice := float32(stopResult.AvgFillPrice)
+	if e.ExitReason == entities.ExitReasonLiquidation && e.ExitPrice > 0 {
+		exitPrice = e.ExitPrice
+	}
 
 	exitFilledAt := stopResult.FilledAt
 	if exitFilledAt.IsZero() {
 		exitFilledAt = time.Now()
 	}
+
+	isShort := openSignal.PositionSide == entities.PositionSideShort || order.PositionSide == entities.PositionSideShort
 
 	openSignal.Status = entities.SignalStatus(entities.Closed)
 	openSignal.Orders[0].ExitPrice = exitPrice
@@ -534,16 +721,36 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 	if e.ExitReason == ExitReasonSimulatedStopLoss {
 		message = fmt.Sprintf("Position closed for %s via simulated stop-loss (dryrun)", e.Symbol)
 		exitReason = ExitReasonSimulatedStopLoss
+	} else if e.ExitReason == entities.ExitReasonLiquidation {
+		message = fmt.Sprintf("Position closed for %s via liquidation", e.Symbol)
+		exitReason = entities.ExitReasonLiquidation
+	} else if e.ExitReason != "" {
+		exitReason = e.ExitReason
 	}
 	openSignal.Orders[0].ExitReason = exitReason
-	profit := (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
-	profit = profit - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee)
+
+	var gross float32
+	if isShort {
+		gross = (openSignal.Orders[0].EntryPrice - exitPrice) * float32(openSignal.Orders[0].Quantity)
+	} else {
+		gross = (exitPrice - openSignal.Orders[0].EntryPrice) * float32(openSignal.Orders[0].Quantity)
+	}
+	profit := gross - (openSignal.Orders[0].ExitFee + openSignal.Orders[0].EntryFee + openSignal.Orders[0].AccumulatedFunding)
+	if exitReason == entities.ExitReasonLiquidation && openSignal.Orders[0].MarginType != entities.Cross {
+		if profit < -openSignal.Orders[0].InvestedAmount {
+			profit = -openSignal.Orders[0].InvestedAmount
+		}
+	}
 	openSignal.Orders[0].Profit = profit
 
 	if err := s.Repository.Update(openSignal); err != nil {
 		return err
 	}
-	if err := s.AccountUseCase.AddOrder(openSignal.Orders[0].InvestedAmount + profit); err != nil {
+	credit := openSignal.Orders[0].InvestedAmount + profit
+	if credit < 0 {
+		credit = 0
+	}
+	if err := s.AccountUseCase.AddOrder(credit); err != nil {
 		return err
 	}
 
@@ -568,6 +775,22 @@ func (s SignalUseCase) reconcileAlreadyStoppedPosition(ctx context.Context, e Ex
 	return nil
 }
 
+// SettleFunding records an 8-hour funding payment, updates accumulated funding and liquidation price,
+// and stamps the last funding time.
+func (s SignalUseCase) SettleFunding(symbol string, strategyID uint, fundingPayment float32, newLiqPrice float32, fundingTime time.Time) error {
+	openSignal, err := s.Repository.GetOpenSignals(symbol, strategyID)
+	if err != nil {
+		return err
+	}
+	if openSignal.ID == 0 || len(openSignal.Orders) == 0 {
+		return nil
+	}
+	openSignal.Orders[0].AccumulatedFunding += fundingPayment
+	openSignal.Orders[0].LiquidationPrice = newLiqPrice
+	openSignal.Orders[0].LastFundingTime = &fundingTime
+	return s.Repository.Update(openSignal)
+}
+
 func simulatedLabel(simulated bool) string {
 	if simulated {
 		return "simulated"
@@ -583,19 +806,16 @@ func exitReasonOrDefault(reason string) string {
 }
 
 func (s SignalUseCase) calculateEntryFee(investedAmount float32) float32 {
-	feePct := s.FeePct
-	if feePct <= 0 {
-		feePct = 0.1
-	}
-	return float32(float64(investedAmount) * feePct / 100.0)
+	return s.calculateEntryFeeForMarket(investedAmount, "spot")
 }
 
-func (s SignalUseCase) calculateExitFee(order entities.Order, sellPrice float32) float32 {
-	feePct := s.FeePct
-	if feePct <= 0 {
-		feePct = 0.1
+func (s SignalUseCase) calculateExitFee(order entities.Order, exitPrice float32) float32 {
+	marketType := "spot"
+	if order.Leverage > 1 || order.PositionSide == entities.PositionSideShort || order.LiquidationPrice > 0 {
+		marketType = "futures"
 	}
-	total := float64(order.Quantity) * float64(sellPrice)
+	feePct := s.feeRateForMarket(marketType)
+	total := float64(order.Quantity) * float64(exitPrice)
 	return float32(total * feePct / 100.0)
 }
 

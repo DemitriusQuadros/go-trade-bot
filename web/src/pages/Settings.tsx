@@ -16,6 +16,8 @@ import {
 import {
   PlatformSettings,
   PlatformSettingsUpdateRequest,
+  MarketType,
+  PositionMode,
 } from '@/api/types';
 import { usePlatformSettings, useUpdateSettings } from '@/hooks/queries';
 import { isRiskBearingChange } from '@/lib/settingsRiskTier';
@@ -62,6 +64,8 @@ export function Settings() {
 
   const [formState, setFormState] = useState<PlatformSettingsUpdateRequest>({
     mode: 'dryrun',
+    market_type: 'spot',
+    position_mode: 'one_way',
     testnet: true,
     webhook_url: '',
     dry_run: { slippage_pct: 0.05, fee_pct: 0.075, fill_delay_ms: 50 },
@@ -96,6 +100,8 @@ export function Settings() {
         broker_testnet_api_key: loadedSettings.broker_testnet_api_key,
         broker_testnet_api_secret: loadedSettings.broker_testnet_api_secret,
         mode: loadedSettings.mode,
+        market_type: loadedSettings.market_type ?? 'spot',
+        position_mode: loadedSettings.position_mode ?? 'one_way',
         testnet: loadedSettings.testnet,
         webhook_url: loadedSettings.webhook_url || '',
         dry_run: loadedSettings.dry_run || { slippage_pct: 0.05, fee_pct: 0.075, fill_delay_ms: 50 },
@@ -324,6 +330,58 @@ export function Settings() {
                   <HelpTooltip>{t('settings.testnetHelp')}</HelpTooltip>
                 </span>
               </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="settings-market-type" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                {t('settings.marketType')}
+                <HelpTooltip>{t('settings.marketTypeHelp')}</HelpTooltip>
+              </label>
+              <select
+                id="settings-market-type"
+                value={formState.market_type || 'spot'}
+                onChange={(e) =>
+                  setFormState({
+                    ...formState,
+                    market_type: e.target.value as MarketType,
+                  })
+                }
+                className="px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary"
+              >
+                <option value="spot">{t('settings.optSpot')}</option>
+                <option value="futures">{t('settings.optFutures')}</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="settings-position-mode" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                {t('settings.positionMode')}
+                <HelpTooltip>{t('settings.positionModeHelp')}</HelpTooltip>
+              </label>
+              <select
+                id="settings-position-mode"
+                value={formState.position_mode || 'one_way'}
+                disabled={formState.market_type !== 'futures'}
+                onChange={(e) =>
+                  setFormState({
+                    ...formState,
+                    position_mode: e.target.value as PositionMode,
+                  })
+                }
+                className={`px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:border-primary ${
+                  formState.market_type !== 'futures' ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
+              >
+                <option value="one_way">{t('settings.optOneWay')}</option>
+                <option value="hedge">{t('settings.optHedge')}</option>
+              </select>
+              {formState.market_type !== 'futures' && (
+                <span className="text-[10px] text-muted-foreground">
+                  {t('settings.positionModeFuturesOnly')}
+                </span>
+              )}
             </div>
           </div>
 

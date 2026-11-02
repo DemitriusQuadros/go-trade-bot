@@ -4,6 +4,7 @@ import (
 	handler "go-trade-bot/app/handler/web/backtest"
 	backtest_repo "go-trade-bot/app/repository/backtest"
 	candle_repo "go-trade-bot/app/repository/candle"
+	fundingrate_repo "go-trade-bot/app/repository/fundingrate"
 	strategy_repo "go-trade-bot/app/repository/strategy"
 	usecase "go-trade-bot/app/usecase/backtest"
 	backtestworker "go-trade-bot/app/workers/backtest"
@@ -26,6 +27,7 @@ var BacktestModule = fx.Module("backtest",
 			return metrics_provider.NewCinarMetricsAdapter()
 		},
 		func(
+			db *gorm.DB,
 			candleRepo candle_repo.Repository,
 			backtestRepo usecase.BacktestRepository,
 			strategyRepo usecase.StrategyRepository,
@@ -42,6 +44,7 @@ var BacktestModule = fx.Module("backtest",
 				20,
 			)
 			uc.SetMetricsCollector(collector)
+			uc.SetFundingRateRepository(fundingrate_repo.NewFundingRateRepository(db))
 			return uc
 		},
 		func(u *usecase.BacktestUseCase) handler.UseCase {
