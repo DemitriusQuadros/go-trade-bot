@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -215,17 +216,36 @@ func (b *DashboardBroadcaster) pollOnce(ctx context.Context) {
 			}
 		}
 
-		var entryPrice, quantity, tpPrice, slPrice float64
+		var entryPrice, quantity, tpPrice, slPrice, invested float64
+		isShort := strings.EqualFold(string(sig.PositionSide), "SHORT")
 		if len(sig.Orders) > 0 {
-			entryPrice = float64(sig.Orders[0].EntryPrice)
-			quantity = float64(sig.Orders[0].Quantity)
-			tpPrice = float64(sig.Orders[0].TakeProfitPrice)
-			slPrice = float64(sig.Orders[0].StopLossPrice)
+			firstOrder := sig.Orders[0]
+			entryPrice = float64(firstOrder.EntryPrice)
+			quantity = float64(firstOrder.Quantity)
+			tpPrice = float64(firstOrder.TakeProfitPrice)
+			slPrice = float64(firstOrder.StopLossPrice)
+			invested = float64(firstOrder.InvestedAmount)
+			if !isShort && strings.EqualFold(string(firstOrder.PositionSide), "SHORT") {
+				isShort = true
+			}
 		}
 
 		if hasPrice && entryPrice > 0 {
-			unrealized := (curPrice - entryPrice) * quantity
-			unrealizedPct := ((curPrice - entryPrice) / entryPrice) * 100
+			priceDiff := curPrice - entryPrice
+			if isShort {
+				priceDiff = entryPrice - curPrice
+			}
+			unrealized := priceDiff * quantity
+
+			costBasis := invested
+			if costBasis <= 0 {
+				costBasis = entryPrice * quantity
+			}
+
+			var unrealizedPct float64
+			if costBasis > 0 {
+				unrealizedPct = (unrealized / costBasis) * 100
+			}
 
 			b.Broadcast(Event{
 				Type: EventPositionUpdate,

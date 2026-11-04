@@ -347,6 +347,10 @@ export interface RealtimePositionEvent {
   unrealized_pnl_pct: number;
   quantity: number;
   opened_at: string;
+  position_side?: string;
+  leverage?: number;
+  liquidation_price?: number;
+  accumulated_funding?: number;
 }
 
 export interface RealtimeHeartbeatEvent {

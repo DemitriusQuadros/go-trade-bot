@@ -234,3 +234,66 @@ func TestDashboardBroadcaster_Run_Heartbeat_And_Cancel(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	_ = ch
 }
+
+func TestDashboardBroadcaster_ShortAndLeveragedROE(t *testing.T) {
+	mockEx := &mockExchangeClient{
+		prices: map[string][]exchange.TickerPrice{
+			"SOLUSDT": {{Symbol: "SOLUSDT", Price: 90.0}}, // entry 100 -> price dropped to 90 -> profit for short!
+		},
+	}
+	sigRepo := &mockSignalRepo{
+		signals: []entities.Signal{
+			{
+				ID:           20,
+				Symbol:       "SOLUSDT",
+				StrategyID:   1,
+				Status:       entities.Open,
+				PositionSide: entities.PositionSideShort,
+				Orders: []entities.Order{
+					{
+						PositionSide:   entities.PositionSideShort,
+						EntryPrice:     100.0,
+						Quantity:       1.5,  // $150 notional
+						InvestedAmount: 15.0, // $15 initial margin (10x leverage)
+					},
+				},
+			},
+		},
+	}
+	stratRepo := &mockStrategyRepo{
+		strategies: []entities.Strategy{
+			{
+				ID:               1,
+				Status:           entities.Productive,
+				MonitoredSymbols: datatypes.JSONSlice[string]{"SOLUSDT"},
+			},
+		},
+	}
+
+	broadcaster := usecase.NewDashboardBroadcaster(mockEx, sigRepo, stratRepo)
+	ch, unsub := broadcaster.Subscribe()
+	defer unsub()
+
+	broadcaster.PollOnce(context.Background())
+
+	var posEvent usecase.Event
+	for i := 0; i < 2; i++ {
+		select {
+		case e := <-ch:
+			if e.Type == "position_update" {
+				posEvent = e
+			}
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("timeout waiting for event")
+		}
+	}
+
+	require.NotEmpty(t, posEvent)
+	payload, ok := posEvent.Data.(usecase.PositionUpdatePayload)
+	require.True(t, ok)
+	assert.Equal(t, uint(20), payload.SignalID)
+	// Short profit: (100 - 90) * 1.5 = +15.0
+	assert.Equal(t, 15.0, payload.UnrealizedPnL)
+	// Leveraged ROE: (+15.0 / 15.0) * 100 = +100.0%
+	assert.InDelta(t, 100.0, payload.UnrealizedPnLPct, 0.001)
+}
