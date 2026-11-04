@@ -75,7 +75,17 @@ export function Dashboard() {
 
   // Derive P&L and positions combining REST data with real-time SSE updates & strategy linkage
   const positionsWithPnL = useMemo(() => {
-    return openSignals.map((signal) => {
+    return openSignals
+      .slice()
+      .sort((a, b) => {
+        const timeA = new Date(a.created_at).getTime() || 0;
+        const timeB = new Date(b.created_at).getTime() || 0;
+        if (timeB !== timeA) {
+          return timeB - timeA;
+        }
+        return b.id - a.id;
+      })
+      .map((signal) => {
       const strat = strategies.find((s) => s.id === signal.strategy_id);
       const effectiveMode: 'dryrun' | 'live' | 'paper' =
         ((signal.mode as any) || (strat?.mode as any) || 'dryrun').toLowerCase();
