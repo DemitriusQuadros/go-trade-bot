@@ -92,11 +92,13 @@ export function Dashboard() {
 
       const entryOrder = signal.orders?.[0];
       const positionSide = signal.position_side || entryOrder?.position_side;
+      const isShort = positionSide === 'SHORT';
       const leverage = entryOrder?.leverage || 1;
       const liquidationPrice = entryOrder?.liquidation_price || 0;
       const accumulatedFunding = entryOrder?.accumulated_funding || 0;
       const brokerOrderId =
         entryOrder?.broker_order_id || (effectiveMode === 'dryrun' ? `SIM-${signal.id}` : undefined);
+      const rawInvested = entryOrder?.invested_amount || 0;
 
       let currentPrice = 0;
       let unrealizedPnL = 0;
@@ -109,19 +111,25 @@ export function Dashboard() {
 
       if (ssePos) {
         currentPrice = ssePos.current_price;
-        unrealizedPnL = ssePos.unrealized_pnl;
-        unrealizedPnLPct = ssePos.unrealized_pnl_pct;
         quantity = ssePos.quantity;
         entryPrice = ssePos.entry_price;
       } else if (entryOrder) {
         entryPrice = entryOrder.entry_price;
         quantity = entryOrder.quantity;
         currentPrice = tickerPrice || entryPrice;
-
-        const valueDiff = (currentPrice - entryPrice) * quantity;
-        unrealizedPnL = valueDiff;
-        unrealizedPnLPct = entryPrice > 0 ? (unrealizedPnL / (entryPrice * quantity)) * 100 : 0;
       }
+
+      const invested =
+        rawInvested > 0
+          ? rawInvested
+          : leverage > 1 && entryPrice > 0 && quantity > 0
+          ? (entryPrice * quantity) / leverage
+          : rawInvested;
+
+      const delta = (currentPrice - entryPrice) * quantity;
+      unrealizedPnL = isShort ? -delta : (ssePos?.unrealized_pnl ?? delta);
+      const basis = invested > 0 ? invested : entryPrice * quantity;
+      unrealizedPnLPct = basis > 0 ? (unrealizedPnL / basis) * 100 : (ssePos?.unrealized_pnl_pct ?? 0);
 
       const takeProfitPrice = ssePos?.take_profit_price ?? entryOrder?.take_profit_price ?? 0;
       const stopLossPrice = ssePos?.stop_loss_price ?? entryOrder?.stop_loss_price ?? 0;
@@ -140,6 +148,7 @@ export function Dashboard() {
         stopLossPrice,
         openedAt,
         quantity,
+        invested: invested > 0 ? invested : entryPrice * quantity,
         unrealizedPnL,
         unrealizedPnLPct,
         positionSide,
@@ -168,7 +177,7 @@ export function Dashboard() {
   // account balance is cash only: opening a position deducts its cost, so this
   // amount must be added back to get the real portfolio value.
   const dryRunInvestedCapital = useMemo(
-    () => dryRunPositions.reduce((sum, pos) => sum + pos.entryPrice * pos.quantity, 0),
+    () => dryRunPositions.reduce((sum, pos) => sum + (pos.invested || (pos.entryPrice * pos.quantity)), 0),
     [dryRunPositions]
   );
   const liveUnrealizedPnL = useMemo(

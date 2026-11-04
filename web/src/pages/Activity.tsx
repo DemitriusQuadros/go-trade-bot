@@ -111,12 +111,20 @@ function PositionsTab() {
     const list = signals.map((sig) => {
       const strat = strategyMap.get(sig.strategy_id);
       const firstOrder = sig.orders?.[0];
-      const entryPrice = firstOrder ? firstOrder.entry_price : 0;
-      const stopLossPrice = firstOrder ? firstOrder.stop_loss_price : 0;
       const livePos = ssePositions[sig.id];
+      const entryPrice = firstOrder?.entry_price || livePos?.entry_price || 0;
+      const stopLossPrice = firstOrder ? firstOrder.stop_loss_price : (livePos?.stop_loss_price || 0);
       const takeProfitPrice = firstOrder?.take_profit_price ?? livePos?.take_profit_price ?? 0;
-      const quantity = firstOrder ? firstOrder.quantity : 0;
-      const invested = firstOrder ? firstOrder.invested_amount : 0;
+      const quantity = firstOrder?.quantity || livePos?.quantity || 0;
+      const positionSide = sig.position_side || firstOrder?.position_side || livePos?.position_side || 'LONG';
+      const leverage = firstOrder?.leverage || livePos?.leverage || 1;
+      const rawInvested = firstOrder?.invested_amount || 0;
+      const invested =
+        rawInvested > 0
+          ? rawInvested
+          : leverage > 1 && entryPrice > 0 && quantity > 0
+          ? (entryPrice * quantity) / leverage
+          : rawInvested;
 
       const currentPrice =
         livePos?.current_price ||
@@ -127,20 +135,17 @@ function PositionsTab() {
       let pnl = 0;
       let pnlPct = 0;
 
-      const positionSide = sig.position_side || firstOrder?.position_side;
-      const leverage = firstOrder?.leverage || 1;
-      const liquidationPrice = firstOrder?.liquidation_price || 0;
-      const accumulatedFunding = firstOrder?.accumulated_funding || 0;
+      const liquidationPrice = firstOrder?.liquidation_price || livePos?.liquidation_price || 0;
+      const accumulatedFunding = firstOrder?.accumulated_funding || livePos?.accumulated_funding || 0;
       const exitReason = firstOrder?.exit_reason;
 
+      const isShort = positionSide === 'SHORT';
+
       if (sig.status === 'open') {
-        if (livePos) {
-          pnl = livePos.unrealized_pnl;
-          pnlPct = livePos.unrealized_pnl_pct;
-        } else if (currentPrice > 0 && entryPrice > 0) {
-          pnl = (currentPrice - entryPrice) * quantity;
-          pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
-        }
+        const delta = (currentPrice - entryPrice) * quantity;
+        pnl = isShort ? -delta : (livePos?.unrealized_pnl ?? delta);
+        const basis = invested > 0 ? invested : entryPrice * quantity;
+        pnlPct = basis > 0 ? (pnl / basis) * 100 : (livePos?.unrealized_pnl_pct ?? 0);
       } else {
         pnl = sig.orders?.reduce((sum, o) => sum + (o.profit || 0), 0) || 0;
         pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
