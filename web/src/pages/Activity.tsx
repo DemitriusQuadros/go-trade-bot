@@ -108,7 +108,7 @@ function PositionsTab() {
   }, [strategies]);
 
   const enrichedPositions = useMemo(() => {
-    return signals.map((sig) => {
+    const list = signals.map((sig) => {
       const strat = strategyMap.get(sig.strategy_id);
       const firstOrder = sig.orders?.[0];
       const entryPrice = firstOrder ? firstOrder.entry_price : 0;
@@ -163,6 +163,15 @@ function PositionsTab() {
         accumulatedFunding,
         exitReason,
       };
+    });
+
+    return list.sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime() || 0;
+      const timeB = new Date(b.created_at).getTime() || 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return b.id - a.id;
     });
   }, [signals, strategyMap, ssePositions, ssePrices, tickers]);
 
@@ -429,7 +438,14 @@ function FillsTab() {
       const strategyName = strat?.name || `Strategy #${sig.strategy_id}`;
       sig.orders?.forEach((ord) => list.push({ order: ord, signal: sig, strategyName }));
     });
-    return list.sort((a, b) => new Date(b.order.created_at).getTime() - new Date(a.order.created_at).getTime());
+    return list.sort((a, b) => {
+      const timeA = new Date(a.order.created_at).getTime() || 0;
+      const timeB = new Date(b.order.created_at).getTime() || 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return b.order.id - a.order.id;
+    });
   }, [signals, strategyMap]);
 
   const uniqueSymbols = useMemo(() => Array.from(new Set(signals.map((s) => s.symbol))).filter(Boolean), [signals]);

@@ -55,6 +55,7 @@ func (r SignalRepository) GetAllOpenSignals() ([]entities.Signal, error) {
 		Preload("Orders").
 		Preload("Strategy").
 		Where("status = ?", entities.Open).
+		Order("id DESC").
 		Find(&signals).Error
 
 	if err != nil {
@@ -69,6 +70,7 @@ func (r SignalRepository) GetAllClosedSignals() ([]entities.Signal, error) {
 		Preload("Orders").
 		Preload("Strategy").
 		Where("status = ?", entities.Closed).
+		Order("id DESC").
 		Find(&signals).Error
 
 	if err != nil {
@@ -100,6 +102,7 @@ func (r SignalRepository) GetAll() ([]entities.Signal, error) {
 	err := r.db.
 		Preload("Orders").
 		Preload("Strategy").
+		Order("id DESC").
 		Find(&signals).Error
 
 	if err != nil {
