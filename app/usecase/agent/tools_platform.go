@@ -407,7 +407,7 @@ func (u AgentUseCase) writeReportTool() Tool {
 	return Tool{
 		Def: modelprovider.ToolDefinition{
 			Name:        "write_report",
-			Description: "Write a report for the operator as typed blocks; it is rendered to HTML server-side, stored, and linked from each strategy's shared memory. Returns {report_id, url}. " + writeReportExample,
+			Description: "Write a report for the operator as typed blocks (summary and callout blocks support semantic HTML tags like <h3>, <ul>, <li>, <strong> or standard markdown); it is rendered to HTML server-side, stored, and linked from each strategy's shared memory. Returns {report_id, url}. " + writeReportExample,
 			InputSchema: writeReportSchema,
 		},
 		Execute: func(ctx context.Context, raw json.RawMessage) (string, error) {

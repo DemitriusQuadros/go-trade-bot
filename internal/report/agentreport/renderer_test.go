@@ -255,3 +255,25 @@ func TestRender_ProfitFactorSentinelRendersAsInfinity(t *testing.T) {
 	assert.Contains(t, html, ">∞<")
 	assert.NotContains(t, html, "17976931348623157")
 }
+
+func TestRender_HTMLAndMarkdownFormatting(t *testing.T) {
+	bMarkdown := block(t, TypeSummary, map[string]any{
+		"text": "### Strategy #5 Overview\n**Win rate:** 100%\n- Trade 1: `+$1.72`\n- Trade 2: `+$1.50`",
+	})
+	bHTML := block(t, TypeCallout, map[string]any{
+		"severity": "info",
+		"title":    "Execution Note",
+		"text":     "<h3>Direct HTML</h3>\n<ul><li>First Item</li><li>Second Item</li></ul>",
+	})
+	html, err := NewHTMLRenderer(fakeData{}).Render(context.Background(), meta(), []Block{bMarkdown, bHTML})
+	require.NoError(t, err)
+
+	// Markdown converted to proper semantic HTML tags
+	assert.Contains(t, html, "<h3>Strategy #5 Overview</h3>")
+	assert.Contains(t, html, "<strong>Win rate:</strong>")
+	assert.Contains(t, html, "<ul>\n<li>Trade 1: <code>+$1.72</code></li>")
+
+	// Direct HTML tags preserved
+	assert.Contains(t, html, "<h3>Direct HTML</h3>")
+	assert.Contains(t, html, "<ul><li>First Item</li><li>Second Item</li></ul>")
+}
