@@ -113,6 +113,7 @@ function PositionsTab() {
       const firstOrder = sig.orders?.[0];
       const livePos = ssePositions[sig.id];
       const entryPrice = firstOrder?.entry_price || livePos?.entry_price || 0;
+      const exitPrice = firstOrder?.exit_price || 0;
       const stopLossPrice = firstOrder ? firstOrder.stop_loss_price : (livePos?.stop_loss_price || 0);
       const takeProfitPrice = firstOrder?.take_profit_price ?? livePos?.take_profit_price ?? 0;
       const quantity = firstOrder?.quantity || livePos?.quantity || 0;
@@ -155,6 +156,7 @@ function PositionsTab() {
         ...sig,
         strategyName: strat?.name || `Strategy #${sig.strategy_id}`,
         entryPrice,
+        exitPrice,
         stopLossPrice,
         takeProfitPrice,
         currentPrice,
@@ -322,7 +324,9 @@ function PositionsTab() {
                         <span className="font-medium text-foreground">{pos.strategyName}</span>
                       </td>
                       <td className="font-mono">${formatNumber(pos.entryPrice, { digits: 2 })}</td>
-                      <td className="font-mono">${formatNumber(pos.currentPrice, { digits: 2 })}</td>
+                      <td className="font-mono">
+                        ${formatNumber(statusTab === 'open' ? pos.currentPrice : (pos.exitPrice || pos.currentPrice), { digits: 2 })}
+                      </td>
                       {statusTab === 'open' ? (
                         <td>
                           <PositionProximityGauge
