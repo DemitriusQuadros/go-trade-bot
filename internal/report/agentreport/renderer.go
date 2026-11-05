@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -177,7 +179,7 @@ type diffLineView struct {
 
 type blockView struct {
 	Type        string
-	Paragraphs  []string
+	Paragraphs  []template.HTML
 	Severity    string
 	Title       string
 	SourceLabel string
@@ -306,13 +308,13 @@ func resolve(ctx context.Context, data DataSource, loc i18n.Locale, b Block) (bl
 	case TypeSummary:
 		var d summaryData
 		_ = json.Unmarshal(b.Data, &d)
-		v.Paragraphs = splitParagraphs(d.Text)
+		v.Paragraphs = formatParagraphs(d.Text)
 	case TypeCallout:
 		var d calloutData
 		_ = json.Unmarshal(b.Data, &d)
 		v.Severity = d.Severity
 		v.Title = d.Title
-		v.Paragraphs = splitParagraphs(d.Text)
+		v.Paragraphs = formatParagraphs(d.Text)
 	case TypeKPIGrid:
 		var d kpiGridData
 		_ = json.Unmarshal(b.Data, &d)
@@ -401,13 +403,108 @@ func diffSources(ctx context.Context, data DataSource, loc i18n.Locale, d codeDi
 	return from, to, Messages.F(loc, "diff.source_versions", d.StrategyID, fromLabel, toLabel), nil
 }
 
-func splitParagraphs(text string) []string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
+var allowedTags = map[string]bool{
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"p": true, "ul": true, "ol": true, "li": true, "strong": true, "b": true,
+	"em": true, "i": true, "code": true, "pre": true, "blockquote": true,
+	"hr": true, "br": true, "span": true, "div": true,
+	"table": true, "thead": true, "tbody": true, "tr": true, "th": true, "td": true,
+}
+
+var (
+	tagRegex      = regexp.MustCompile(`(?i)<(/?[a-zA-Z0-9]+)(\s+[^>]*)?>`)
+	dangerousAttr = regexp.MustCompile(`(?i)(on\w+\s*=|javascript:)`)
+	boldRegex     = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	codeRegex     = regexp.MustCompile("`([^`]+)`")
+	h4Regex       = regexp.MustCompile(`(?m)^####\s+(.+)$`)
+	h3Regex       = regexp.MustCompile(`(?m)^###\s+(.+)$`)
+	h2Regex       = regexp.MustCompile(`(?m)^##\s+(.+)$`)
+	h1Regex       = regexp.MustCompile(`(?m)^#\s+(.+)$`)
+)
+
+func convertMarkdownLists(s string) string {
+	lines := strings.Split(s, "\n")
 	var out []string
-	for _, p := range strings.Split(text, "\n\n") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
+	inList := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+			item := strings.TrimSpace(trimmed[2:])
+			if !inList {
+				out = append(out, "<ul>")
+				inList = true
+			}
+			out = append(out, "<li>"+item+"</li>")
+		} else {
+			if inList {
+				out = append(out, "</ul>")
+				inList = false
+			}
+			out = append(out, line)
 		}
+	}
+	if inList {
+		out = append(out, "</ul>")
+	}
+	return strings.Join(out, "\n")
+}
+
+func sanitizeHTML(s string) string {
+	var buf strings.Builder
+	lastIdx := 0
+	matches := tagRegex.FindAllStringSubmatchIndex(s, -1)
+	for _, m := range matches {
+		buf.WriteString(html.EscapeString(s[lastIdx:m[0]]))
+		tag := s[m[0]:m[1]]
+		name := strings.TrimPrefix(strings.ToLower(s[m[2]:m[3]]), "/")
+		if allowedTags[name] && !dangerousAttr.MatchString(tag) {
+			buf.WriteString(tag)
+		} else {
+			buf.WriteString(html.EscapeString(tag))
+		}
+		lastIdx = m[1]
+	}
+	buf.WriteString(html.EscapeString(s[lastIdx:]))
+	return buf.String()
+}
+
+func formatParagraphs(text string) []template.HTML {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	var out []template.HTML
+	for _, chunk := range strings.Split(text, "\n\n") {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		s := h4Regex.ReplaceAllString(chunk, "<h4>$1</h4>")
+		s = h3Regex.ReplaceAllString(s, "<h3>$1</h3>")
+		s = h2Regex.ReplaceAllString(s, "<h2>$1</h2>")
+		s = h1Regex.ReplaceAllString(s, "<h1>$1</h1>")
+		s = boldRegex.ReplaceAllString(s, "<strong>$1</strong>")
+		s = codeRegex.ReplaceAllString(s, "<code>$1</code>")
+		s = convertMarkdownLists(s)
+
+		sanitized := sanitizeHTML(s)
+
+		trimmedLower := strings.ToLower(strings.TrimSpace(sanitized))
+		isBlock := strings.HasPrefix(trimmedLower, "<h1") ||
+			strings.HasPrefix(trimmedLower, "<h2") ||
+			strings.HasPrefix(trimmedLower, "<h3") ||
+			strings.HasPrefix(trimmedLower, "<h4") ||
+			strings.HasPrefix(trimmedLower, "<h5") ||
+			strings.HasPrefix(trimmedLower, "<h6") ||
+			strings.HasPrefix(trimmedLower, "<p") ||
+			strings.HasPrefix(trimmedLower, "<ul") ||
+			strings.HasPrefix(trimmedLower, "<ol") ||
+			strings.HasPrefix(trimmedLower, "<div") ||
+			strings.HasPrefix(trimmedLower, "<pre") ||
+			strings.HasPrefix(trimmedLower, "<blockquote") ||
+			strings.HasPrefix(trimmedLower, "<table")
+
+		if !isBlock {
+			sanitized = "<p>" + sanitized + "</p>"
+		}
+		out = append(out, template.HTML(sanitized))
 	}
 	return out
 }
