@@ -610,6 +610,19 @@ export function WorkbenchShell({ mode }: WorkbenchShellProps) {
               <span>{t('workbench.tabBacktest')}</span>
             </NavLink>
           )}
+          {isEdit && (
+            <NavLink
+              to={`${tabBase}/versions`}
+              className={({ isActive }) =>
+                `px-3 py-1.5 rounded flex items-center gap-1.5 ${
+                  isActive ? 'bg-secondary text-white font-semibold' : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>{t('workbench.tabVersions')}</span>
+            </NavLink>
+          )}
         </nav>
 
         {/* View mode: Script / Split / Chart - which of the side panel
