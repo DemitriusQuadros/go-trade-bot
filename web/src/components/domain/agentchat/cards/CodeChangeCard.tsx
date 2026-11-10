@@ -32,8 +32,14 @@ function time(iso: string | undefined): number {
 // Newest version created before `beforeMs` (the pre-change script), and the
 // first one created at/after it (what the change persisted).
 function pickVersions(versions: ScriptVersion[] | undefined, beforeMs: number) {
-  if (!versions?.length || Number.isNaN(beforeMs)) return { previous: undefined, persisted: undefined };
-  const sorted = [...versions].sort((a, b) => time(a.created_at) - time(b.created_at));
+  if (!Array.isArray(versions) || !versions.length || Number.isNaN(beforeMs)) return { previous: undefined, persisted: undefined };
+  const normalized = versions.map((v: any) => ({
+    id: Number(v.id ?? v.ID ?? 0),
+    strategy_id: Number(v.strategy_id ?? v.StrategyID ?? 0),
+    source: String(v.source ?? v.Source ?? ''),
+    created_at: String(v.created_at ?? v.CreatedAt ?? ''),
+  }));
+  const sorted = [...normalized].sort((a, b) => time(a.created_at) - time(b.created_at));
   let previous: ScriptVersion | undefined;
   let persisted: ScriptVersion | undefined;
   for (const v of sorted) {

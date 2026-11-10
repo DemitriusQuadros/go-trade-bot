@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
@@ -306,5 +307,55 @@ func TestStrategyHandler_RoutingOrder_PerformanceDoesNotCollideWithGetByID(t *te
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Len(t, resp, 1)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_GetVersions_JSONShape(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	sampleTime := time.Date(2026, 11, 10, 15, 0, 0, 0, time.UTC)
+	versions := []entities.ScriptVersion{
+		{
+			ID:         42,
+			StrategyID: 1,
+			Source:     "print('hello')",
+			CreatedAt:  sampleTime,
+		},
+	}
+	mockUseCase.On("GetScriptVersions", mock.Anything, uint(1)).Return(versions, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/strategy/1/versions", nil)
+	req = muxSetURLVars(req, map[string]string{"id": "1"})
+	rec := httptest.NewRecorder()
+
+	h.GetVersions(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	// Assert JSON keys are lower_snake_case
+	rawJSON := rec.Body.String()
+	assert.Contains(t, rawJSON, `"id":42`)
+	assert.Contains(t, rawJSON, `"strategy_id":1`)
+	assert.Contains(t, rawJSON, `"source":"print('hello')"`)
+	assert.Contains(t, rawJSON, `"created_at":"2026-11-10T15:00:00Z"`)
+	assert.NotContains(t, rawJSON, `"ID":`)
+	assert.NotContains(t, rawJSON, `"StrategyID":`)
+	mockUseCase.AssertExpectations(t)
+}
+
+func TestStrategyHandler_GetVersions_NilReturnsEmptyArray(t *testing.T) {
+	mockUseCase := new(mocks.UseCase)
+	h := handler.NewStrategyHandler(mockUseCase)
+
+	mockUseCase.On("GetScriptVersions", mock.Anything, uint(99)).Return(nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/strategy/99/versions", nil)
+	req = muxSetURLVars(req, map[string]string{"id": "99"})
+	rec := httptest.NewRecorder()
+
+	h.GetVersions(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "[]\n", rec.Body.String())
 	mockUseCase.AssertExpectations(t)
 }

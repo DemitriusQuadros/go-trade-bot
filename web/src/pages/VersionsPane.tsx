@@ -24,34 +24,44 @@ import { WorkbenchContext } from './WorkbenchShell';
 
 export function VersionsPane() {
   const t = useT();
-  const ctx = useOutletContext<WorkbenchContext>();
+  const ctx = useOutletContext<WorkbenchContext>() || {};
   const { draft, setDraft, strategyId, appendConsoleEntry } = ctx;
   const { toast } = useToast();
 
   const sid = strategyId ?? 0;
-  const { data: rawVersions = [], isLoading, error } = useScriptVersions(sid);
+  const { data: rawVersions, isLoading, error } = useScriptVersions(sid);
   const revertMutation = useRevertScriptVersion();
 
   const [expandedVersionId, setExpandedVersionId] = useState<number | null>(null);
   const [revertTarget, setRevertTarget] = useState<ScriptVersion | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
-  // Newest versions first
-  const versions = useMemo(() => {
-    return [...rawVersions].sort((a, b) => {
-      const ta = new Date(a.created_at).getTime();
-      const tb = new Date(b.created_at).getTime();
-      return tb - ta;
-    });
-  }, [rawVersions]);
+  // Normalize versions defensively: handles both camel/snake case and Go PascalCase (id vs ID, source vs Source)
+  const versions: ScriptVersion[] = useMemo(() => {
+    if (!Array.isArray(rawVersions)) return [];
+    return rawVersions
+      .map((item: any) => ({
+        id: Number(item?.id ?? item?.ID ?? 0),
+        strategy_id: Number(item?.strategy_id ?? item?.StrategyID ?? sid),
+        source: String(item?.source ?? item?.Source ?? ''),
+        created_at: String(item?.created_at ?? item?.CreatedAt ?? ''),
+      }))
+      .filter((v) => v.id > 0)
+      .sort((a, b) => {
+        const ta = new Date(a.created_at).getTime() || 0;
+        const tb = new Date(b.created_at).getTime() || 0;
+        return tb - ta;
+      });
+  }, [rawVersions, sid]);
 
-  // Current active version is the newest one or the one matching draft.source
+  // Current active version is the newest one or the one matching draft?.source
   const activeVersionId = useMemo(() => {
     if (versions.length === 0) return null;
-    const match = versions.find((v) => v.source === draft.source);
+    const currentSource = draft?.source ?? '';
+    const match = versions.find((v) => v.source === currentSource);
     if (match) return match.id;
     return versions[0].id;
-  }, [versions, draft.source]);
+  }, [versions, draft?.source]);
 
   const handleCopy = (version: ScriptVersion) => {
     navigator.clipboard.writeText(version.source);
@@ -70,7 +80,7 @@ export function VersionsPane() {
       {
         onSuccess: () => {
           // Update draft editor buffer immediately
-          setDraft((prev) => ({
+          setDraft?.((prev) => ({
             ...prev,
             source: target.source,
           }));
@@ -134,8 +144,8 @@ export function VersionsPane() {
           {versions.map((v) => {
             const isActive = v.id === activeVersionId;
             const isExpanded = v.id === expandedVersionId;
-            const lineCount = (v.source.match(/\n/g) || []).length + 1;
-            const byteSize = new Blob([v.source]).size;
+            const lineCount = v.source ? (v.source.match(/\n/g) || []).length + 1 : 0;
+            const byteSize = new Blob([v.source || '']).size;
 
             return (
               <Card
