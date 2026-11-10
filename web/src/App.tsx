@@ -12,6 +12,7 @@ import { WorkbenchShell } from '@/pages/WorkbenchShell';
 import { EditorPane } from '@/pages/EditorPane';
 import { ReplPane } from '@/pages/ReplPane';
 import { BacktestPane } from '@/pages/BacktestPane';
+import { VersionsPane } from '@/pages/VersionsPane';
 import { BacktestRuns } from '@/pages/BacktestRuns';
 import { Activity } from '@/pages/Activity';
 import { Optimization } from '@/pages/Optimization';
@@ -90,6 +91,7 @@ export function App() {
               <Route path="repl" element={<ReplPane />} />
               <Route path="backtest" element={<BacktestPane />} />
               <Route path="backtest/:runId" element={<BacktestPane />} />
+              <Route path="versions" element={<VersionsPane />} />
             </Route>
             {/* Script REPL and the Backtest launcher used to be standalone
                 pages here - both duplicated a per-strategy Workbench tab
