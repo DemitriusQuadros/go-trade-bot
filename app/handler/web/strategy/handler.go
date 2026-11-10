@@ -291,6 +291,9 @@ func (h *StrategyHandler) GetVersions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if versions == nil {
+		versions = []entities.ScriptVersion{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(versions)
 }

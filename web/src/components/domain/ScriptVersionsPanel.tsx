@@ -11,14 +11,22 @@ export function ScriptVersionsPanel({ strategyId }: { strategyId: number }) {
   const { data: versions, isLoading } = useScriptVersions(strategyId);
   const revertMutation = useRevertScriptVersion();
 
+  const rawList = Array.isArray(versions) ? versions : [];
+  const list = rawList.map((v: any) => ({
+    id: Number(v.id ?? v.ID ?? 0),
+    strategy_id: Number(v.strategy_id ?? v.StrategyID ?? strategyId),
+    source: String(v.source ?? v.Source ?? ''),
+    created_at: String(v.created_at ?? v.CreatedAt ?? ''),
+  })).filter((v) => v.id > 0);
+
   if (isLoading) return <LoadingScreen />;
-  if (!versions || versions.length === 0) return <div className="p-4 text-muted-foreground">{t('workbench.noVersions')}</div>;
+  if (list.length === 0) return <div className="p-4 text-muted-foreground">{t('workbench.noVersions')}</div>;
 
   return (
     <Card className="border-border/50 bg-background">
       <CardHeader title={t('workbench.versionHistory')} className="border-b border-border/50 pb-3" />
       <div className="p-4 space-y-4 max-h-[400px] overflow-y-auto">
-        {versions.map((v) => (
+        {list.map((v) => (
           <div key={v.id} className="p-3 border border-border/50 rounded flex justify-between items-center hover:bg-card/20">
             <div>
               <p className="text-sm font-semibold text-foreground">{t('workbench.version', { id: v.id })}</p>
